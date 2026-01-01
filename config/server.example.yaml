@@ -1,0 +1,25 @@
+server:
+  host: "0.0.0.0"
+  port: 2222
+  ssh_host_key: "/etc/orion-belt/ssh_host_key"
+
+database:
+  driver: "postgres"
+  connection_string: "postgres://orionbelt:password@localhost:5432/orionbelt?sslmode=disable"
+
+auth:
+  rebac_enabled: true
+  allow_temp_access: true
+
+recording:
+  enabled: true
+  storage_path: "/var/lib/orion-belt/recordings"
+
+plugins:
+  notification:
+    enabled: true
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    from_email: "orion-belt@example.com"
+    admin_emails:
+      - "admin@example.com"

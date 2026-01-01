@@ -1,0 +1,45 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*.test
+*.out
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Config (use docker configs instead)
+config/*.yaml
+!config/*.docker.yaml
+!config/*.example.yaml
+
+# Recordings
+recordings/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log

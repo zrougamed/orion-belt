@@ -1,0 +1,13 @@
+server:
+  host: "orion-belt-server.example.com"
+  port: 2222
+
+agent:
+  name: "web-server-01"
+  tags:
+    environment: "production"
+    role: "web"
+    datacenter: "us-east-1"
+
+auth:
+  key_file: "/etc/orion-belt/agent_key"
