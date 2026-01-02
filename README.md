@@ -55,6 +55,20 @@ Orion-Belt solves this by:
                               └─> Access Request Management
 ```
 
+## Roadmap
+
+Orion Belt is under active development with core functionality working in production. We have an ambitious roadmap ahead covering security hardening, advanced features, and multi-protocol support.
+
+**Current Status:** Alpha v0.1 — Core SSH proxy, session recording, and access control are operational.
+
+**What's Next:**
+- Host key verification and API authentication (v0.2)
+- High availability and identity provider integrations (v0.3)
+- Risk-based access and command filtering (v0.4)
+- Multi-protocol support: RDP, VNC, K8s, databases (v1.0)
+
+See [ROADMAP.md](docs/ROADMAP.md) for the complete development plan, outstanding TODOs, and contribution opportunities.
+
 ## Components
 
 ### Server
