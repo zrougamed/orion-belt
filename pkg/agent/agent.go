@@ -167,11 +167,20 @@ func (a *Agent) handleSession(newChannel gossh.NewChannel) {
 			}
 
 		case "shell":
+			var payload struct {
+				User string
+			}
+			if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
+				a.logger.Error("Failed to parse exec payload: %v", err)
+				req.Reply(false, nil)
+				continue
+			}
+			username := payload.User
 			a.logger.Info("Shell requested")
 
 			req.Reply(true, nil)
 
-			a.startShell(channel, ptyReq)
+			a.startShell(channel, username, ptyReq)
 			channel.Close()
 			return
 
@@ -216,10 +225,10 @@ type ptyRequestMsg struct {
 	Modelist string
 }
 
-func (a *Agent) startShell(channel gossh.Channel, ptyReq *ptyRequestMsg) {
+func (a *Agent) startShell(channel gossh.Channel, username string, ptyReq *ptyRequestMsg) {
 	a.logger.Info("Starting interactive shell")
 
-	cmd := exec.Command("/bin/sh") // TODO: work on enriching this capability
+	cmd := exec.Command("su", "-", username)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	if ptyReq != nil {

@@ -84,21 +84,50 @@ func (a *AuthService) CheckPermission(ctx context.Context, userID, machineID, ac
 	return nil
 }
 
+// CheckPermissionWithRemoteUser checks if a user has permission with specific remote user
+func (a *AuthService) CheckPermissionWithRemoteUser(ctx context.Context, userID, machineID, accessType, remoteUser string) error {
+	// Check if user is admin
+	user, err := a.store.GetUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user.IsAdmin {
+		a.logger.Debug("Admin access granted for user %s", userID)
+		return nil
+	}
+
+	// Check ReBAC permissions with remote user
+	hasPermission, err := a.store.HasPermissionWithRemoteUser(ctx, userID, machineID, accessType, remoteUser)
+	if err != nil {
+		return fmt.Errorf("failed to check permission: %w", err)
+	}
+
+	if !hasPermission {
+		a.logger.Warn("Permission denied for user %s on machine %s as remote user %s", userID, machineID, remoteUser)
+		return fmt.Errorf("permission denied: %s not allowed to access %s", remoteUser, machineID)
+	}
+
+	a.logger.Debug("Permission granted for user %s on machine %s as remote user %s", userID, machineID, remoteUser)
+	return nil
+}
+
 // GrantPermission grants a user permission to access a machine
-func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, accessType, grantedBy string, duration *time.Duration) error {
+func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, accessType string, remoteUsers []string, grantedBy string, duration *time.Duration) error {
 	var expiresAt *time.Time
 	if duration != nil {
 		t := time.Now().Add(*duration)
 		expiresAt = &t
 	}
 
-	permission := common.NewPermission(userID, machineID, accessType, grantedBy, expiresAt)
+	permission := common.NewPermission(userID, machineID, accessType, remoteUsers, grantedBy, expiresAt)
 
 	if err := a.store.CreatePermission(ctx, permission); err != nil {
 		return fmt.Errorf("failed to create permission: %w", err)
 	}
 
-	a.logger.Info("Permission granted: user=%s, machine=%s, type=%s", userID, machineID, accessType)
+	a.logger.Info("Permission granted: user=%s, machine=%s, type=%s, remote_users=%v",
+		userID, machineID, accessType, remoteUsers)
 	return nil
 }
 
@@ -113,14 +142,14 @@ func (a *AuthService) RevokePermission(ctx context.Context, permissionID string)
 }
 
 // RequestTemporaryAccess creates a temporary access request
-func (a *AuthService) RequestTemporaryAccess(ctx context.Context, userID, machineID, reason string, duration int) (*common.AccessRequest, error) {
-	request := common.NewAccessRequest(userID, machineID, reason, duration)
+func (a *AuthService) RequestTemporaryAccess(ctx context.Context, userID, machineID string, remoteUsers []string, reason string, duration int) (*common.AccessRequest, error) {
+	request := common.NewAccessRequest(userID, machineID, remoteUsers, reason, duration)
 
 	if err := a.store.CreateAccessRequest(ctx, request); err != nil {
 		return nil, fmt.Errorf("failed to create access request: %w", err)
 	}
 
-	a.logger.Info("Access request created: user=%s, machine=%s, duration=%d", userID, machineID, duration)
+	a.logger.Info("Access request created: user=%s, machine=%s, remote_users=%v, duration=%d", userID, machineID, remoteUsers, duration)
 	return request, nil
 }
 
@@ -147,9 +176,9 @@ func (a *AuthService) ApproveAccessRequest(ctx context.Context, requestID, revie
 		return fmt.Errorf("failed to update access request: %w", err)
 	}
 
-	// Grant temporary permission
+	// Grant temporary permission with the requested remote users
 	duration := time.Duration(request.Duration) * time.Second
-	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, "both", reviewerID, &duration); err != nil {
+	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, "both", request.RemoteUsers, reviewerID, &duration); err != nil {
 		return fmt.Errorf("failed to grant permission: %w", err)
 	}
 

@@ -36,6 +36,7 @@ type DatabaseConfig struct {
 // AuthConfig contains authentication configuration
 type AuthConfig struct {
 	KeyFile         string `yaml:"key_file,omitempty"`
+	User            string `yaml:"user,omitempty"`
 	ReBACEnabled    bool   `yaml:"rebac_enabled,omitempty"`
 	AllowTempAccess bool   `yaml:"allow_temp_access,omitempty"`
 }

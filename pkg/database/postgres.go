@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/zrougamed/orion-belt/pkg/common"
 )
@@ -73,6 +74,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id),
 			machine_id VARCHAR(36) NOT NULL REFERENCES machines(id),
+			remote_user VARCHAR(255) NOT NULL,
 			start_time TIMESTAMP NOT NULL,
 			end_time TIMESTAMP,
 			recording_path TEXT NOT NULL,
@@ -83,6 +85,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id),
 			machine_id VARCHAR(36) NOT NULL REFERENCES machines(id),
+			remote_users TEXT[] NOT NULL,
 			reason TEXT NOT NULL,
 			duration INTEGER NOT NULL,
 			status VARCHAR(50) NOT NULL,
@@ -96,6 +99,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id),
 			machine_id VARCHAR(36) NOT NULL REFERENCES machines(id),
 			access_type VARCHAR(50) NOT NULL,
+			remote_users TEXT[] NOT NULL,
 			granted_by VARCHAR(36) NOT NULL REFERENCES users(id),
 			granted_at TIMESTAMP NOT NULL,
 			expires_at TIMESTAMP
@@ -422,11 +426,11 @@ func (s *PostgresStore) ListActiveMachines(ctx context.Context) ([]*common.Machi
 
 // CreateSession creates a new session
 func (s *PostgresStore) CreateSession(ctx context.Context, session *common.Session) error {
-	query := `INSERT INTO sessions (id, user_id, machine_id, start_time, end_time, recording_path, status, created_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO sessions (id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	_, err := s.db.ExecContext(ctx, query,
-		session.ID, session.UserID, session.MachineID,
+		session.ID, session.UserID, session.MachineID, session.RemoteUser,
 		session.StartTime, session.EndTime, session.RecordingPath,
 		session.Status, session.CreatedAt)
 
@@ -646,15 +650,18 @@ func (s *PostgresStore) ListUserAccessRequests(ctx context.Context, userID strin
 	return requests, nil
 }
 
-// CreatePermission creates a new permission
+// CreatePermission with remote_users array
 func (s *PostgresStore) CreatePermission(ctx context.Context, permission *common.Permission) error {
-	query := `INSERT INTO permissions (id, user_id, machine_id, access_type, granted_by, granted_at, expires_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO permissions (id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+	// Convert []string to PostgreSQL array
+	remoteUsers := pq.Array(permission.RemoteUsers)
 
 	_, err := s.db.ExecContext(ctx, query,
 		permission.ID, permission.UserID, permission.MachineID,
-		permission.AccessType, permission.GrantedBy, permission.GrantedAt,
-		permission.ExpiresAt)
+		permission.AccessType, remoteUsers, permission.GrantedBy,
+		permission.GrantedAt, permission.ExpiresAt)
 
 	if err != nil {
 		return fmt.Errorf("failed to create permission: %w", err)
@@ -662,16 +669,18 @@ func (s *PostgresStore) CreatePermission(ctx context.Context, permission *common
 	return nil
 }
 
-// GetPermission retrieves a permission by ID
+// GetPermission - scan remote_users array
 func (s *PostgresStore) GetPermission(ctx context.Context, id string) (*common.Permission, error) {
-	query := `SELECT id, user_id, machine_id, access_type, granted_by, granted_at, expires_at
+	query := `SELECT id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at
 			  FROM permissions WHERE id = $1`
 
 	permission := &common.Permission{}
+	var remoteUsers pq.StringArray
+
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&permission.ID, &permission.UserID, &permission.MachineID,
-		&permission.AccessType, &permission.GrantedBy, &permission.GrantedAt,
-		&permission.ExpiresAt)
+		&permission.AccessType, &remoteUsers, &permission.GrantedBy,
+		&permission.GrantedAt, &permission.ExpiresAt)
 
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -679,7 +688,27 @@ func (s *PostgresStore) GetPermission(ctx context.Context, id string) (*common.P
 	if err != nil {
 		return nil, fmt.Errorf("failed to get permission: %w", err)
 	}
+
+	permission.RemoteUsers = []string(remoteUsers)
 	return permission, nil
+}
+
+// Check permission with specific remote user
+func (s *PostgresStore) HasPermissionWithRemoteUser(ctx context.Context, userID, machineID, accessType, remoteUser string) (bool, error) {
+	query := `SELECT COUNT(*) FROM permissions
+			  WHERE user_id = $1 AND machine_id = $2 AND
+			  (access_type = $3 OR access_type = 'both') AND
+			  $4 = ANY(remote_users) AND
+			  (expires_at IS NULL OR expires_at > NOW())`
+
+	var count int
+	err := s.db.QueryRowContext(ctx, query, userID, machineID, accessType, remoteUser).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check permission: %w", err)
+	}
+
+	return count > 0, nil
 }
 
 // DeletePermission deletes a permission

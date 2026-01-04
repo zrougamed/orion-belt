@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"golang.org/x/crypto/ssh"
@@ -27,7 +28,20 @@ func NewSSHClient(config *common.Config, logger *common.Logger) (*SSHClient, err
 
 // Connect connects to a target machine through the Orion-Belt server
 func (c *SSHClient) Connect(target string, username string) error {
-	c.logger.Info("Connecting to %s through Orion-Belt server", target)
+	// Parse target for user@machine format
+	targetMachine := target
+	targetUser := username
+	targetSSHUser := username
+
+	if strings.Contains(target, "@") {
+		parts := strings.SplitN(target, "@", 2)
+		if len(parts) == 2 {
+			targetMachine = parts[1]
+			targetSSHUser = parts[0]
+		}
+	}
+
+	c.logger.Info("Connecting to %s through Orion-Belt server", targetMachine)
 
 	// Load SSH key
 	keyData, err := os.ReadFile(c.config.Auth.KeyFile)
@@ -42,22 +56,22 @@ func (c *SSHClient) Connect(target string, username string) error {
 
 	// Configure SSH client
 	// Get username from parameter, environment, or use root as fallback
-	if username == "" {
-		username = os.Getenv("USER")
-		if username == "" {
-			username = "root"
+	if targetUser == "" {
+		targetUser = os.Getenv("USER")
+		if targetUser == "" {
+			targetUser = "root"
 		}
 	}
 
 	config := &ssh.ClientConfig{
-		User: username,
+		User: targetUser,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: Implement proper host key verification
 	}
 
-	c.logger.Info("Authenticating as user: %s", username)
+	c.logger.Info("Authenticating as user: %s", targetUser)
 
 	// Connect to Orion-Belt server
 	serverAddr := fmt.Sprintf("%s:%d", c.config.Server.Host, c.config.Server.Port)
@@ -76,36 +90,45 @@ func (c *SSHClient) Connect(target string, username string) error {
 
 	// Set up terminal
 	fd := int(os.Stdin.Fd())
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		return fmt.Errorf("failed to set raw mode: %w", err)
-	}
-	defer term.Restore(fd, oldState)
+	if term.IsTerminal(fd) {
+		oldState, err := term.MakeRaw(fd)
+		if err != nil {
+			return fmt.Errorf("failed to set raw mode: %w", err)
+		}
+		defer term.Restore(fd, oldState)
 
-	// Get terminal size
-	width, height, err := term.GetSize(fd)
-	if err != nil {
-		width, height = 80, 24
-	}
+		// Get terminal size
+		width, height, err := term.GetSize(fd)
+		if err != nil {
+			width, height = 80, 24
+		}
 
-	// Request PTY
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
-	}
+		// Request PTY
+		modes := ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}
 
-	if err := session.RequestPty("xterm-256color", height, width, modes); err != nil {
-		return fmt.Errorf("failed to request PTY: %w", err)
+		if err := session.RequestPty("xterm-256color", height, width, modes); err != nil {
+			return fmt.Errorf("failed to request PTY: %w", err)
+		}
 	}
 
 	// Set up I/O
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
+	if term.IsTerminal(fd) {
+		// Wrap Stdout and Stderr to handle the "staircase" effect
+		session.Stdout = &rawModeWriter{os.Stdout}
+		session.Stderr = &rawModeWriter{os.Stderr}
+	} else {
+		session.Stdout = os.Stdout
+		session.Stderr = os.Stderr
+	}
 	session.Stdin = os.Stdin
 
 	// Start shell with target as argument
-	if err := session.Start(target); err != nil {
+	connectionStr := targetSSHUser + "@" + targetMachine
+	if err := session.Start(connectionStr); err != nil {
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
@@ -118,6 +141,16 @@ func (c *SSHClient) Connect(target string, username string) error {
 	}
 
 	return nil
+}
+
+type rawModeWriter struct {
+	io.Writer
+}
+
+func (w *rawModeWriter) Write(p []byte) (n int, err error) {
+	s := strings.ReplaceAll(string(p), "\n", "\r\n")
+	_, err = w.Writer.Write([]byte(s))
+	return len(p), err
 }
 
 // RequestAccess requests temporary access to a machine
@@ -157,7 +190,7 @@ func NewSCPClient(config *common.Config, logger *common.Logger) (*SCPClient, err
 }
 
 // Copy copies a file through the Orion-Belt server
-func (c *SCPClient) Copy(source, destination string, isUpload bool) error {
+func (c *SCPClient) Copy(username, source, destination string, isUpload bool) error {
 	var machine, remotePath, localPath string
 
 	if isUpload {
@@ -192,7 +225,7 @@ func (c *SCPClient) Copy(source, destination string, isUpload bool) error {
 
 	// Configure SSH client
 	config := &ssh.ClientConfig{
-		User: os.Getenv("USER"),
+		User: username,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
@@ -341,12 +374,22 @@ func (c *SCPClient) downloadFile(session *ssh.Session, destination, machine, rem
 	return session.Wait()
 }
 
-// TODO: implement the user parsing
+// splitMachinePath splits user@machine:path or machine:path
 func splitMachinePath(spec string) []string {
-	for i := 0; i < len(spec); i++ {
-		if spec[i] == ':' {
-			return []string{spec[:i], spec[i+1:]}
-		}
+	// Handle user@machine:path format
+	atIndex := strings.Index(spec, "@")
+	colonIndex := strings.Index(spec, ":")
+
+	if colonIndex == -1 {
+		return []string{spec}
 	}
-	return []string{spec}
+
+	// If @ comes before :, it's part of the machine spec
+	if atIndex != -1 && atIndex < colonIndex {
+		// user@machine:path format
+		return []string{spec[:colonIndex], spec[colonIndex+1:]}
+	}
+
+	// machine:path format
+	return []string{spec[:colonIndex], spec[colonIndex+1:]}
 }

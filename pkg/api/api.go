@@ -239,9 +239,10 @@ func (s *APIServer) registerClient(c *gin.Context) {
 
 // CreateAccessRequestRequest represents an access request creation
 type CreateAccessRequestRequest struct {
-	MachineID string `json:"machine_id" binding:"required"`
-	Reason    string `json:"reason" binding:"required"`
-	Duration  int    `json:"duration" binding:"required"` // in seconds
+	MachineID   string   `json:"machine_id" binding:"required"`
+	RemoteUsers []string `json:"remote_users" binding:"required"`
+	Reason      string   `json:"reason" binding:"required"`
+	Duration    int      `json:"duration" binding:"required"` // in seconds
 }
 
 // createAccessRequest handles access request creation
@@ -256,7 +257,13 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	ctx := context.Background()
-	accessReq := common.NewAccessRequest(userID.(string), req.MachineID, req.Reason, req.Duration)
+	accessReq := common.NewAccessRequest(
+		userID.(string),
+		req.MachineID,
+		req.RemoteUsers,
+		req.Reason,
+		req.Duration,
+	)
 
 	if err := s.store.CreateAccessRequest(ctx, accessReq); err != nil {
 		s.logger.Error("Failed to create access request: %v", err)

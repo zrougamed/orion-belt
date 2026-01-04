@@ -12,6 +12,7 @@ import (
 
 var (
 	configFile string
+	username   string
 	recursive  bool
 )
 
@@ -25,6 +26,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
+	rootCmd.Flags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
 	rootCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "recursively copy directories")
 }
 
@@ -65,8 +67,15 @@ func runSCP(cmd *cobra.Command, args []string) {
 	// Determine if upload or download
 	isUpload := !strings.Contains(source, ":")
 
+	usernameConfig := config.Auth.User
+	if username == "" && usernameConfig == "" {
+		logger.Fatal("Configuration error: Username is missing in your config or use --user")
+	} else if username == "" {
+		username = usernameConfig
+	}
+
 	// Copy file
-	if err := scpClient.Copy(source, destination, isUpload); err != nil {
+	if err := scpClient.Copy(username, source, destination, isUpload); err != nil {
 		logger.Fatal("Copy failed: %v", err)
 	}
 

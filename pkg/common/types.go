@@ -38,6 +38,7 @@ type Session struct {
 	ID            string     `json:"id"`
 	UserID        string     `json:"user_id"`
 	MachineID     string     `json:"machine_id"`
+	RemoteUser    string     `json:"remote_user"` // User on target machine (root, user, etc)
 	StartTime     time.Time  `json:"start_time"`
 	EndTime       *time.Time `json:"end_time,omitempty"`
 	RecordingPath string     `json:"recording_path"`
@@ -50,6 +51,7 @@ type AccessRequest struct {
 	ID          string     `json:"id"`
 	UserID      string     `json:"user_id"`
 	MachineID   string     `json:"machine_id"`
+	RemoteUsers []string   `json:"remote_users"` // Allowed remote users ["root", "user"]
 	Reason      string     `json:"reason"`
 	Duration    int        `json:"duration"` // in seconds
 	Status      string     `json:"status"`   // pending, approved, rejected, expired
@@ -61,13 +63,14 @@ type AccessRequest struct {
 
 // Permission represents a ReBAC permission
 type Permission struct {
-	ID         string     `json:"id"`
-	UserID     string     `json:"user_id"`
-	MachineID  string     `json:"machine_id"`
-	AccessType string     `json:"access_type"` // ssh, scp, both
-	GrantedBy  string     `json:"granted_by"`
-	GrantedAt  time.Time  `json:"granted_at"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	ID          string     `json:"id"`
+	UserID      string     `json:"user_id"`
+	MachineID   string     `json:"machine_id"`
+	AccessType  string     `json:"access_type"`  // ssh, scp, both
+	RemoteUsers []string   `json:"remote_users"` // Allowed remote users ["root", "user", "postgres"]
+	GrantedBy   string     `json:"granted_by"`
+	GrantedAt   time.Time  `json:"granted_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 }
 
 // AuditLog represents an audit log entry
@@ -136,13 +139,14 @@ func NewMachine(name, hostname string, port int, tags map[string]string) *Machin
 }
 
 // NewSession creates a new session
-func NewSession(userID, machineID, storagePath string) *Session {
+func NewSession(userID, machineID, remoteUser, storagePath string) *Session {
 	sessionID := uuid.New().String()
 	recordingPath := filepath.Join(storagePath, fmt.Sprintf("%s.txt", sessionID))
 	return &Session{
 		ID:            sessionID,
 		UserID:        userID,
 		MachineID:     machineID,
+		RemoteUser:    remoteUser,
 		StartTime:     time.Now(),
 		RecordingPath: recordingPath,
 		Status:        "active",
@@ -151,11 +155,12 @@ func NewSession(userID, machineID, storagePath string) *Session {
 }
 
 // NewAccessRequest creates a new access request
-func NewAccessRequest(userID, machineID, reason string, duration int) *AccessRequest {
+func NewAccessRequest(userID, machineID string, remoteUsers []string, reason string, duration int) *AccessRequest {
 	return &AccessRequest{
 		ID:          uuid.New().String(),
 		UserID:      userID,
 		MachineID:   machineID,
+		RemoteUsers: remoteUsers,
 		Reason:      reason,
 		Duration:    duration,
 		Status:      "pending",
@@ -164,15 +169,16 @@ func NewAccessRequest(userID, machineID, reason string, duration int) *AccessReq
 }
 
 // NewPermission creates a new permission
-func NewPermission(userID, machineID, accessType, grantedBy string, expiresAt *time.Time) *Permission {
+func NewPermission(userID, machineID, accessType string, remoteUsers []string, grantedBy string, expiresAt *time.Time) *Permission {
 	return &Permission{
-		ID:         uuid.New().String(),
-		UserID:     userID,
-		MachineID:  machineID,
-		AccessType: accessType,
-		GrantedBy:  grantedBy,
-		GrantedAt:  time.Now(),
-		ExpiresAt:  expiresAt,
+		ID:          uuid.New().String(),
+		UserID:      userID,
+		MachineID:   machineID,
+		AccessType:  accessType,
+		RemoteUsers: remoteUsers,
+		GrantedBy:   grantedBy,
+		GrantedAt:   time.Now(),
+		ExpiresAt:   expiresAt,
 	}
 }
 

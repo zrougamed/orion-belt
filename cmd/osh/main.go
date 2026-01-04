@@ -32,7 +32,7 @@ func init() {
 	rootCmd.Flags().IntVarP(&accessDuration, "duration", "d", 3600, "access duration in seconds")
 	rootCmd.Flags().StringVar(&accessReason, "reason", "", "reason for access request")
 	rootCmd.Flags().BoolVarP(&listMachines, "list", "l", false, "list available machines")
-	rootCmd.Flags().StringVarP(&username, "user", "u", "", "username for authentication (default: $USER or root)")
+	rootCmd.Flags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
 }
 
 func main() {
@@ -94,6 +94,13 @@ func runSSH(cmd *cobra.Command, args []string) {
 			logger.Fatal("Failed to request access: %v", err)
 		}
 		return
+	}
+
+	usernameConfig := config.Auth.User
+	if username == "" && usernameConfig == "" {
+		logger.Fatal("Configuration error: Username is missing in your config or use --user")
+	} else if username == "" {
+		username = usernameConfig
 	}
 
 	// Connect to machine

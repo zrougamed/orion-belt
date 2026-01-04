@@ -463,14 +463,23 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 
 	s.logger.Info("proxyToMachine called: commandLine='%s', user='%s', userID='%s'", commandLine, username, userID)
 
-	var machineName, remoteCommand string
-	parts := splitFirst(commandLine)
-	machineName = parts[0]
+	var remoteUser, machineName, remoteCommand string
+	parts := strings.SplitN(commandLine, " ", 2)
+	target := parts[0]
 	if len(parts) > 1 {
 		remoteCommand = parts[1]
 	}
 
-	s.logger.Info("Parsed: machine='%s', command='%s'", machineName, remoteCommand)
+	// Extract remoteUser@machine
+	if strings.Contains(target, "@") {
+		userMachine := strings.SplitN(target, "@", 2)
+		remoteUser = userMachine[0]
+		machineName = userMachine[1]
+	} else {
+		machineName = target
+		remoteUser = "root" // default
+	}
+	s.logger.Info("Gateway user '%s' connecting to '%s@%s'", username, remoteUser, machineName)
 
 	machine, err := s.store.GetMachineByName(ctx, machineName)
 	if err != nil {
@@ -482,10 +491,17 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 
 	s.logger.Info("Machine found: %s (ID: %s, active: %v)", machine.Name, machine.ID, machine.IsActive)
 
-	// Check permissions
-	if err := s.authService.CheckPermission(ctx, userID, machine.ID, "ssh"); err != nil {
-		clientChannel.Write([]byte("Permission denied\n"))
-		s.logger.Warn("Permission denied for user %s to machine %s", username, machineName)
+	// Check permissions with remote user
+	if err := s.authService.CheckPermissionWithRemoteUser(ctx, userID, machine.ID, "ssh", remoteUser); err != nil {
+		s.logger.Warn("Permission denied: %s cannot access %s@%s", username, remoteUser, machineName)
+
+		errorMsg := "\n> Permission denied\n"
+		errorMsg += fmt.Sprintf("   Gateway user: %s\n", username)
+		errorMsg += fmt.Sprintf("   Target: %s@%s\n\n", remoteUser, machineName)
+		errorMsg += fmt.Sprintf("You don't have permission to access '%s' on %s\n", remoteUser, machineName)
+		errorMsg += "Contact your administrator or request access\n\n"
+
+		clientChannel.Write([]byte(errorMsg))
 		clientChannel.SendRequest("exit-status", false, []byte{0, 0, 0, 1})
 		return
 	}
@@ -503,7 +519,7 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 
 	// Create session record
 	recordingPath := s.recorder.GetRecordingStoragePath()
-	session := common.NewSession(userID, machine.ID, recordingPath)
+	session := common.NewSession(userID, machine.ID, remoteUser, recordingPath)
 
 	if err := s.store.CreateSession(ctx, session); err != nil {
 		s.logger.Error("Failed to create session record: %v", err)
@@ -544,7 +560,7 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 		s.executeCommand(clientChannel, agentChannel, agentReqs, remoteCommand, sessionRecorder)
 	} else {
 		s.logger.Info("Starting interactive shell on agent")
-		s.startInteractiveShell(clientChannel, agentChannel, agentReqs, sessionRecorder)
+		s.startInteractiveShell(clientChannel, agentChannel, agentReqs, sessionRecorder, remoteUser)
 	}
 
 	endTime := time.Now()
@@ -615,7 +631,7 @@ func (s *Server) executeCommand(clientChannel, agentChannel ssh.Channel, agentRe
 	clientChannel.CloseWrite()
 }
 
-func (s *Server) startInteractiveShell(clientChannel, agentChannel ssh.Channel, agentReqs <-chan *ssh.Request, recorder *recording.SessionRecorder) {
+func (s *Server) startInteractiveShell(clientChannel, agentChannel ssh.Channel, agentReqs <-chan *ssh.Request, recorder *recording.SessionRecorder, username string) {
 	statusDone := make(chan struct{})
 	var once sync.Once
 	go func() {
@@ -635,7 +651,13 @@ func (s *Server) startInteractiveShell(clientChannel, agentChannel ssh.Channel, 
 		}
 	}()
 
-	ok, err := agentChannel.SendRequest("shell", true, nil)
+	type shellPayload struct {
+		User string
+	}
+
+	payload := shellPayload{User: username}
+	encodedPayload := ssh.Marshal(payload)
+	ok, err := agentChannel.SendRequest("shell", true, encodedPayload)
 	if err != nil || !ok {
 		s.logger.Error("Shell request failed")
 		return

@@ -48,6 +48,7 @@ type Store interface {
 	ListUserPermissions(ctx context.Context, userID string) ([]*common.Permission, error)
 	ListMachinePermissions(ctx context.Context, machineID string) ([]*common.Permission, error)
 	HasPermission(ctx context.Context, userID, machineID, accessType string) (bool, error)
+	HasPermissionWithRemoteUser(ctx context.Context, userID, machineID, accessType, remoteUser string) (bool, error)
 
 	// Audit log operations
 	CreateAuditLog(ctx context.Context, log *common.AuditLog) error
