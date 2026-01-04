@@ -218,7 +218,7 @@ go build -o bin/orion-belt ./cmd/server
 ```
 
 ### Creating Plugins
-WIP: Plugin Development Guide
+For details see [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md).
 
 ## Security Considerations
 
