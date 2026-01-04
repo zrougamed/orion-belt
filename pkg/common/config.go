@@ -9,10 +9,12 @@ import (
 
 // Config represents the base configuration structure
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database,omitempty"`
-	Auth     AuthConfig     `yaml:"auth,omitempty"`
-	Agent    AgentConfig    `yaml:"agent,omitempty"`
+	Server    ServerConfig                      `yaml:"server"`
+	Database  DatabaseConfig                    `yaml:"database,omitempty"`
+	Auth      AuthConfig                        `yaml:"auth,omitempty"`
+	Agent     AgentConfig                       `yaml:"agent,omitempty"`
+	Recording RecordingConfig                   `yaml:"recording,omitempty"`
+	Plugins   map[string]map[string]interface{} `yaml:"plugins"`
 }
 
 // ServerConfig contains server-specific configuration
@@ -22,6 +24,7 @@ type ServerConfig struct {
 	APIPort     int    `yaml:"api_port,omitempty"`
 	SSHHostKey  string `yaml:"ssh_host_key,omitempty"`
 	APIEndpoint string `yaml:"api_endpoint,omitempty"`
+	PluginDir   string `yaml:"plugin_dir"`
 }
 
 // DatabaseConfig contains database configuration
@@ -41,6 +44,13 @@ type AuthConfig struct {
 type AgentConfig struct {
 	Name string            `yaml:"name"`
 	Tags map[string]string `yaml:"tags,omitempty"`
+}
+
+// RecordingConfig contains session recording configuration
+type RecordingConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	StoragePath   string `yaml:"storage_path"`
+	RetentionDays int    `yaml:"retention_days,omitempty"`
 }
 
 // LoadConfig loads configuration from a YAML file

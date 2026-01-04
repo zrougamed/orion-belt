@@ -1,8 +1,11 @@
-.PHONY: build build-server build-client build-agent test clean install 
+.PHONY: build build-server build-client build-agent test clean install  plugins
 
 # Build variables
 BINARY_NAME=orion-belt
 BUILD_DIR=bin
+PLUGIN_DIR=plugins
+BUILD_DIR_PLUGINS=bin/plugins
+PLUGINS := audit-logger notification
 GO=go
 GOFLAGS=-v
 
@@ -73,3 +76,15 @@ update-deps:
 	$(GO) get -u ./...
 	$(GO) mod tidy
 
+
+# plugins section
+plugins: $(BUILD_DIR_PLUGINS)
+	@echo "Building plugins..."
+	@for plugin in $(PLUGINS); do \
+		echo "Building $$plugin.so..."; \
+		$(GO) build -buildmode=plugin -o $(BUILD_DIR_PLUGINS)/$$plugin.so $(PLUGIN_DIR)/$$plugin/main.go || exit 1; \
+	done
+	@echo "Plugins built successfully"
+
+$(BUILD_DIR_PLUGINS):
+	@mkdir -p $(BUILD_DIR_PLUGINS)

@@ -67,14 +67,39 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	authService := auth.NewAuthService(store, logger)
 
 	// Initialize recorder
-	// TODO: make the path relative to the bin folder ../recordings
-	recorder, err := recording.NewRecorder("/var/lib/orion-belt/recordings", logger)
+	storagePath := resolveDirWithCreate(
+		config.Recording.StoragePath,
+		"/etc/orion-belt/recordings",
+		logger,
+	)
+	recorder, err := recording.NewRecorder(storagePath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recorder: %w", err)
 	}
 
 	// Initialize plugin manager
 	pluginManager := plugin.NewManager(logger)
+	pluginDir := resolveDirWithCreate(
+		config.Server.PluginDir,
+		"/etc/orion-belt/plugins",
+		logger,
+	)
+	pluginManager.SetPluginDirectory(pluginDir)
+
+	// Load all plugins from the directory
+	if err := pluginManager.LoadPlugins(ctx); err != nil {
+		logger.Warn("Failed to load plugins: %v", err)
+		// log and continue on failure
+	}
+
+	// Initialize loaded plugins with their configs
+	if len(config.Plugins) > 0 {
+		if failed := pluginManager.InitializeAll(ctx, config.Plugins); failed != nil {
+			for name, err := range failed {
+				logger.Warn("plugin %s failed: %v", name, err)
+			}
+		}
+	}
 
 	// Initialize API server
 	apiServer := api.NewAPIServer(store, authService, logger)
@@ -137,7 +162,6 @@ func (s *Server) Start() error {
 	// Start API server in a goroutine
 	apiAddr := fmt.Sprintf("%s:%d", s.config.Server.Host, apiPort)
 	go func() {
-		s.logger.Info("Starting API server on %s", apiAddr)
 		if err := s.apiServer.Start(apiAddr); err != nil {
 			s.logger.Error("API server error: %v", err)
 		}
@@ -705,4 +729,17 @@ func (s *Server) GetStore() database.Store {
 // GetAuthService returns the auth service
 func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
+}
+
+func resolveDirWithCreate(path, fallback string, logger *common.Logger) string {
+	if path == "" {
+		path = fallback
+	}
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		logger.Warn("failed to create directory: %s", err.Error())
+		return fallback
+	}
+
+	return path
 }

@@ -79,6 +79,7 @@ type Manager struct {
 	plugins     map[string]Plugin
 	hookPlugins map[Hook][]HookPlugin
 	logger      *common.Logger
+	loader      *PluginLoader
 	mu          sync.RWMutex
 }
 
@@ -89,6 +90,27 @@ func NewManager(logger *common.Logger) *Manager {
 		hookPlugins: make(map[Hook][]HookPlugin),
 		logger:      logger,
 	}
+}
+
+// SetPluginDirectory sets the plugin directory and creates a loader
+func (m *Manager) SetPluginDirectory(pluginDir string) {
+	m.loader = NewPluginLoader(m, pluginDir)
+}
+
+// LoadPlugins discovers and loads all plugins from the configured directory
+func (m *Manager) LoadPlugins(ctx context.Context) error {
+	if m.loader == nil {
+		return fmt.Errorf("plugin directory not configured")
+	}
+	return m.loader.LoadAll(ctx)
+}
+
+// LoadPlugin loads a single plugin from the specified path
+func (m *Manager) LoadPlugin(ctx context.Context, path string) error {
+	if m.loader == nil {
+		return fmt.Errorf("plugin loader not initialized")
+	}
+	return m.loader.LoadPlugin(ctx, path)
 }
 
 // Register registers a plugin
@@ -191,10 +213,11 @@ func (m *Manager) TriggerHook(ctx context.Context, hook Hook, hookCtx *HookConte
 	return nil
 }
 
-// InitializeAll initializes all registered plugins
-func (m *Manager) InitializeAll(ctx context.Context, configs map[string]map[string]interface{}) error {
+// InitializeAll initializes all registered plugins.
+func (m *Manager) InitializeAll(ctx context.Context, configs map[string]map[string]interface{}) map[string]error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	failed := make(map[string]error)
 
 	for name, plugin := range m.plugins {
 		config := configs[name]
@@ -203,11 +226,14 @@ func (m *Manager) InitializeAll(ctx context.Context, configs map[string]map[stri
 		}
 
 		if err := plugin.Initialize(ctx, config); err != nil {
-			return fmt.Errorf("failed to initialize plugin %s: %w", name, err)
+			failed[name] = fmt.Errorf("initialize plugin %s: %w", name, err)
 		}
 	}
 
-	return nil
+	if len(failed) == 0 {
+		return nil
+	}
+	return failed
 }
 
 // ShutdownAll shuts down all registered plugins
