@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,7 @@ func (s *APIServer) setupRoutes() {
 		public.POST("/register/agent", s.registerAgent)
 		public.POST("/register/client", s.registerClient)
 		public.POST("/login", s.login)
+		public.POST("/login/key", s.loginWithKey)
 	}
 
 	// Protected endpoints
@@ -94,6 +96,7 @@ func (s *APIServer) setupRoutes() {
 		protected.GET("/access-requests", s.listAccessRequests)
 		protected.GET("/access-requests/pending", s.listPendingAccessRequests)
 		protected.POST("/access-requests", s.createAccessRequest)
+		protected.GET("/access-requests/:id", s.getAccessRequest)
 
 		// Session management
 		protected.GET("/sessions", s.listSessions)
@@ -143,6 +146,89 @@ type RegisterAgentResponse struct {
 	UserID    string `json:"user_id"`
 	MachineID string `json:"machine_id"`
 	Message   string `json:"message"`
+}
+
+// LoginWithKeyRequest represents an API key login request
+type LoginWithKeyRequest struct {
+	Username  string `json:"username" binding:"required"`
+	PublicKey string `json:"public_key" binding:"required"`
+}
+
+// LoginWithKeyResponse represents an API key login response
+type LoginWithKeyResponse struct {
+	APIKey    string     `json:"api_key"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	User      struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+		IsAdmin  bool   `json:"is_admin"`
+	} `json:"user"`
+}
+
+func normalizeKey(k string) string {
+	parts := strings.Fields(strings.TrimSpace(k))
+	if len(parts) >= 2 {
+		// Returns "ssh-rsa <key-data>"
+		return parts[0] + " " + parts[1]
+	}
+	return k
+}
+
+// loginWithKey handles API key-based authentication for client tools
+// This is specifically for osh/ocp/oadmin tools, not web sessions
+func (s *APIServer) loginWithKey(c *gin.Context) {
+	var req LoginWithKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Get user by username
+	user, err := s.store.GetUserByUsername(ctx, req.Username)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	// Verify the public key matches what's in the database
+	// The public key should be in OpenSSH format
+	if normalizeKey(user.PublicKey) != normalizeKey(req.PublicKey) {
+		s.logger.Info("user %s", user.PublicKey)
+		s.logger.Info("req %s", req.PublicKey)
+		s.logger.Warn("Public key mismatch for user: %s", req.Username)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	// Generate API key with 24 hour expiration for CLI tools
+	expiresAt := time.Now().Add(24 * time.Hour)
+	apiKey, rawKey, err := s.authService.GenerateAPIKey(
+		ctx,
+		user.ID,
+		"CLI Authentication",
+		&expiresAt,
+	)
+	if err != nil {
+		s.logger.Error("Failed to create API key: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create API key"})
+		return
+	}
+
+	s.logger.Info("API key created for user: %s (ID: %s)", user.Username, user.ID)
+
+	response := LoginWithKeyResponse{
+		APIKey:    rawKey, // Return the raw key, not the hash
+		ExpiresAt: apiKey.ExpiresAt,
+	}
+	response.User.ID = user.ID
+	response.User.Username = user.Username
+	response.User.Email = user.Email
+	response.User.IsAdmin = user.IsAdmin
+
+	c.JSON(http.StatusOK, response)
 }
 
 // registerAgent handles agent registration
@@ -275,6 +361,25 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 		accessReq.ID, userID, req.MachineID)
 
 	c.JSON(http.StatusCreated, accessReq)
+}
+
+// getAccessRequest gets a specific access request by ID
+func (s *APIServer) getAccessRequest(c *gin.Context) {
+	requestID := c.Param("id")
+	ctx := context.Background()
+
+	request, err := s.store.GetAccessRequest(ctx, requestID)
+	if err != nil {
+		if err == database.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "access request not found"})
+			return
+		}
+		s.logger.Error("Failed to get access request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get access request"})
+		return
+	}
+
+	c.JSON(http.StatusOK, request)
 }
 
 // ApproveAccessRequestRequest represents an approval request

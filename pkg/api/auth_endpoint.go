@@ -171,8 +171,8 @@ func (s *APIServer) login(c *gin.Context) {
 		return
 	}
 
-	// Create session TTL 60m
-	session, rawToken, err := s.authService.CreateSession(
+	// Create session TTL 60m for web clients
+	session, _, err := s.authService.CreateSession(
 		ctx,
 		user.ID,
 		c.ClientIP(),
@@ -185,8 +185,22 @@ func (s *APIServer) login(c *gin.Context) {
 		return
 	}
 
+	// Create an API key for CLI tools TTL 24h
+	expiresAt := time.Now().Add(24 * time.Hour)
+	_, rawKey, err := s.authService.GenerateAPIKey(
+		ctx,
+		user.ID,
+		"CLI Authentication",
+		&expiresAt,
+	)
+	if err != nil {
+		s.logger.Error("Failed to create API key: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create API key"})
+		return
+	}
+
 	response := LoginResponse{
-		SessionToken: rawToken,
+		SessionToken: rawKey,
 		ExpiresAt:    session.ExpiresAt,
 	}
 	response.User.ID = user.ID

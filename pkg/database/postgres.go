@@ -546,12 +546,15 @@ func (s *PostgresStore) EndSession(ctx context.Context, id string, endTime time.
 
 // CreateAccessRequest creates a new access request
 func (s *PostgresStore) CreateAccessRequest(ctx context.Context, request *common.AccessRequest) error {
-	query := `INSERT INTO access_requests (id, user_id, machine_id, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	query := `INSERT INTO access_requests (id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+
+	remoteUsers := pq.Array(request.RemoteUsers)
 
 	_, err := s.db.ExecContext(ctx, query,
-		request.ID, request.UserID, request.MachineID, request.Reason,
-		request.Duration, request.Status, request.RequestedAt,
+		request.ID, request.UserID, request.MachineID,
+		remoteUsers,
+		request.Reason, request.Duration, request.Status, request.RequestedAt,
 		request.ReviewedAt, request.ReviewedBy, request.ExpiresAt)
 
 	if err != nil {
@@ -562,12 +565,12 @@ func (s *PostgresStore) CreateAccessRequest(ctx context.Context, request *common
 
 // GetAccessRequest retrieves an access request by ID
 func (s *PostgresStore) GetAccessRequest(ctx context.Context, id string) (*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id,remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE id = $1`
-
+	var remoteUsers pq.StringArray
 	request := &common.AccessRequest{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&request.ID, &request.UserID, &request.MachineID, &request.Reason,
+		&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
 		&request.Duration, &request.Status, &request.RequestedAt,
 		&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt)
 
@@ -577,6 +580,7 @@ func (s *PostgresStore) GetAccessRequest(ctx context.Context, id string) (*commo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get access request: %w", err)
 	}
+	request.RemoteUsers = []string(remoteUsers)
 	return request, nil
 }
 
@@ -602,7 +606,7 @@ func (s *PostgresStore) UpdateAccessRequest(ctx context.Context, request *common
 
 // ListPendingAccessRequests lists all pending access requests
 func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id,remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE status = 'pending' ORDER BY requested_at DESC`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -612,13 +616,15 @@ func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*commo
 	defer rows.Close()
 
 	var requests []*common.AccessRequest
+	var remoteUsers pq.StringArray
 	for rows.Next() {
 		request := &common.AccessRequest{}
-		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &request.Reason,
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan access request: %w", err)
 		}
+		request.RemoteUsers = []string(remoteUsers)
 		requests = append(requests, request)
 	}
 
@@ -627,7 +633,7 @@ func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*commo
 
 // ListUserAccessRequests lists access requests for a specific user
 func (s *PostgresStore) ListUserAccessRequests(ctx context.Context, userID string, limit, offset int) ([]*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE user_id = $1 ORDER BY requested_at DESC LIMIT $2 OFFSET $3`
 
 	rows, err := s.db.QueryContext(ctx, query, userID, limit, offset)
@@ -639,11 +645,13 @@ func (s *PostgresStore) ListUserAccessRequests(ctx context.Context, userID strin
 	var requests []*common.AccessRequest
 	for rows.Next() {
 		request := &common.AccessRequest{}
-		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &request.Reason,
+		var remoteUsers pq.StringArray
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan access request: %w", err)
 		}
+		request.RemoteUsers = []string(remoteUsers)
 		requests = append(requests, request)
 	}
 

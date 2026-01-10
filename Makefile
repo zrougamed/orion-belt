@@ -10,7 +10,7 @@ GO=go
 GOFLAGS=-v
 
 # Build all components
-build: build-server build-client build-agent
+build: build-server build-client build-admin build-agent
 
 # Build server
 build-server:
@@ -24,6 +24,12 @@ build-client:
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/osh ./cmd/osh
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/ocp ./cmd/ocp
+
+# Build admin
+build-admin:
+	@echo "Building admin..."
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/oadmin ./cmd/oadmin
 
 # Build agent
 build-agent:

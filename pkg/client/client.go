@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"golang.org/x/crypto/ssh"
@@ -155,24 +156,183 @@ func (w *rawModeWriter) Write(p []byte) (n int, err error) {
 
 // RequestAccess requests temporary access to a machine
 func (c *SSHClient) RequestAccess(target, reason string, duration int) error {
+	// Parse target for machine name
+	targetMachine := target
+	var remoteUsers []string
+
+	if strings.Contains(target, "@") {
+		parts := strings.SplitN(target, "@", 2)
+		if len(parts) == 2 {
+			remoteUsers = []string{parts[0]}
+			targetMachine = parts[1]
+		}
+	}
+
+	if len(remoteUsers) == 0 {
+		defaultUser := os.Getenv("USER")
+		if defaultUser == "" {
+			defaultUser = "root"
+		}
+		remoteUsers = []string{defaultUser}
+	}
+
 	c.logger.Info("Requesting access to %s for %d seconds", target, duration)
 
-	// TODO: Implement API call to request access
+	// Get the API client
+	apiClient, err := c.getAPIClient()
+	if err != nil {
+		return fmt.Errorf("failed to get API client: %w", err)
+	}
+
+	// Get machine ID by name
+	machine, err := apiClient.GetMachineByName(targetMachine)
+	if err != nil {
+		return fmt.Errorf("machine not found: %w", err)
+	}
+
+	// Create access request
+	request := map[string]interface{}{
+		"machine_id": machine.ID,
+		"reason":     reason,
+		"duration":   duration,
+	}
+	if len(remoteUsers) > 0 {
+		request["remote_users"] = remoteUsers
+	}
+
+	accessReq, err := apiClient.CreateAccessRequest(request)
+	if err != nil {
+		return fmt.Errorf("failed to create access request: %w", err)
+	}
 
 	fmt.Printf("Access request submitted for %s\n", target)
+	fmt.Printf("Request ID: %s\n", accessReq.ID)
 	fmt.Printf("Reason: %s\n", reason)
 	fmt.Printf("Duration: %d seconds\n", duration)
-	fmt.Println("Waiting for admin approval...")
+	fmt.Println("\nWaiting for admin approval...")
 
-	return nil
+	// Poll for approval
+	return c.pollForApproval(apiClient, accessReq.ID)
+}
+
+// pollForApproval polls the API for access request approval
+func (c *SSHClient) pollForApproval(apiClient *APIClient, requestID string) error {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.After(5 * time.Minute)
+
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("approval timeout - request may still be pending")
+		case <-ticker.C:
+			request, err := apiClient.GetAccessRequest(requestID)
+			if err != nil {
+				c.logger.Error("Failed to check request status: %v", err)
+				continue
+			}
+
+			switch request.Status {
+			case "approved":
+				fmt.Printf("\n✓ Access approved! You can now connect to the machine.\n")
+				if request.ExpiresAt != nil {
+					fmt.Printf("Access expires at: %s\n", request.ExpiresAt.Format(time.RFC3339))
+				}
+				return nil
+			case "rejected":
+				return fmt.Errorf("access request was rejected")
+			case "pending":
+				fmt.Print(".")
+			}
+		}
+	}
 }
 
 // ListMachines lists available machines
 func (c *SSHClient) ListMachines() error {
-	// TODO: Implement API call to list machines
+	apiClient, err := c.getAPIClient()
+	if err != nil {
+		return fmt.Errorf("failed to get API client: %w", err)
+	}
+
+	machines, err := apiClient.ListMachines()
+	if err != nil {
+		return fmt.Errorf("failed to list machines: %w", err)
+	}
+
+	if len(machines) == 0 {
+		fmt.Println("No machines available.")
+		return nil
+	}
+
 	fmt.Println("Available machines:")
-	fmt.Println("(API implementation needed)")
+	fmt.Println()
+	fmt.Printf("%-20s %-30s %-10s %-10s\n", "NAME", "HOSTNAME", "STATUS", "LAST SEEN")
+	fmt.Println(strings.Repeat("-", 75))
+
+	for _, machine := range machines {
+		status := "offline"
+		if machine.IsActive {
+			status = "online"
+		}
+
+		lastSeen := "never"
+		if machine.LastSeenAt != nil {
+			lastSeen = formatDuration(time.Since(*machine.LastSeenAt))
+		}
+
+		fmt.Printf("%-20s %-30s %-10s %-10s\n",
+			machine.Name,
+			fmt.Sprintf("%s:%d", machine.Hostname, machine.Port),
+			status,
+			lastSeen)
+	}
+
 	return nil
+}
+
+// formatDuration formats a duration in human-readable form
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "just now"
+	} else if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	} else {
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+// getAPIClient creates an API client for making REST requests
+func (c *SSHClient) getAPIClient() (*APIClient, error) {
+	// Get API endpoint from config, default to port 8080
+	apiEndpoint := c.config.Server.APIEndpoint
+	if apiEndpoint == "" {
+		apiEndpoint = fmt.Sprintf("http://%s:8080", c.config.Server.Host)
+	}
+
+	// Load SSH key for authentication
+	keyData, err := os.ReadFile(c.config.Auth.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH key: %w", err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(keyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	username := c.config.Auth.User
+	if username == "" {
+		username = os.Getenv("USER")
+		if username == "" {
+			return nil, fmt.Errorf("username not configured")
+		}
+	}
+
+	return NewAPIClient(apiEndpoint, username, signer, c.logger)
 }
 
 // SCPClient represents an Orion-Belt SCP client
