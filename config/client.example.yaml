@@ -1,7 +1,0 @@
-server:
-  host: "orion-belt-server.example.com"
-  port: 2222
-  api_endpoint: "https://orion-belt-server.example.com/api"
-
-auth:
-  key_file: "~/.ssh/id_rsa"

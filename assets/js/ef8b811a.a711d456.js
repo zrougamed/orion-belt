@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkorion_belt_docs=globalThis.webpackChunkorion_belt_docs||[]).push([[8947],{56600(o){o.exports=JSON.parse('{"authors":[{"name":"Mohamed Zrouga","title":"Creator of Orion-Belt","url":"https://github.com/zrougamed","imageURL":"https://github.com/zrougamed.png","key":"mohamed","page":null,"count":4}]}')}}]);
