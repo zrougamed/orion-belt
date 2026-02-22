@@ -1,4 +1,6 @@
-.PHONY: build build-server build-client build-agent test clean install  plugins
+.PHONY: build build-server build-client build-agent test clean install plugins \
+        docker-build docker-build-server docker-build-agent docker-build-client \
+        docker-push docker-up docker-down docker-logs
 
 # Build variables
 BINARY_NAME=orion-belt
@@ -8,6 +10,21 @@ BUILD_DIR_PLUGINS=bin/plugins
 PLUGINS := audit-logger notification
 GO=go
 GOFLAGS=-v
+
+# Docker variables
+DOCKER_REGISTRY ?=
+DOCKER_IMAGE ?= orion-belt
+DOCKER_TAG ?= latest
+DOCKER_DIR=docker
+DOCKERFILE=$(DOCKER_DIR)/Dockerfile
+DOCKERFILE_AGENT=$(DOCKER_DIR)/Dockerfile.agent
+
+# Helper to prefix image name with registry if set
+ifdef DOCKER_REGISTRY
+  IMAGE_PREFIX=$(DOCKER_REGISTRY)/$(DOCKER_IMAGE)
+else
+  IMAGE_PREFIX=$(DOCKER_IMAGE)
+endif
 
 # Build all components
 build: build-server build-client build-agent
@@ -76,7 +93,6 @@ update-deps:
 	$(GO) get -u ./...
 	$(GO) mod tidy
 
-
 # plugins section
 plugins: $(BUILD_DIR_PLUGINS)
 	@echo "Building plugins..."
@@ -88,3 +104,28 @@ plugins: $(BUILD_DIR_PLUGINS)
 
 $(BUILD_DIR_PLUGINS):
 	@mkdir -p $(BUILD_DIR_PLUGINS)
+
+# ────────────────────────────────────────────────────────────
+# Docker targets
+# ────────────────────────────────────────────────────────────
+
+# Build server image
+docker-build-server:
+	@echo "Building server image: $(IMAGE_PREFIX)-server:$(DOCKER_TAG)..."
+	docker build \
+		--file $(DOCKERFILE) \
+		--tag $(IMAGE_PREFIX)-server:$(DOCKER_TAG) \
+		.
+
+# Start the full stack via Docker Compose
+docker-up:
+	docker compose -f $(DOCKER_DIR)/docker-compose.yml up -d
+	@echo "Stack is up. Server SSH: localhost:2222  API: localhost:8080"
+
+# Stop the stack
+docker-down:
+	docker compose -f $(DOCKER_DIR)/docker-compose.yml down
+
+# Tail logs (optionally filter: make docker-logs SERVICE=server)
+docker-logs:
+	docker compose -f $(DOCKER_DIR)/docker-compose.yml logs -f $(SERVICE)
