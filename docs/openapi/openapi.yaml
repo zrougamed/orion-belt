@@ -885,17 +885,40 @@ paths:
     get:
       tags: [Sessions]
       summary: Download / view session recording
+      description: |
+        Returns the session recording file.
+
+        - **Timed cast (v2)** — `Content-Type: application/x-asciicast` when
+          `recording_path` ends in `.cast` (newline-delimited JSON: header + timed
+          `o`/`r` events). PTY **output only** (keystrokes are not duplicated).
+        - **Legacy text** — `text/plain` for older `.txt` recordings.
+
+        Encrypted recordings are decrypted server-side when `recording.encryption_key` is set.
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
         "200":
-          description: Recording body (text/plain)
+          description: Recording body (cast or plain text)
           content:
+            application/x-asciicast:
+              schema:
+                type: string
+                description: Asciinema-compatible cast v2
             text/plain:
               schema:
                 type: string
+                description: Legacy plaintext recording
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Session or recording file missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                no_recording:
+                  value: { error: "no recording for this session" }
+                missing_file:
+                  value: { error: "recording file missing on server" }
 
   /api/v1/audit-logs:
     get:
@@ -946,6 +969,46 @@ paths:
                     type: array
                     items: { type: string }
 
+  /api/v1/admin/agents/install-script:
+    post:
+      tags: [Agents]
+      summary: Register agent and generate OS install script
+      description: |
+        Admin/operator helper used by the **Add agent** UI.
+
+        1. Generates an Ed25519 key pair
+        2. Registers the agent (user + machine) with the public key
+        3. Returns a root shell script that downloads the package/binary for the
+           selected OS, writes `/etc/orion-belt/agent.yaml` + private key, and
+           starts `orion-belt-agent`
+
+        The private key is embedded in the script — treat it as a secret.
+        `package_base_url` must serve agent artifacts (e.g. GitHub Releases,
+        apt/rpm mirror, or lab `:8765` serving `dist/`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentInstallScriptRequest"
+      responses:
+        "201":
+          description: Agent registered; install script ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInstallScriptResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Agent name already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/admin/agents/{machine_id}/command:
     post:
       tags: [Agents]
@@ -990,7 +1053,11 @@ paths:
       summary: Web terminal WebSocket
       description: |
         Upgrade to WebSocket after auth + ReBAC check.
-        Creates an audited session with `source=web` and records I/O.
+        Creates an audited session with `source=web` and records **PTY output**
+        as a timed `.cast` file (keystrokes are not recorded separately).
+
+        On client disconnect the agent channel is closed so the session is marked
+        completed and the recording is flushed.
 
         **Client → server:** binary/text PTY input; JSON resize `{"type":"resize","cols":N,"rows":N}`
         **Server → client:** binary PTY output; text `error: …` on failure
@@ -1338,6 +1405,61 @@ components:
         user_id: { type: string }
         machine_id: { type: string }
         message: { type: string }
+    AgentInstallScriptRequest:
+      type: object
+      required: [name, os, gateway_host, package_base_url]
+      properties:
+        name:
+          type: string
+          description: Agent / machine name (SSH username toward the gateway)
+          example: web-01
+        hostname:
+          type: string
+          description: Defaults to name when omitted
+        port:
+          type: integer
+          description: SSH port on the agent host (metadata)
+          default: 22
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        os:
+          type: string
+          description: Target OS packaging path
+          enum: [debian, ubuntu, rhel, rocky, centos, fedora, suse, opensuse, alpine, linux, generic]
+          example: debian
+        gateway_host:
+          type: string
+          description: Orion gateway hostname/IP (agent.yaml server.host)
+          example: orion.example.com
+        gateway_port:
+          type: integer
+          description: Gateway reverse-SSH port
+          default: 2222
+        package_base_url:
+          type: string
+          description: Base URL that serves orion-belt-agent packages/binary
+          example: https://packages.example.com
+        version:
+          type: string
+          description: Package version string (without leading v). Defaults to server build version.
+          example: "0.5.0"
+    AgentInstallScriptResponse:
+      type: object
+      properties:
+        script:
+          type: string
+          description: Root bash install script (embeds private key)
+        machine_id: { type: string }
+        user_id: { type: string }
+        agent_name: { type: string }
+        public_key:
+          type: string
+          description: OpenSSH authorized_keys line registered on the server
+        filename:
+          type: string
+          example: orion-belt-install-web-01.sh
+        message: { type: string }
     RegisterClientRequest:
       type: object
       required: [username, email, public_key]
@@ -1506,7 +1628,11 @@ components:
           type: string
           format: date-time
           nullable: true
-        recording_path: { type: string }
+        recording_path:
+          type: string
+          description: |
+            On-disk path. New sessions use `{storage}/{id}.cast` (timed cast v2).
+            Legacy sessions may still reference `.txt`.
         status:
           type: string
           enum: [active, completed, terminated]

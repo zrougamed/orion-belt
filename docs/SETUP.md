@@ -47,12 +47,27 @@ orion-belt-server -c /etc/orion-belt/server.yaml setup
 
 ## 3. Add agents
 
+### Recommended — UI install script
+
+1. Sign in as **admin** or **operator**.
+2. Open **Add agent** in the console.
+3. Choose the target OS (Debian/Ubuntu, RHEL/Rocky, openSUSE, Alpine, or generic Linux).
+4. Set agent name, gateway host (SSH port **2222**), and **package base URL** (where `orion-belt-agent` packages/binary are hosted — GitHub Releases, your apt/rpm/apk mirror, or a lab HTTP root serving `dist/`).
+5. **Generate install script** — the server registers the agent and returns a root shell script that embeds the agent private key, downloads the package, writes `/etc/orion-belt/agent.yaml`, and starts the service.
+6. Copy or download the script and run it on the target host as root.
+
+API equivalent: `POST /api/v1/admin/agents/install-script` (see OpenAPI).
+
+### Manual
+
 On each target host:
 
 1. Install `orion-belt-agent` (see [PACKAGING.md](PACKAGING.md) for apt/dnf/apk/Arch).
 2. Edit `/etc/orion-belt/agent.yaml` — gateway host and port **2222**.
-3. `systemctl enable --now orion-belt-agent`
-4. Register the agent (UI **Agents**, or `POST /api/v1/public/register/agent`).
+3. Generate a key (`ssh-keygen -t ed25519 -f /etc/orion-belt/agent_key -N ""`) and register the **public** key (`POST /api/v1/public/register/agent` or CLI).
+4. `systemctl enable --now orion-belt-agent`
+
+Connected tunnels appear under **Agents**.
 
 ## 4. Users and grants
 
@@ -73,12 +88,12 @@ OpenSSH through the gateway:
 ssh -i alice.pem -p 2222 alice+web-01@gateway-host
 ```
 
-Web **Terminal** in the UI also creates auditable sessions with recordings.
+Web **Terminal** in the UI also creates auditable sessions with timed cast recordings (PTY output).
 
 Direct SSH to an agent host **bypasses** Orion (no recording). Point users at the gateway.
 
 ## UI checklist
 
-Admins/operators see **Setup guide** in the nav and a dashboard banner until agents are connected.
+Admins/operators see **Setup guide** and **Add agent** in the nav, plus a dashboard banner until agents are connected.
 
-Web **Terminal** sessions are recorded (`source=web`) and show under **Sessions** with playback. Full UI requirements: [SRS-UI.md](SRS-UI.md).
+Web **Terminal** sessions are recorded (`source=web`, `.cast`) and show under **Sessions** with xterm playback (play/pause/seek). Full UI requirements: [SRS-UI.md](SRS-UI.md).

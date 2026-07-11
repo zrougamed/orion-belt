@@ -108,7 +108,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 * **Agent Command Interface**
   - [x] Agent control commands: `orion:ping`, `orion:health`, `orion:status`, `orion:info`
-  - [x] Admin API: `GET /api/v1/admin/agents/connected`, `POST /api/v1/admin/agents/:machine_id/command`
+  - [x] Admin API: `GET /api/v1/admin/agents/connected`, `POST /api/v1/admin/agents/:machine_id/command`, `POST /api/v1/admin/agents/install-script`
   - [ ] Richer remote management (reload config, drain, update)
 
 * **Observability**
@@ -158,6 +158,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [x] Machine CRUD in UI
 - [x] Session recording playback + audit trail + user management in `/ui`
 - [x] Web terminal sessions recorded with `source=web`
+- [x] Timed cast (`.cast`) recordings + xterm playback; UI **Add agent** install scripts
 - [x] Build version on binaries, `/health`, `/api/v1/version`, and UI
 - [x] GPG signing for release checksums + APT/RPM repos (`make packaging-key`, `make repos`)
 
@@ -218,6 +219,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Config validation improvements
 - [x] Complete remaining machine CRUD admin stubs
 - [x] Session recording playback + audit trail + user management in `/ui`
+- [x] Timed cast recordings + **Add agent** OS install scripts (`POST /admin/agents/install-script`)
 
 **Documentation**
 

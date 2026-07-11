@@ -472,6 +472,40 @@
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
     }
+    .os-picker {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.45rem;
+    }
+    button.os-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      text-align: left;
+      padding: 0.85rem 0.95rem;
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+    }
+    button.os-card:hover {
+      background: var(--bg-hover);
+    }
+    button.os-card.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    button.os-card strong {
+      font-weight: 600;
+    }
+    button.os-card span {
+      font-size: 0.78rem;
+    }
     .form-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -654,6 +688,7 @@
       { id: "sessions", label: "Sessions", ico: "◎" },
       { id: "users", label: "Users", ico: "○" },
       { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "add-agent", label: "Add agent", ico: "+" },
       { id: "audit", label: "Audit", ico: "≡" },
       { id: "security", label: "Security", ico: "✦" },
     ],
@@ -667,6 +702,7 @@
       { id: "sessions", label: "Sessions", ico: "◎" },
       { id: "users", label: "Users", ico: "○" },
       { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "add-agent", label: "Add agent", ico: "+" },
       { id: "audit", label: "Audit", ico: "≡" },
       { id: "security", label: "Security", ico: "✦" },
     ],
@@ -705,9 +741,10 @@
 
   function roleOf(user) {
     if (!user) return "user";
-    if (user.role) return user.role;
+    const r = user.role || "";
+    if (r === "admin" || r === "operator" || r === "auditor") return r;
     if (user.is_admin) return "admin";
-    return "user";
+    return r || "user";
   }
 
   function canApprove() {
@@ -1029,6 +1066,7 @@
         sessions: renderSessions,
         users: renderUsers,
         agents: renderAgents,
+        "add-agent": renderAddAgent,
         audit: renderAudit,
         security: renderSecurity,
       };
@@ -2170,6 +2208,175 @@
         </tr>`).join("") || `<tr><td colspan="3" class="muted">No machines</td></tr>`}</tbody></table>
       </div>`;
     document.getElementById("agentRefresh").onclick = () => render();
+  }
+
+  /* ── Add agent (OS install script) ── */
+  async function renderAddAgent(root) {
+    let ver = (state.version && (state.version.version || state.version.display)) || "0.0.0";
+    if (String(ver).startsWith("v")) ver = String(ver).slice(1);
+    if (ver === "dev") ver = "0.0.0";
+    const defaultGw = window.location.hostname || "127.0.0.1";
+    const defaultPkg = window.location.origin.replace(/:\d+$/, "") + ":8765";
+
+    const osOptions = [
+      { id: "debian", label: "Debian / Ubuntu", hint: "deb package, systemd" },
+      { id: "rhel", label: "RHEL / Rocky / Fedora", hint: "rpm package, systemd" },
+      { id: "suse", label: "openSUSE", hint: "rpm via zypper, systemd" },
+      { id: "alpine", label: "Alpine", hint: "apk package (or binary fallback)" },
+      { id: "linux", label: "Generic Linux", hint: "raw binary + systemd/nohup" },
+    ];
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Add agent</h1>
+          <p>Pick the target OS, generate an install script with credentials, then run it as root on the host.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Target</h3>
+        <div class="form-grid">
+          <div>
+            <label class="field">Agent name</label>
+            <input id="aaName" placeholder="web-01" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field">Hostname</label>
+            <input id="aaHost" placeholder="defaults to agent name" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field">Host SSH port</label>
+            <input id="aaPort" type="number" value="22" min="1" max="65535" />
+          </div>
+          <div>
+            <label class="field">Environment tag</label>
+            <input id="aaEnv" value="production" />
+          </div>
+        </div>
+        <label class="field" style="margin-top:0.85rem">Operating system</label>
+        <div class="os-picker" id="aaOsPicker">
+          ${osOptions.map((o, i) => `
+            <button type="button" class="os-card ${i === 0 ? "active" : ""}" data-os="${esc(o.id)}">
+              <strong>${esc(o.label)}</strong>
+              <span class="muted">${esc(o.hint)}</span>
+            </button>`).join("")}
+        </div>
+      </div>
+      <div class="card">
+        <h3>Connection &amp; packages</h3>
+        <div class="form-grid">
+          <div>
+            <label class="field">Gateway host</label>
+            <input id="aaGw" value="${esc(defaultGw)}" />
+          </div>
+          <div>
+            <label class="field">Gateway SSH port</label>
+            <input id="aaGwPort" type="number" value="2222" min="1" max="65535" />
+          </div>
+          <div>
+            <label class="field">Package base URL</label>
+            <input id="aaPkg" value="${esc(defaultPkg)}" placeholder="https://packages.example.com" />
+          </div>
+          <div>
+            <label class="field">Package version</label>
+            <input id="aaVer" value="${esc(ver)}" />
+          </div>
+        </div>
+        <p class="muted" style="margin:0.75rem 0 0">
+          Packages are downloaded from the base URL
+          (<span class="mono">orion-belt-agent_&lt;ver&gt;_*.deb|rpm|apk</span>
+          or <span class="mono">orion-belt-agent</span> binary. Generating the script also registers the agent on the server.
+        </p>
+        <div class="row" style="margin-top:1rem">
+          <button type="button" class="btn" id="aaGen">Generate install script</button>
+        </div>
+        <div id="aaErr" class="err" style="display:none;margin-top:0.75rem"></div>
+      </div>
+      <div class="card" id="aaOutCard" style="display:none">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h3 style="margin:0">Install script</h3>
+          <div class="row">
+            <button type="button" class="btn secondary sm" id="aaCopy">Copy</button>
+            <button type="button" class="btn secondary sm" id="aaDl">Download</button>
+          </div>
+        </div>
+        <p class="muted" id="aaMsg" style="margin:0.5rem 0"></p>
+        <pre class="code" id="aaScript" style="max-height:420px"></pre>
+        <p class="muted" style="margin:0.75rem 0 0">
+          On the target host: <span class="mono">sudo bash orion-belt-install-&lt;name&gt;.sh</span>
+        </p>
+      </div>`;
+
+    let selectedOs = "debian";
+    root.querySelectorAll("[data-os]").forEach((btn) => {
+      btn.onclick = () => {
+        selectedOs = btn.dataset.os;
+        root.querySelectorAll("[data-os]").forEach((b) => b.classList.toggle("active", b === btn));
+      };
+    });
+
+    let lastScript = "";
+    let lastFilename = "orion-belt-install-agent.sh";
+
+    document.getElementById("aaGen").onclick = async () => {
+      const errEl = document.getElementById("aaErr");
+      errEl.style.display = "none";
+      const name = document.getElementById("aaName").value.trim();
+      if (!name) {
+        errEl.textContent = "Agent name is required";
+        errEl.style.display = "block";
+        return;
+      }
+      const body = {
+        name,
+        hostname: document.getElementById("aaHost").value.trim() || name,
+        port: Number(document.getElementById("aaPort").value) || 22,
+        os: selectedOs,
+        gateway_host: document.getElementById("aaGw").value.trim(),
+        gateway_port: Number(document.getElementById("aaGwPort").value) || 2222,
+        package_base_url: document.getElementById("aaPkg").value.trim(),
+        version: document.getElementById("aaVer").value.trim(),
+        tags: {
+          os: selectedOs,
+          environment: document.getElementById("aaEnv").value.trim() || "production",
+        },
+      };
+      try {
+        document.getElementById("aaGen").disabled = true;
+        const res = await api("/admin/agents/install-script", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        lastScript = res.script || "";
+        lastFilename = res.filename || ("orion-belt-install-" + name + ".sh");
+        document.getElementById("aaOutCard").style.display = "";
+        document.getElementById("aaMsg").textContent = res.message || "Script ready.";
+        document.getElementById("aaScript").textContent = lastScript;
+        toast("Agent registered — run the script on the host");
+      } catch (e) {
+        errEl.textContent = e.message || String(e);
+        errEl.style.display = "block";
+      } finally {
+        document.getElementById("aaGen").disabled = false;
+      }
+    };
+
+    document.getElementById("aaCopy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(lastScript);
+        toast("Script copied");
+      } catch (_) {
+        toast("Copy failed — select the script manually");
+      }
+    };
+    document.getElementById("aaDl").onclick = () => {
+      const blob = new Blob([lastScript], { type: "text/x-shellscript" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = lastFilename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
   }
 
   /* ── Audit ── */

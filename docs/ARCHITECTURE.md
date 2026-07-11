@@ -58,13 +58,13 @@ Clients authenticate with SSH public keys (including FIDO `sk-*` keys). Gateway 
 4. Record I/O; enforce remote-user ACL  
 
 ### 4. Session Recording
-Recordings are buffered then written under `recording.storage_path`, optionally AES-GCM encrypted, with retention cleanup.
+PTY **output** is recorded as a timed cast (asciinema-compatible v2, `.cast` under `recording.storage_path`). Recordings may be AES-GCM encrypted at rest, with retention cleanup for `.cast` / legacy `.txt` / `.rec` files. The web console replays casts in xterm (play/pause/seek).
 
 ### 5. Access Request Workflow
 Users request temporary access; admins/operators approve via API, `oadmin`, or `/ui`. Grants are time-limited.
 
 ### 6. Web Console
-Embedded SPA at `/ui` (roles: admin, operator, auditor, user) with approvals, live terminal (WebSocket, recorded as `source=web`), file browser, sessions playback, audit trail, user/machine management, and build version display. See [SRS-UI.md](SRS-UI.md).
+Embedded SPA at `/ui` (roles: admin, operator, auditor, user) with approvals, live terminal (WebSocket, recorded as `source=web`), file browser, timed session playback, **Add agent** install scripts, audit trail, user/machine management, and build version display. See [SRS-UI.md](SRS-UI.md).
 
 ## Key Features
 

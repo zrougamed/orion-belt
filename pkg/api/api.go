@@ -236,6 +236,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Agent remote management
 		admin.GET("/agents/connected", s.listConnectedAgents)
 		admin.POST("/agents/:machine_id/command", s.sendAgentCommand)
+		admin.POST("/agents/install-script", s.generateAgentInstallScript)
 	}
 }
 

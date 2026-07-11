@@ -25,7 +25,8 @@ This SRS documents **what is implemented now**, not a future redesign. It is the
 - High-contrast, brand-led dark console (Instrument Sans + JetBrains Mono)
 - First-class login with SSH pubkey, optional TOTP, and WebAuthn/FIDO2
 - Live PTY terminal over WebSocket with session recording (`source=web`)
-- Session playback, audit log browser, user/machine admin CRUD
+- Timed cast session playback (xterm), audit log browser, user/machine admin CRUD
+- **Add agent** install-script generator (OS-specific)
 - Visible **build version** so operators can confirm shipped features
 
 ### Non-goals (deferred)
@@ -42,12 +43,12 @@ This SRS documents **what is implemented now**, not a future redesign. It is the
 
 | Role | Nav access (implemented) | Notes |
 |------|--------------------------|-------|
-| **admin** | Dashboard, Setup, Requests, Machines, Terminal, Files, Sessions, Users, Agents, Audit, Security | Full console |
+| **admin** | Dashboard, Setup, Requests, Machines, Terminal, Files, Sessions, Users, Agents, Add agent, Audit, Security | Full console |
 | **operator** | Same as admin | Approvals + admin API allowed |
 | **auditor** | Dashboard, Sessions, Users (read), Audit, Security | No terminal/files/agents/setup |
 | **user** | Machines, Terminal, Files, Sessions, Requests, Audit, Security | Self-service access + own security |
 
-Role is taken from `user.role`, falling back to `is_admin → admin`, else `user`.
+Role uses `EffectiveRole`: explicit `admin`/`operator`/`auditor`, else `is_admin → admin`, else `role`/`user`. A stale `role=user` with `is_admin=true` is treated as admin.
 
 ---
 
@@ -66,9 +67,10 @@ Role is taken from `user.role`, falling back to `is_admin → admin`, else `user
         ├── Machines
         ├── Terminal
         ├── Files
-        ├── Sessions (+ playback)
+        ├── Sessions (+ timed cast playback)
         ├── Users
         ├── Agents
+        ├── Add agent (OS install script)
         ├── Audit
         └── Security (MFA | WebAuthn | SSH keys)
 ```
@@ -209,9 +211,11 @@ Role is taken from `user.role`, falling back to `is_admin → admin`, else `user
 |----|-------------|--------|
 | FR-SESS-01 | List sessions with filters all / active / completed | Done |
 | FR-SESS-02 | Columns: id, user, machine, remote, **source**, times, status | Done |
-| FR-SESS-03 | Playback panel loads `/sessions/:id/content` | Done |
+| FR-SESS-03 | Playback loads `/sessions/:id/content` | Done |
 | FR-SESS-04 | Download recording from playback | Done |
 | FR-SESS-05 | Distinguish `ssh` vs `web` source via badge | Done |
+| FR-SESS-06 | Timed cast (`.cast`) replay in xterm with play/pause/seek/speed | Done |
+| FR-SESS-07 | Legacy `.txt` recordings still open as plain text | Done |
 
 ### 6.10 Users — FR-USER
 
@@ -228,10 +232,12 @@ Role is taken from `user.role`, falling back to `is_admin → admin`, else `user
 | ID | Requirement | Status |
 |----|-------------|--------|
 | FR-AGENT-01 | Show connected agents | Done |
-| FR-AGENT-02 | Register agent form (public register) | Done |
+| FR-AGENT-02 | Register agent (public register / install script) | Done |
 | FR-AGENT-03 | Send control command (e.g. `orion:info`) and show output | Done |
+| FR-AGENT-04 | **Add agent** nav — OS picker + generate install script | Done |
+| FR-AGENT-05 | Script embeds key, downloads package, joins gateway | Done |
 
-**APIs:** `/admin/agents/*`, `/public/register/agent`
+**APIs:** `/admin/agents/*` (incl. `POST /admin/agents/install-script`), `/public/register/agent`
 
 ### 6.12 Audit — FR-AUDIT
 
@@ -283,12 +289,13 @@ Role is taken from `user.role`, falling back to `is_admin → admin`, else `user
 1. Fresh load shows **login brand + version**.
 2. Pubkey login lands on role-correct default view; version visible in bar/footer.
 3. WebAuthn login works when credentials registered.
-4. Open **Terminal** → connect → type → disconnect → **Sessions** shows `web` row → **Playback** shows I/O.
-5. **Audit** contains `session.web_terminal.start` / `.end`.
-6. Admin creates user and machine; user requests access; operator approves.
-7. **Files** list/download against a connected agent.
-8. **Security** MFA enroll/confirm; SSH key add.
-9. After upgrade, UI version string matches `orion-belt-server --version` / `/api/v1/version`.
+4. Open **Terminal** → connect → type → disconnect → **Sessions** shows `web` row → **Playback** replays the cast in xterm.
+5. **Add agent** → pick OS → generate script → run as root on the host → agent appears under **Agents**.
+6. **Audit** contains `session.web_terminal.start` / `.end` and `agent.install_script`.
+7. Admin creates user and machine; user requests access; operator approves.
+8. **Files** list/download against a connected agent.
+9. **Security** MFA enroll/confirm; SSH key add.
+10. After upgrade, UI version string matches `orion-belt-server --version` / `/api/v1/version`.
 
 ---
 

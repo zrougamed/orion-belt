@@ -33,12 +33,18 @@ const (
 )
 
 // EffectiveRole returns the user's role, mapping legacy is_admin to admin.
+// A stale role="user" with is_admin=true (CreateUser historically omitted role)
+// is treated as admin.
 func (u *User) EffectiveRole() string {
-	if u.Role != "" {
+	switch u.Role {
+	case RoleAdmin, RoleOperator, RoleAuditor:
 		return u.Role
 	}
 	if u.IsAdmin {
 		return RoleAdmin
+	}
+	if u.Role != "" {
+		return u.Role
 	}
 	return RoleUser
 }

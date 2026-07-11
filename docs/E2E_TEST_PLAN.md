@@ -258,6 +258,7 @@ KEEP_IMAGES=1 make lab-qemu-start
 3. Check agent log: `./lab/qemu/ssh.sh alpine -- 'doas tail -20 /var/log/orion-agent.log'`  
    (Debian/SUSE/Rocky: use `sudo` instead of `doas` if present.)
 4. Optional: `GET /api/v1/admin/agents/connected` with admin Bearer/session token.
+5. Optional (UI): **Add agent** → generate install script for a throwaway name → confirm `201` from `POST /api/v1/admin/agents/install-script` and that the script contains `agent.yaml` + private key + package download URL.
 
 **Expected results**
 
@@ -265,6 +266,7 @@ KEEP_IMAGES=1 make lab-qemu-start
 2. Matching machine records exist in the UI/API.
 3. Log contains `Connected to server: 10.0.2.2:2222` and `handleChannels started` (not only FATAL EOF without later success).
 4. Connected agents list is non-empty for registered running agents.
+5. (If step 5) Install-script response includes `script`, `machine_id`, and `public_key`.
 
 **Notes:** Guests still in cloud-init may be Blocked/retest; re-run `make lab-qemu-connect-agents AGENTS="…"`.
 

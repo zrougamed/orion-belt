@@ -149,3 +149,5 @@ sudoedit /etc/orion-belt/server.yaml
 sudo systemctl enable --now orion-belt-server
 orion-belt-server setup
 ```
+
+To enroll hosts quickly, use the UI **Add agent** flow (or `POST /api/v1/admin/agents/install-script`). Point **package base URL** at a directory that serves the artifacts from `make packages` / `dist/` (or your published apt/rpm/apk/GitHub release URLs).

@@ -151,6 +151,7 @@ type LoginResponse struct {
 		Username   string `json:"username"`
 		Email      string `json:"email"`
 		IsAdmin    bool   `json:"is_admin"`
+		Role       string `json:"role"`
 		MFAEnabled bool   `json:"mfa_enabled"`
 	} `json:"user"`
 }
@@ -212,11 +213,12 @@ func (s *APIServer) login(c *gin.Context) {
 	response.User.ID = user.ID
 	response.User.Username = user.Username
 	response.User.Email = user.Email
-	response.User.IsAdmin = user.IsAdmin
+	response.User.IsAdmin = user.IsAdmin || user.EffectiveRole() == common.RoleAdmin
+	response.User.Role = user.EffectiveRole()
 	response.User.MFAEnabled = user.MFAEnabled
 
 	if s.jwt != nil && s.jwt.Enabled() {
-		if token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin); err == nil {
+		if token, exp, err := s.jwt.Issue(user.ID, user.Username, response.User.IsAdmin); err == nil {
 			response.AccessToken = token
 			response.ExpiresAt = exp
 		}
@@ -271,5 +273,16 @@ func (s *APIServer) getCurrentUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, gin.H{
+		"id":               user.ID,
+		"username":         user.Username,
+		"email":            user.Email,
+		"public_key":       user.PublicKey,
+		"is_admin":         user.IsAdmin || user.EffectiveRole() == common.RoleAdmin,
+		"role":             user.EffectiveRole(),
+		"mfa_enabled":      user.MFAEnabled,
+		"webauthn_enabled": user.WebAuthnEnabled,
+		"created_at":       user.CreatedAt,
+		"updated_at":       user.UpdatedAt,
+	})
 }

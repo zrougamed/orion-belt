@@ -159,6 +159,8 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes_hash TEXT DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_enabled BOOLEAN DEFAULT FALSE`,
+		// Repair admins created before role was persisted on INSERT (DEFAULT 'user' left them as role=user).
+		`UPDATE users SET role = 'admin' WHERE is_admin = true AND (role IS NULL OR role = '' OR role = 'user')`,
 		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'ssh'`,
 		`CREATE TABLE IF NOT EXISTS user_ssh_keys (
 			id VARCHAR(36) PRIMARY KEY,
@@ -195,12 +197,21 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 
 // CreateUser creates a new user
 func (s *PostgresStore) CreateUser(ctx context.Context, user *common.User) error {
-	query := `INSERT INTO users (id, username, email, public_key, is_admin, created_at, updated_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO users (id, username, email, public_key, is_admin, role, created_at, updated_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
+	role := user.Role
+	if role == "" {
+		if user.IsAdmin {
+			role = common.RoleAdmin
+		} else {
+			role = common.RoleUser
+		}
+	}
 
 	_, err := s.db.ExecContext(ctx, query,
 		user.ID, user.Username, user.Email, user.PublicKey,
-		user.IsAdmin, user.CreatedAt, user.UpdatedAt)
+		user.IsAdmin, role, user.CreatedAt, user.UpdatedAt)
 
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
