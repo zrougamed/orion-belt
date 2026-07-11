@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
@@ -45,29 +46,45 @@ func (a *AuthService) SetAuthorizer(authz interface {
 	a.authorizer = authz
 }
 
-// AuthenticateUser authenticates a user with public key
+// AuthenticateUser authenticates a user with public key (RSA/Ed25519/ECDSA/FIDO sk-*).
 func (a *AuthService) AuthenticateUser(ctx context.Context, username string, publicKey ssh.PublicKey) (*common.User, error) {
-	user, err := a.store.GetUserByUsername(ctx, username)
+	// OpenSSH agentless: username may be "alice+web-01" or "alice+root%web-01"
+	authUser := username
+	if i := strings.IndexByte(username, '+'); i > 0 {
+		authUser = username[:i]
+	}
+
+	user, err := a.store.GetUserByUsername(ctx, authUser)
 	if err != nil {
-		a.logger.Warn("User not found: %s", username)
+		a.logger.Warn("User not found: %s", authUser)
 		return nil, fmt.Errorf("authentication failed")
 	}
 
-	// Parse stored public key
-	storedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(user.PublicKey))
+	if matchSSHKey(publicKey, user.PublicKey) {
+		a.logger.Info("User authenticated: %s (primary key, type=%s)", authUser, publicKey.Type())
+		return user, nil
+	}
+
+	keys, err := a.store.ListUserSSHKeys(ctx, user.ID)
+	if err == nil {
+		for _, k := range keys {
+			if matchSSHKey(publicKey, k.PublicKey) {
+				a.logger.Info("User authenticated: %s (key=%s type=%s)", authUser, k.Name, publicKey.Type())
+				return user, nil
+			}
+		}
+	}
+
+	a.logger.Warn("Public key mismatch for user: %s (presented type=%s)", authUser, publicKey.Type())
+	return nil, fmt.Errorf("authentication failed")
+}
+
+func matchSSHKey(presented ssh.PublicKey, authorizedLine string) bool {
+	storedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedLine))
 	if err != nil {
-		a.logger.Error("Failed to parse stored public key for user %s: %v", username, err)
-		return nil, fmt.Errorf("authentication failed")
+		return false
 	}
-
-	// Compare keys
-	if !keyEquals(publicKey, storedKey) {
-		a.logger.Warn("Public key mismatch for user: %s", username)
-		return nil, fmt.Errorf("authentication failed")
-	}
-
-	a.logger.Info("User authenticated: %s", username)
-	return user, nil
+	return keyEquals(presented, storedKey)
 }
 
 // CheckPermission checks if a user has permission to access a machine

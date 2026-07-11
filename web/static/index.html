@@ -3,425 +3,1853 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orion Belt Admin</title>
+  <title>Orion Belt — Privileged Access</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
   <style>
     :root {
-      --bg: #0c1219;
-      --bg-elev: #141c27;
-      --bg-panel: #1a2433;
-      --line: #2a3a4f;
-      --text: #e8eef6;
-      --muted: #8fa3bb;
-      --accent: #3d9cfd;
-      --accent-dim: #1e4f7a;
-      --ok: #3ecf8e;
-      --warn: #f0b429;
-      --danger: #f07178;
-      --radius: 10px;
-      --font: "DM Sans", system-ui, sans-serif;
+      --bg-deep: #0a1214;
+      --bg: #0e181c;
+      --bg-elev: #152226;
+      --bg-panel: #1a2a30;
+      --bg-hover: #213438;
+      --line: #2a3f46;
+      --line-soft: rgba(42, 63, 70, 0.55);
+      --text: #e8f0f2;
+      --muted: #8aa0a8;
+      --faint: #5e747c;
+      --accent: #e8a54b;
+      --accent-soft: rgba(232, 165, 75, 0.14);
+      --accent-glow: rgba(232, 165, 75, 0.28);
+      --teal: #2dd4bf;
+      --teal-dim: #0f766e;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      --font: "Instrument Sans", system-ui, sans-serif;
       --mono: "JetBrains Mono", ui-monospace, monospace;
+      --nav-w: 240px;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
     }
+
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
-      margin: 0; min-height: 100vh;
-      font-family: var(--font); color: var(--text);
-      background:
-        radial-gradient(1200px 600px at 10% -10%, #1a3050 0%, transparent 55%),
-        radial-gradient(900px 500px at 100% 0%, #123028 0%, transparent 50%),
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background-color: var(--bg-deep);
+      background-image:
+        linear-gradient(rgba(45, 212, 191, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px),
+        radial-gradient(1100px 700px at 8% -15%, rgba(15, 118, 110, 0.35), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(232, 165, 75, 0.08), transparent 50%),
+        radial-gradient(800px 600px at 50% 120%, rgba(14, 24, 28, 0.9), transparent 60%),
         var(--bg);
+      background-size: 48px 48px, 48px 48px, auto, auto, auto, auto;
+      -webkit-font-smoothing: antialiased;
     }
+    button, input, textarea, select { font: inherit; color: inherit; }
     a { color: var(--accent); }
-    .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
-    nav {
-      background: rgba(20,28,39,.92); border-right: 1px solid var(--line);
-      padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: .5rem;
-    }
-    .brand {
-      font-weight: 700; font-size: 1.15rem; letter-spacing: .02em;
-      padding: .25rem .5rem 1.25rem; border-bottom: 1px solid var(--line); margin-bottom: .75rem;
-    }
-    .brand span { color: var(--accent); }
-    nav button {
-      text-align: left; background: transparent; border: 0; color: var(--muted);
-      padding: .65rem .75rem; border-radius: 8px; cursor: pointer; font: inherit;
-    }
-    nav button:hover, nav button.active { background: var(--bg-panel); color: var(--text); }
-    main { padding: 1.75rem 2rem; }
-    h1 { margin: 0 0 1rem; font-size: 1.5rem; font-weight: 700; }
-    .muted { color: var(--muted); }
-    .card {
-      background: var(--bg-elev); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem;
-    }
-    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-    .stat { font-size: 1.75rem; font-weight: 700; }
-    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-    th, td { text-align: left; padding: .65rem .5rem; border-bottom: 1px solid var(--line); }
-    th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-    .badge {
-      display: inline-block; padding: .15rem .5rem; border-radius: 999px;
-      font-size: .75rem; font-weight: 600;
-    }
-    .badge.ok { background: rgba(62,207,142,.15); color: var(--ok); }
-    .badge.warn { background: rgba(240,180,41,.15); color: var(--warn); }
-    .badge.danger { background: rgba(240,113,120,.15); color: var(--danger); }
-    input, textarea, select {
-      width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
-      border-radius: 8px; padding: .65rem .75rem; font: inherit; margin: .35rem 0 .85rem;
-    }
-    label { font-size: .85rem; color: var(--muted); }
-    .btn {
-      background: var(--accent); color: #041018; border: 0; border-radius: 8px;
-      padding: .6rem 1rem; font-weight: 700; cursor: pointer; font: inherit;
-    }
-    .btn.secondary { background: var(--bg-panel); color: var(--text); border: 1px solid var(--line); }
-    .btn.danger { background: var(--danger); color: #1a0505; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-    .login-wrap {
-      min-height: 100vh; display: grid; place-items: center; padding: 2rem;
-    }
-    .login-card { width: min(420px, 100%); }
-    .mono { font-family: var(--mono); font-size: .85rem; }
-    .err { color: var(--danger); margin: .5rem 0; }
-    .okmsg { color: var(--ok); margin: .5rem 0; }
-    pre.session {
-      background: #070b10; border: 1px solid var(--line); border-radius: 8px;
-      padding: 1rem; max-height: 420px; overflow: auto; white-space: pre-wrap;
-      font-family: var(--mono); font-size: .8rem;
-    }
-    @media (max-width: 800px) {
-      .shell { grid-template-columns: 1fr; }
-      nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
-      .brand { width: 100%; }
-    }
     .hidden { display: none !important; }
+    .mono { font-family: var(--mono); font-size: 0.84rem; }
+    .muted { color: var(--muted); }
+    .err { color: var(--danger); margin: 0.5rem 0; }
+    .okmsg { color: var(--ok); margin: 0.5rem 0; }
+
+    /* ── Login ── */
+    .login-stage {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 2rem 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .login-stage::before {
+      content: "";
+      position: absolute;
+      inset: -20%;
+      background:
+        radial-gradient(circle at 30% 40%, rgba(15, 118, 110, 0.22), transparent 42%),
+        radial-gradient(circle at 70% 60%, rgba(232, 165, 75, 0.1), transparent 40%);
+      animation: drift 18s var(--ease) infinite alternate;
+      pointer-events: none;
+    }
+    @keyframes drift {
+      from { transform: translate3d(-2%, -1%, 0) scale(1); }
+      to { transform: translate3d(2%, 2%, 0) scale(1.05); }
+    }
+    .login-compose {
+      position: relative;
+      z-index: 1;
+      width: min(440px, 100%);
+      text-align: center;
+    }
+    .login-brand {
+      font-size: clamp(2.6rem, 7vw, 3.4rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin: 0 0 0.75rem;
+    }
+    .login-brand em {
+      font-style: normal;
+      color: var(--accent);
+      text-shadow: 0 0 40px var(--accent-glow);
+    }
+    .login-tag {
+      margin: 0 0 2rem;
+      color: var(--muted);
+      font-size: 1.05rem;
+      letter-spacing: 0.01em;
+    }
+    .login-panel {
+      text-align: left;
+      background: rgba(21, 34, 38, 0.82);
+      border: 1px solid var(--line);
+      border-radius: calc(var(--radius) + 4px);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
+    }
+    .login-panel:focus-within {
+      border-color: rgba(232, 165, 75, 0.45);
+      box-shadow: var(--shadow), 0 0 0 3px var(--accent-soft);
+    }
+    .login-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.1rem 0;
+      color: var(--faint);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .login-divider::before, .login-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+
+    /* ── Shell ── */
+    .shell {
+      display: grid;
+      grid-template-columns: var(--nav-w) 1fr;
+      min-height: 100vh;
+    }
+    nav.side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding: 1.25rem 0.85rem;
+      background: rgba(10, 18, 20, 0.88);
+      border-right: 1px solid var(--line-soft);
+      backdrop-filter: blur(12px);
+      overflow-y: auto;
+    }
+    .nav-brand {
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+      padding: 0.35rem 0.65rem 1.1rem;
+      margin-bottom: 0.35rem;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .nav-brand span { color: var(--accent); }
+    .nav-section {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--faint);
+      padding: 0.85rem 0.65rem 0.35rem;
+    }
+    nav.side button.nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      padding: 0.62rem 0.75rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.18s var(--ease), color 0.18s var(--ease), transform 0.18s var(--ease);
+    }
+    nav.side button.nav-item:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    nav.side button.nav-item.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+    .nav-ico {
+      width: 1.1rem;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      opacity: 0.85;
+    }
+    .nav-foot {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .who {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .who strong { color: var(--text); font-weight: 600; }
+    .role-pill {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: rgba(45, 212, 191, 0.12);
+      color: var(--teal);
+    }
+
+    main.workspace {
+      padding: 1.75rem 2rem 2.5rem;
+      min-width: 0;
+    }
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    .page-head h1 {
+      margin: 0;
+      font-size: 1.55rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .page-head p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .card {
+      background: rgba(21, 34, 38, 0.78);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1.15rem 1.25rem;
+      margin-bottom: 1rem;
+      transition: border-color 0.2s var(--ease);
+    }
+    .card:hover { border-color: rgba(45, 212, 191, 0.22); }
+    .card h3 { margin: 0 0 0.85rem; font-size: 0.95rem; font-weight: 600; }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+    .stat {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+    }
+    .stat-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.55rem;
+      border-bottom: 1px solid var(--line-soft);
+      vertical-align: middle;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge.ok { background: rgba(52, 211, 153, 0.14); color: var(--ok); }
+    .badge.warn { background: rgba(251, 191, 36, 0.14); color: var(--warn); }
+    .badge.danger { background: rgba(248, 113, 113, 0.14); color: var(--danger); }
+    .badge.neutral { background: rgba(138, 160, 168, 0.14); color: var(--muted); }
+
+    label.field {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0.15rem 0 0.35rem;
+    }
+    input, textarea, select {
+      width: 100%;
+      background: var(--bg-deep);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 0.65rem 0.75rem;
+      margin: 0 0 0.85rem;
+      transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: rgba(232, 165, 75, 0.55);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    textarea { resize: vertical; min-height: 4.5rem; font-family: var(--mono); font-size: 0.82rem; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      background: var(--accent);
+      color: #1a1208;
+      border: 0;
+      border-radius: var(--radius-sm);
+      padding: 0.62rem 1.05rem;
+      font-weight: 650;
+      cursor: pointer;
+      transition: transform 0.15s var(--ease), filter 0.15s var(--ease), background 0.15s var(--ease);
+    }
+    .btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: none; }
+    .btn.secondary {
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .btn.ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+    }
+    .btn.ghost:hover { color: var(--text); border-color: var(--line); background: var(--bg-hover); }
+    .btn.danger { background: var(--danger); color: #2a0a0a; }
+    .btn.teal { background: var(--teal); color: #04201c; }
+    .btn.block { width: 100%; }
+    .btn.sm { padding: 0.4rem 0.7rem; font-size: 0.82rem; }
+
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .stack { display: flex; flex-direction: column; gap: 0.75rem; }
+    .split-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+    @media (max-width: 720px) {
+      .split-2 { grid-template-columns: 1fr; }
+    }
+
+    pre.session, pre.code {
+      background: #070d0f;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      max-height: 420px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      margin: 0.75rem 0 0;
+    }
+
+    /* Terminal */
+    .term-toolbar {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-bottom: 0.85rem;
+    }
+    .term-toolbar .field-wrap { flex: 1; min-width: 140px; }
+    .term-toolbar label.field { margin-bottom: 0.3rem; }
+    .term-toolbar input, .term-toolbar select { margin-bottom: 0; }
+    .term-frame {
+      background: #05090b;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-height: 420px;
+      box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.05);
+    }
+    .term-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.45rem 0.85rem;
+      background: rgba(21, 34, 38, 0.95);
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 0.4rem;
+      background: var(--faint);
+    }
+    .dot.live { background: var(--ok); box-shadow: 0 0 8px rgba(52, 211, 153, 0.55); }
+    .dot.off { background: var(--danger); }
+    #xtermHost { height: 480px; padding: 0.35rem; }
+
+    /* Files */
+    .path-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .path-bar input { margin: 0; flex: 1; min-width: 160px; }
+    .file-row-name { cursor: pointer; color: var(--text); }
+    .file-row-name:hover { color: var(--accent); }
+    .file-row-name.dir { font-weight: 600; }
+
+    .toast {
+      position: fixed;
+      right: 1.25rem;
+      bottom: 1.25rem;
+      z-index: 50;
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      box-shadow: var(--shadow);
+      max-width: min(360px, calc(100vw - 2rem));
+      transform: translateY(120%);
+      opacity: 0;
+      transition: transform 0.3s var(--ease), opacity 0.3s var(--ease);
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.error { border-color: rgba(248, 113, 113, 0.45); }
+    .toast.ok { border-color: rgba(52, 211, 153, 0.45); }
+
+    .tabs {
+      display: flex;
+      gap: 0.35rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--line-soft);
+      padding-bottom: 0.35rem;
+    }
+    .tabs button {
+      background: transparent;
+      border: 0;
+      color: var(--muted);
+      padding: 0.5rem 0.85rem;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+    .tabs button.active {
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      nav.side {
+        position: relative;
+        height: auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        border-right: 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .nav-brand, .nav-section, .nav-foot { width: 100%; }
+      .nav-foot { margin-top: 0.5rem; }
+      main.workspace { padding: 1.25rem; }
+    }
   </style>
 </head>
 <body>
-  <div id="loginView" class="login-wrap">
-    <div class="card login-card">
-      <div class="brand" style="border:0;padding:0 0 1rem;margin:0">Orion <span>Belt</span></div>
-      <p class="muted" style="margin-top:0">Admin console — authenticate with username + SSH public key.</p>
-      <label>Username</label>
-      <input id="loginUser" autocomplete="username" />
-      <label>SSH public key</label>
-      <textarea id="loginKey" rows="4" class="mono" placeholder="ssh-ed25519 AAAA... comment"></textarea>
-      <label>TOTP / backup code (if MFA enabled)</label>
-      <input id="loginTotp" autocomplete="one-time-code" placeholder="123456" />
-      <div id="loginErr" class="err"></div>
-      <button class="btn" id="loginBtn" style="width:100%">Sign in</button>
+  <div id="loginView" class="login-stage">
+    <div class="login-compose">
+      <h1 class="login-brand">Orion <em>Belt</em></h1>
+      <p class="login-tag">Privileged access management for operators who ship.</p>
+      <div class="login-panel">
+        <label class="field" for="loginUser">Username</label>
+        <input id="loginUser" autocomplete="username" spellcheck="false" />
+        <label class="field" for="loginKey">SSH public key</label>
+        <textarea id="loginKey" rows="3" placeholder="ssh-ed25519 AAAA… comment" spellcheck="false"></textarea>
+        <label class="field" for="loginTotp">TOTP / backup code <span class="muted">(optional)</span></label>
+        <input id="loginTotp" autocomplete="one-time-code" placeholder="123456" />
+        <div id="loginErr" class="err"></div>
+        <button class="btn block" id="loginBtn" type="button">Sign in</button>
+        <div class="login-divider">or</div>
+        <button class="btn secondary block" id="webauthnLoginBtn" type="button">Sign in with YubiKey / FIDO2</button>
+      </div>
     </div>
   </div>
 
   <div id="appView" class="shell hidden">
-    <nav>
-      <div class="brand">Orion <span>Belt</span></div>
-      <button data-view="dashboard" class="active">Dashboard</button>
-      <button data-view="requests">Access requests</button>
-      <button data-view="machines">Machines</button>
-      <button data-view="sessions">Sessions</button>
-      <button data-view="users">Users</button>
-      <button data-view="audit">Audit</button>
-      <button data-view="mfa">MFA</button>
-      <div style="flex:1"></div>
-      <div class="muted" style="padding:.5rem;font-size:.85rem" id="whoami"></div>
-      <button id="logoutBtn" class="secondary">Sign out</button>
-    </nav>
-    <main>
+    <nav class="side" id="sideNav"></nav>
+    <main class="workspace">
       <div id="view"></div>
     </main>
   </div>
 
+  <div id="toast" class="toast" role="status"></div>
+
 <script>
-const state = {
-  token: localStorage.getItem("ob_session") || "",
-  user: JSON.parse(localStorage.getItem("ob_user") || "null"),
-  view: "dashboard",
-};
+(function () {
+  "use strict";
 
-async function api(path, opts = {}) {
-  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-  if (state.token) headers["X-Session-Token"] = state.token;
-  if (state.token && !headers["Authorization"]) headers["Authorization"] = "Bearer " + (localStorage.getItem("ob_jwt") || "");
-  const res = await fetch("/api/v1" + path, { ...opts, headers });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText);
-    err.status = res.status;
-    err.data = data;
-    throw err;
+  const NAV = {
+    admin: [
+      { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "requests", label: "Access requests", ico: "◇" },
+      { id: "machines", label: "Machines", ico: "▣" },
+      { id: "terminal", label: "Terminal", ico: "▸" },
+      { id: "files", label: "Files", ico: "▤" },
+      { id: "sessions", label: "Sessions", ico: "◎" },
+      { id: "users", label: "Users", ico: "○" },
+      { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "audit", label: "Audit", ico: "≡" },
+      { id: "security", label: "Security", ico: "✦" },
+    ],
+    operator: [
+      { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "requests", label: "Access requests", ico: "◇" },
+      { id: "machines", label: "Machines", ico: "▣" },
+      { id: "terminal", label: "Terminal", ico: "▸" },
+      { id: "files", label: "Files", ico: "▤" },
+      { id: "sessions", label: "Sessions", ico: "◎" },
+      { id: "users", label: "Users", ico: "○" },
+      { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "audit", label: "Audit", ico: "≡" },
+      { id: "security", label: "Security", ico: "✦" },
+    ],
+    auditor: [
+      { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "sessions", label: "Sessions", ico: "◎" },
+      { id: "audit", label: "Audit", ico: "≡" },
+    ],
+    user: [
+      { id: "machines", label: "Machines", ico: "▣" },
+      { id: "terminal", label: "Terminal", ico: "▸" },
+      { id: "files", label: "Files", ico: "▤" },
+      { id: "requests", label: "Access requests", ico: "◇" },
+      { id: "security", label: "Security", ico: "✦" },
+    ],
+  };
+
+  const REMOTE_USERS = ["root", "ubuntu", "ec2-user", "admin", "deploy"];
+
+  const state = {
+    token: localStorage.getItem("ob_session") || "",
+    jwt: localStorage.getItem("ob_jwt") || "",
+    user: JSON.parse(localStorage.getItem("ob_user") || "null"),
+    view: "dashboard",
+    term: { ws: null, xterm: null, fit: null, connected: false },
+    files: { machine: "", user: "root", path: "/" },
+    secTab: "mfa",
+  };
+
+  function roleOf(user) {
+    if (!user) return "user";
+    if (user.role) return user.role;
+    if (user.is_admin) return "admin";
+    return "user";
   }
-  return data;
-}
 
-function showApp() {
-  document.getElementById("loginView").classList.add("hidden");
-  document.getElementById("appView").classList.remove("hidden");
-  document.getElementById("whoami").textContent = state.user
-    ? `${state.user.username}${state.user.is_admin ? " · admin" : ""}`
-    : "";
-  render();
-}
+  function canApprove() {
+    const r = roleOf(state.user);
+    return r === "admin" || r === "operator";
+  }
 
-function showLogin() {
-  document.getElementById("appView").classList.add("hidden");
-  document.getElementById("loginView").classList.remove("hidden");
-}
+  function defaultViewForRole(role) {
+    const items = NAV[role] || NAV.user;
+    return items[0].id;
+  }
 
-document.getElementById("loginBtn").onclick = async () => {
-  const err = document.getElementById("loginErr");
-  err.textContent = "";
-  try {
-    const body = {
-      username: document.getElementById("loginUser").value.trim(),
-      public_key: document.getElementById("loginKey").value.trim(),
-      totp_code: document.getElementById("loginTotp").value.trim(),
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function shortId(id) {
+    return (id || "").slice(0, 8) || "—";
+  }
+
+  function fmtTime(t) {
+    if (!t) return "—";
+    try {
+      return new Date(t).toLocaleString();
+    } catch {
+      return String(t);
+    }
+  }
+
+  function badge(status) {
+    const s = String(status || "").toLowerCase();
+    let cls = "warn";
+    if (["approved", "active", "completed", "healthy", "enabled", "online", "ok"].includes(s)) cls = "ok";
+    if (["rejected", "denied", "failed", "offline", "expired", "terminated"].includes(s)) cls = "danger";
+    if (["off", "inactive", "-"].includes(s)) cls = "neutral";
+    return `<span class="badge ${cls}">${esc(status || "—")}</span>`;
+  }
+
+  function toast(msg, kind) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = "toast show " + (kind || "");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { el.className = "toast"; }, 3200);
+  }
+
+  function setSessionCookie(token) {
+    if (!token) {
+      document.cookie = "session_token=; path=/; Max-Age=0; SameSite=Lax";
+      return;
+    }
+    document.cookie = "session_token=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
+  }
+
+  function persistAuth() {
+    if (state.token) localStorage.setItem("ob_session", state.token);
+    else localStorage.removeItem("ob_session");
+    if (state.jwt) localStorage.setItem("ob_jwt", state.jwt);
+    else localStorage.removeItem("ob_jwt");
+    if (state.user) localStorage.setItem("ob_user", JSON.stringify(state.user));
+    else localStorage.removeItem("ob_user");
+    setSessionCookie(state.token);
+  }
+
+  function clearAuth() {
+    state.token = "";
+    state.jwt = "";
+    state.user = null;
+    persistAuth();
+  }
+
+  async function api(path, opts) {
+    opts = opts || {};
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    if (state.token) headers["X-Session-Token"] = state.token;
+    if (state.jwt && !headers.Authorization) headers.Authorization = "Bearer " + state.jwt;
+    const fetchOpts = Object.assign({}, opts, { headers });
+    if (opts.body instanceof FormData) {
+      delete headers["Content-Type"];
+    }
+    const res = await fetch("/api/v1" + path, fetchOpts);
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!res.ok) {
+      const err = new Error((data && (data.error || data.message)) || res.statusText || "request failed");
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  async function apiRaw(path, opts) {
+    opts = opts || {};
+    const headers = Object.assign({}, opts.headers || {});
+    if (state.token) headers["X-Session-Token"] = state.token;
+    if (state.jwt && !headers.Authorization) headers.Authorization = "Bearer " + state.jwt;
+    return fetch("/api/v1" + path, Object.assign({}, opts, { headers }));
+  }
+
+  /* ── WebAuthn helpers ── */
+  function b64urlToBuf(s) {
+    const pad = "=".repeat((4 - (s.length % 4)) % 4);
+    const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(b64);
+    const buf = new ArrayBuffer(raw.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+    return buf;
+  }
+
+  function bufToB64url(buf) {
+    const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer || buf);
+    let str = "";
+    for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function publicKeyCredentialToJSON(cred) {
+    if (!cred) return null;
+    const out = {
+      id: cred.id,
+      type: cred.type,
+      rawId: bufToB64url(cred.rawId),
     };
-    const data = await api("/public/login", { method: "POST", body: JSON.stringify(body) });
+    if (cred.response) {
+      const r = cred.response;
+      out.response = {};
+      if (r.clientDataJSON) out.response.clientDataJSON = bufToB64url(r.clientDataJSON);
+      if (r.attestationObject) out.response.attestationObject = bufToB64url(r.attestationObject);
+      if (r.authenticatorData) out.response.authenticatorData = bufToB64url(r.authenticatorData);
+      if (r.signature) out.response.signature = bufToB64url(r.signature);
+      if (r.userHandle) out.response.userHandle = bufToB64url(r.userHandle);
+    }
+    if (cred.authenticatorAttachment) out.authenticatorAttachment = cred.authenticatorAttachment;
+    if (cred.getClientExtensionResults) out.clientExtensionResults = cred.getClientExtensionResults();
+    return out;
+  }
+
+  function preparePublicKeyOptions(publicKey) {
+    const pk = Object.assign({}, publicKey);
+    if (typeof pk.challenge === "string") pk.challenge = b64urlToBuf(pk.challenge);
+    if (pk.user && typeof pk.user.id === "string") {
+      pk.user = Object.assign({}, pk.user, { id: b64urlToBuf(pk.user.id) });
+    }
+    if (Array.isArray(pk.excludeCredentials)) {
+      pk.excludeCredentials = pk.excludeCredentials.map((c) =>
+        Object.assign({}, c, { id: typeof c.id === "string" ? b64urlToBuf(c.id) : c.id })
+      );
+    }
+    if (Array.isArray(pk.allowCredentials)) {
+      pk.allowCredentials = pk.allowCredentials.map((c) =>
+        Object.assign({}, c, { id: typeof c.id === "string" ? b64urlToBuf(c.id) : c.id })
+      );
+    }
+    return pk;
+  }
+
+  function applyLogin(data) {
     state.token = data.session_token;
-    state.user = data.user;
-    localStorage.setItem("ob_session", state.token);
-    localStorage.setItem("ob_user", JSON.stringify(state.user));
-    if (data.access_token) localStorage.setItem("ob_jwt", data.access_token);
-    showApp();
-  } catch (e) {
-    if (e.data && e.data.mfa_required) err.textContent = "MFA code required.";
-    else if (e.data && e.data.mfa_enrollment_required) err.textContent = "MFA enrollment required before login.";
-    else err.textContent = e.message || "Login failed";
+    state.user = data.user || state.user;
+    if (data.access_token) state.jwt = data.access_token;
+    persistAuth();
   }
-};
 
-document.getElementById("logoutBtn").onclick = () => {
-  state.token = ""; state.user = null;
-  localStorage.removeItem("ob_session");
-  localStorage.removeItem("ob_user");
-  localStorage.removeItem("ob_jwt");
-  showLogin();
-};
-
-document.querySelectorAll("nav button[data-view]").forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll("nav button[data-view]").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    state.view = btn.dataset.view;
-    render();
-  };
-});
-
-function badge(status) {
-  const s = (status || "").toLowerCase();
-  let cls = "warn";
-  if (s === "approved" || s === "active" || s === "completed" || s === "healthy") cls = "ok";
-  if (s === "rejected" || s === "denied" || s === "failed") cls = "danger";
-  return `<span class="badge ${cls}">${status || "-"}</span>`;
-}
-
-async function render() {
-  const root = document.getElementById("view");
-  root.innerHTML = `<p class="muted">Loading…</p>`;
-  try {
-    if (state.view === "dashboard") await renderDashboard(root);
-    else if (state.view === "requests") await renderRequests(root);
-    else if (state.view === "machines") await renderMachines(root);
-    else if (state.view === "sessions") await renderSessions(root);
-    else if (state.view === "users") await renderUsers(root);
-    else if (state.view === "audit") await renderAudit(root);
-    else if (state.view === "mfa") await renderMFA(root);
-  } catch (e) {
-    if (e.status === 401) { showLogin(); return; }
-    root.innerHTML = `<div class="err">${e.message}</div>`;
-  }
-}
-
-async function renderDashboard(root) {
-  const [machines, sessions, pending] = await Promise.all([
-    api("/machines"),
-    api("/sessions/active"),
-    api("/access-requests/pending"),
-  ]);
-  root.innerHTML = `
-    <h1>Dashboard</h1>
-    <div class="grid">
-      <div class="card"><div class="muted">Machines</div><div class="stat">${(machines||[]).length}</div></div>
-      <div class="card"><div class="muted">Active sessions</div><div class="stat">${(sessions||[]).length}</div></div>
-      <div class="card"><div class="muted">Pending requests</div><div class="stat">${(pending||[]).length}</div></div>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0">Pending access</h3>
-      ${requestTable(pending || [])}
-    </div>`;
-  bindRequestActions();
-}
-
-function requestTable(rows) {
-  if (!rows.length) return `<p class="muted">No pending requests.</p>`;
-  return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Reason</th><th>Status</th><th></th></tr></thead>
-    <tbody>${rows.map(r => `<tr>
-      <td class="mono">${(r.id||"").slice(0,8)}</td>
-      <td class="mono">${r.user_id||""}</td>
-      <td class="mono">${r.machine_id||""}</td>
-      <td>${r.reason||""}</td>
-      <td>${badge(r.status)}</td>
-      <td class="row">
-        ${r.status === "pending" ? `
-          <button class="btn" data-approve="${r.id}">Approve</button>
-          <button class="btn danger" data-reject="${r.id}">Reject</button>` : ""}
-      </td>
-    </tr>`).join("")}</tbody></table>`;
-}
-
-function bindRequestActions() {
-  document.querySelectorAll("[data-approve]").forEach(btn => {
-    btn.onclick = async () => {
-      await api(`/admin/access-requests/${btn.dataset.approve}/approve`, {
-        method: "POST",
-        body: JSON.stringify({ reviewer_id: state.user.id }),
-      });
-      render();
-    };
-  });
-  document.querySelectorAll("[data-reject]").forEach(btn => {
-    btn.onclick = async () => {
-      await api(`/admin/access-requests/${btn.dataset.reject}/reject`, {
-        method: "POST",
-        body: JSON.stringify({ reviewer_id: state.user.id }),
-      });
-      render();
-    };
-  });
-}
-
-async function renderRequests(root) {
-  const pending = await api("/access-requests/pending");
-  root.innerHTML = `<h1>Access requests</h1><div class="card">${requestTable(pending||[])}</div>`;
-  bindRequestActions();
-}
-
-async function renderMachines(root) {
-  const machines = await api("/machines");
-  root.innerHTML = `<h1>Machines</h1><div class="card">
-    <table><thead><tr><th>Name</th><th>Host</th><th>Active</th><th>Last seen</th></tr></thead>
-    <tbody>${(machines||[]).map(m => `<tr>
-      <td>${m.name}</td><td class="mono">${m.hostname}:${m.port}</td>
-      <td>${m.is_active ? badge("active") : badge("offline")}</td>
-      <td class="mono">${m.last_seen_at || "-"}</td>
-    </tr>`).join("") || `<tr><td colspan="4" class="muted">No machines</td></tr>`}
-    </tbody></table></div>`;
-}
-
-async function renderSessions(root) {
-  const sessions = await api("/sessions");
-  root.innerHTML = `<h1>Sessions</h1><div class="card">
-    <table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Status</th><th></th></tr></thead>
-    <tbody>${(sessions||[]).map(s => `<tr>
-      <td class="mono">${(s.id||"").slice(0,8)}</td>
-      <td class="mono">${s.user_id||""}</td>
-      <td class="mono">${s.machine_id||""}</td>
-      <td>${badge(s.status)}</td>
-      <td><button class="btn secondary" data-play="${s.id}">Playback</button></td>
-    </tr>`).join("") || `<tr><td colspan="5" class="muted">No sessions</td></tr>`}
-    </tbody></table>
-    <div id="playback"></div>
-  </div>`;
-  document.querySelectorAll("[data-play]").forEach(btn => {
-    btn.onclick = async () => {
-      const box = document.getElementById("playback");
-      box.innerHTML = `<p class="muted">Loading recording…</p>`;
-      const res = await fetch(`/api/v1/sessions/${btn.dataset.play}/content`, {
-        headers: { "X-Session-Token": state.token }
-      });
-      const text = await res.text();
-      box.innerHTML = `<h3>Recording ${btn.dataset.play.slice(0,8)}</h3><pre class="session"></pre>`;
-      box.querySelector("pre").textContent = text;
-    };
-  });
-}
-
-async function renderUsers(root) {
-  const users = await api("/users");
-  root.innerHTML = `<h1>Users</h1><div class="card">
-    <table><thead><tr><th>Username</th><th>Email</th><th>Admin</th><th>MFA</th></tr></thead>
-    <tbody>${(users||[]).map(u => `<tr>
-      <td>${u.username}</td><td>${u.email}</td>
-      <td>${u.is_admin ? badge("admin") : "-"}</td>
-      <td>${u.mfa_enabled ? badge("enabled") : badge("off")}</td>
-    </tr>`).join("")}</tbody></table></div>`;
-}
-
-async function renderAudit(root) {
-  const logs = await api("/audit-logs");
-  root.innerHTML = `<h1>Audit log</h1><div class="card">
-    <table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th></tr></thead>
-    <tbody>${(logs||[]).map(l => `<tr>
-      <td class="mono">${l.timestamp||""}</td>
-      <td class="mono">${l.user_id||""}</td>
-      <td>${l.action||""}</td>
-      <td class="mono">${l.resource||""}</td>
-    </tr>`).join("") || `<tr><td colspan="4" class="muted">No audit entries</td></tr>`}
-    </tbody></table></div>`;
-}
-
-async function renderMFA(root) {
-  const st = await api("/mfa/status");
-  root.innerHTML = `<h1>Multi-factor auth</h1>
-    <div class="card">
-      <p>Status: ${st.mfa_enabled ? badge("enabled") : badge("off")}
-         ${st.mfa_required ? `<span class="muted"> · org requires MFA</span>` : ""}</p>
-      <div class="row">
-        <button class="btn" id="mfaEnroll" ${st.mfa_enabled ? "disabled" : ""}>Enroll TOTP</button>
-        <button class="btn danger" id="mfaDisable" ${st.mfa_enabled ? "" : "disabled"}>Disable MFA</button>
-      </div>
-      <div id="mfaOut"></div>
-    </div>`;
-  document.getElementById("mfaEnroll").onclick = async () => {
-    const out = document.getElementById("mfaOut");
-    const data = await api("/mfa/enroll", { method: "POST", body: "{}" });
-    out.innerHTML = `
-      <p class="okmsg">Scan this otpauth URL in your authenticator, then confirm with a code.</p>
-      <label>Secret</label><input class="mono" readonly value="${data.secret}" />
-      <label>otpauth URL</label><textarea class="mono" rows="2" readonly>${data.otpauth_url}</textarea>
-      <label>Backup codes (save these)</label>
-      <pre class="session">${(data.backup_codes||[]).join("\n")}</pre>
-      <label>Confirm code</label><input id="mfaConfirmCode" />
-      <button class="btn" id="mfaConfirmBtn">Confirm enrollment</button>
-      <div id="mfaMsg"></div>`;
-    document.getElementById("mfaConfirmBtn").onclick = async () => {
-      try {
-        await api("/mfa/confirm", {
-          method: "POST",
-          body: JSON.stringify({ code: document.getElementById("mfaConfirmCode").value.trim() }),
-        });
-        document.getElementById("mfaMsg").innerHTML = `<p class="okmsg">MFA enabled.</p>`;
-        render();
-      } catch (e) {
-        document.getElementById("mfaMsg").innerHTML = `<p class="err">${e.message}</p>`;
-      }
-    };
-  };
-  document.getElementById("mfaDisable").onclick = async () => {
-    const code = prompt("Enter TOTP or backup code to disable MFA");
-    if (!code) return;
-    await api("/mfa/disable", { method: "POST", body: JSON.stringify({ code }) });
-    render();
-  };
-}
-
-(async function init() {
-  if (!state.token) { showLogin(); return; }
-  try {
+  async function refreshMe() {
     const me = await api("/auth/me");
     state.user = me;
     localStorage.setItem("ob_user", JSON.stringify(me));
-    showApp();
-  } catch {
-    showLogin();
+    return me;
   }
+
+  function showLogin() {
+    disconnectTerminal();
+    document.getElementById("appView").classList.add("hidden");
+    document.getElementById("loginView").classList.remove("hidden");
+  }
+
+  function showApp() {
+    document.getElementById("loginView").classList.add("hidden");
+    document.getElementById("appView").classList.remove("hidden");
+    const role = roleOf(state.user);
+    const allowed = (NAV[role] || NAV.user).map((n) => n.id);
+    if (!allowed.includes(state.view)) state.view = defaultViewForRole(role);
+    buildNav();
+    render();
+  }
+
+  function buildNav() {
+    const role = roleOf(state.user);
+    const items = NAV[role] || NAV.user;
+    const nav = document.getElementById("sideNav");
+    nav.innerHTML = `
+      <div class="nav-brand">Orion <span>Belt</span></div>
+      <div class="nav-section">Console</div>
+      ${items.map((n) => `
+        <button type="button" class="nav-item ${state.view === n.id ? "active" : ""}" data-view="${n.id}">
+          <span class="nav-ico">${n.ico}</span>${esc(n.label)}
+        </button>`).join("")}
+      <div class="nav-foot">
+        <div class="who">
+          <strong>${esc(state.user && state.user.username)}</strong>
+          <span class="role-pill">${esc(role)}</span>
+          <div class="muted" style="margin-top:.2rem;font-size:.75rem">${esc(state.user && state.user.email)}</div>
+        </div>
+        <button type="button" class="btn secondary sm" id="logoutBtn">Sign out</button>
+      </div>`;
+    nav.querySelectorAll("button.nav-item").forEach((btn) => {
+      btn.onclick = () => {
+        if (state.view === "terminal" && btn.dataset.view !== "terminal") disconnectTerminal();
+        state.view = btn.dataset.view;
+        buildNav();
+        render();
+      };
+    });
+    document.getElementById("logoutBtn").onclick = async () => {
+      try { await api("/logout", { method: "POST", body: "{}" }); } catch (_) { /* ignore */ }
+      clearAuth();
+      showLogin();
+    };
+  }
+
+  /* ── Login handlers ── */
+  document.getElementById("loginBtn").onclick = async () => {
+    const errEl = document.getElementById("loginErr");
+    errEl.textContent = "";
+    try {
+      const body = {
+        username: document.getElementById("loginUser").value.trim(),
+        public_key: document.getElementById("loginKey").value.trim(),
+        totp_code: document.getElementById("loginTotp").value.trim(),
+      };
+      const data = await api("/public/login", { method: "POST", body: JSON.stringify(body) });
+      applyLogin(data);
+      await refreshMe();
+      state.view = defaultViewForRole(roleOf(state.user));
+      showApp();
+    } catch (e) {
+      if (e.data && e.data.mfa_required) errEl.textContent = "MFA code required.";
+      else if (e.data && e.data.mfa_enrollment_required) errEl.textContent = "MFA enrollment required before login.";
+      else errEl.textContent = e.message || "Login failed";
+    }
+  };
+
+  document.getElementById("webauthnLoginBtn").onclick = async () => {
+    const errEl = document.getElementById("loginErr");
+    errEl.textContent = "";
+    const username = document.getElementById("loginUser").value.trim();
+    if (!username) {
+      errEl.textContent = "Enter your username, then use YubiKey / FIDO2.";
+      return;
+    }
+    try {
+      const begin = await api("/public/webauthn/login/begin", {
+        method: "POST",
+        body: JSON.stringify({ username }),
+      });
+      const publicKey = preparePublicKeyOptions(begin.publicKey || begin);
+      const cred = await navigator.credentials.get({ publicKey });
+      const data = await api("/public/webauthn/login/finish", {
+        method: "POST",
+        body: JSON.stringify({
+          username,
+          response: publicKeyCredentialToJSON(cred),
+        }),
+      });
+      applyLogin(data);
+      await refreshMe();
+      state.view = defaultViewForRole(roleOf(state.user));
+      showApp();
+    } catch (e) {
+      errEl.textContent = e.message || "WebAuthn login failed";
+    }
+  };
+
+  /* ── Render dispatcher ── */
+  async function render() {
+    const root = document.getElementById("view");
+    root.innerHTML = `<p class="muted">Loading…</p>`;
+    try {
+      const map = {
+        dashboard: renderDashboard,
+        requests: renderRequests,
+        machines: renderMachines,
+        terminal: renderTerminal,
+        files: renderFiles,
+        sessions: renderSessions,
+        users: renderUsers,
+        agents: renderAgents,
+        audit: renderAudit,
+        security: renderSecurity,
+      };
+      const fn = map[state.view];
+      if (!fn) {
+        root.innerHTML = `<div class="err">Unknown view</div>`;
+        return;
+      }
+      await fn(root);
+    } catch (e) {
+      if (e.status === 401) {
+        clearAuth();
+        showLogin();
+        return;
+      }
+      root.innerHTML = `<div class="card"><div class="err">${esc(e.message)}</div></div>`;
+    }
+  }
+
+  /* ── Dashboard ── */
+  async function renderDashboard(root) {
+    const role = roleOf(state.user);
+    let machines = [], sessions = [], pending = [];
+    try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
+    try { sessions = (await api("/sessions/active")) || []; } catch (_) { sessions = []; }
+    try { pending = (await api("/access-requests/pending")) || []; } catch (_) { pending = []; }
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Dashboard</h1>
+          <p>Live posture across machines, sessions, and access.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="stat-label">Machines</div><div class="stat">${machines.length}</div></div>
+        <div class="card"><div class="stat-label">Active sessions</div><div class="stat">${sessions.length}</div></div>
+        <div class="card"><div class="stat-label">Pending requests</div><div class="stat">${pending.length}</div></div>
+        <div class="card"><div class="stat-label">Role</div><div class="stat" style="font-size:1.25rem;text-transform:capitalize">${esc(role)}</div></div>
+      </div>
+      <div class="card">
+        <h3>Pending access</h3>
+        ${requestTable(pending, canApprove())}
+      </div>
+      <div class="card">
+        <h3>Active sessions</h3>
+        ${sessionMiniTable(sessions)}
+      </div>`;
+    bindRequestActions(root);
+  }
+
+  function sessionMiniTable(rows) {
+    if (!rows.length) return `<div class="empty">No active sessions.</div>`;
+    return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Status</th></tr></thead>
+      <tbody>${rows.map((s) => `<tr>
+        <td class="mono">${esc(shortId(s.id))}</td>
+        <td class="mono">${esc(s.user_id)}</td>
+        <td class="mono">${esc(s.machine_id)}</td>
+        <td class="mono">${esc(s.remote_user || "—")}</td>
+        <td>${badge(s.status)}</td>
+      </tr>`).join("")}</tbody></table>`;
+  }
+
+  /* ── Access requests ── */
+  function requestTable(rows, withActions) {
+    if (!rows || !rows.length) return `<div class="empty">No pending requests.</div>`;
+    return `<table><thead><tr>
+      <th>ID</th><th>User</th><th>Machine</th><th>Remote users</th><th>Reason</th><th>Duration</th><th>Status</th>
+      ${withActions ? "<th></th>" : ""}
+    </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td class="mono">${esc(shortId(r.id))}</td>
+      <td class="mono">${esc(r.user_id)}</td>
+      <td class="mono">${esc(r.machine_id)}</td>
+      <td class="mono">${esc((r.remote_users || []).join(", ") || "—")}</td>
+      <td>${esc(r.reason || "")}</td>
+      <td class="mono">${r.duration != null ? Math.round(r.duration / 60) + "m" : "—"}</td>
+      <td>${badge(r.status)}</td>
+      ${withActions ? `<td class="row">
+        ${r.status === "pending" ? `
+          <button type="button" class="btn sm" data-approve="${esc(r.id)}">Approve</button>
+          <button type="button" class="btn danger sm" data-reject="${esc(r.id)}">Reject</button>` : ""}
+      </td>` : ""}
+    </tr>`).join("")}</tbody></table>`;
+  }
+
+  function bindRequestActions(root) {
+    root.querySelectorAll("[data-approve]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`/admin/access-requests/${btn.dataset.approve}/approve`, {
+            method: "POST",
+            body: JSON.stringify({ reviewer_id: state.user.id }),
+          });
+          toast("Request approved", "ok");
+          render();
+        } catch (e) { toast(e.message, "error"); }
+      };
+    });
+    root.querySelectorAll("[data-reject]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`/admin/access-requests/${btn.dataset.reject}/reject`, {
+            method: "POST",
+            body: JSON.stringify({ reviewer_id: state.user.id }),
+          });
+          toast("Request rejected", "ok");
+          render();
+        } catch (e) { toast(e.message, "error"); }
+      };
+    });
+  }
+
+  async function renderRequests(root) {
+    const approve = canApprove();
+    let pending = [];
+    try { pending = (await api("/access-requests/pending")) || []; } catch (_) { pending = []; }
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Access requests</h1>
+          <p>${approve ? "Review and approve temporary machine access." : "Request temporary access to machines."}</p>
+        </div>
+      </div>
+      ${!approve ? `
+      <div class="card">
+        <h3>New request</h3>
+        <div class="split-2">
+          <div>
+            <label class="field">Machine ID or name</label>
+            <input id="reqMachine" placeholder="machine-id" />
+          </div>
+          <div>
+            <label class="field">Duration (minutes)</label>
+            <input id="reqDuration" type="number" min="5" value="60" />
+          </div>
+        </div>
+        <label class="field">Remote users (comma-separated)</label>
+        <input id="reqRemote" value="root" />
+        <label class="field">Reason</label>
+        <textarea id="reqReason" rows="2" placeholder="Why do you need access?"></textarea>
+        <button type="button" class="btn" id="reqSubmit">Submit request</button>
+        <div id="reqMsg"></div>
+      </div>` : ""}
+      <div class="card">
+        <h3>${approve ? "Queue" : "Pending"}</h3>
+        ${requestTable(pending, approve)}
+      </div>`;
+
+    bindRequestActions(root);
+    const submit = document.getElementById("reqSubmit");
+    if (submit) {
+      submit.onclick = async () => {
+        const msg = document.getElementById("reqMsg");
+        msg.innerHTML = "";
+        try {
+          const remote = document.getElementById("reqRemote").value.split(",").map((s) => s.trim()).filter(Boolean);
+          const mins = parseInt(document.getElementById("reqDuration").value, 10) || 60;
+          await api("/access-requests", {
+            method: "POST",
+            body: JSON.stringify({
+              machine_id: document.getElementById("reqMachine").value.trim(),
+              remote_users: remote,
+              reason: document.getElementById("reqReason").value.trim(),
+              duration: mins * 60,
+            }),
+          });
+          msg.innerHTML = `<p class="okmsg">Request submitted.</p>`;
+          toast("Access request created", "ok");
+          render();
+        } catch (e) {
+          msg.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+        }
+      };
+    }
+  }
+
+  /* ── Machines ── */
+  async function renderMachines(root) {
+    const machines = (await api("/machines")) || [];
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Machines</h1>
+          <p>Registered targets and agent health.</p>
+        </div>
+      </div>
+      <div class="card">
+        ${machines.length ? `<table><thead><tr>
+          <th>Name</th><th>Host</th><th>Status</th><th>Agent</th><th>Last seen</th><th></th>
+        </tr></thead><tbody>${machines.map((m) => `<tr>
+          <td><strong>${esc(m.name)}</strong><div class="mono muted" style="font-size:.75rem">${esc(shortId(m.id))}</div></td>
+          <td class="mono">${esc(m.hostname)}:${esc(m.port)}</td>
+          <td>${m.is_active ? badge("active") : badge("offline")}</td>
+          <td class="mono">${esc(shortId(m.agent_id))}</td>
+          <td class="mono">${esc(fmtTime(m.last_seen_at))}</td>
+          <td class="row">
+            <button type="button" class="btn secondary sm" data-goto-term="${esc(m.name)}">Terminal</button>
+            <button type="button" class="btn ghost sm" data-goto-files="${esc(m.name)}">Files</button>
+          </td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No machines registered.</div>`}
+      </div>`;
+    root.querySelectorAll("[data-goto-term]").forEach((b) => {
+      b.onclick = () => { state.view = "terminal"; state._preMachine = b.dataset.gotoTerm; buildNav(); render(); };
+    });
+    root.querySelectorAll("[data-goto-files]").forEach((b) => {
+      b.onclick = () => {
+        state.files.machine = b.dataset.gotoFiles;
+        state.view = "files";
+        buildNav();
+        render();
+      };
+    });
+  }
+
+  /* ── Terminal ── */
+  function disconnectTerminal() {
+    if (state.term._onResize) {
+      window.removeEventListener("resize", state.term._onResize);
+      state.term._onResize = null;
+    }
+    if (state.term.ws) {
+      try { state.term.ws.close(); } catch (_) { /* ignore */ }
+      state.term.ws = null;
+    }
+    if (state.term.xterm) {
+      try { state.term.xterm.dispose(); } catch (_) { /* ignore */ }
+      state.term.xterm = null;
+      state.term.fit = null;
+    }
+    state.term.connected = false;
+  }
+
+  async function renderTerminal(root) {
+    let machines = [];
+    try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
+    const pre = state._preMachine || (machines[0] && machines[0].name) || "";
+    state._preMachine = null;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Terminal</h1>
+          <p>Interactive shell over the Orion Belt gateway.</p>
+        </div>
+      </div>
+      <div class="card" style="padding-bottom:.85rem">
+        <div class="term-toolbar">
+          <div class="field-wrap">
+            <label class="field">Machine</label>
+            <select id="termMachine">
+              ${machines.map((m) => `<option value="${esc(m.name)}" ${m.name === pre ? "selected" : ""}>${esc(m.name)} (${esc(m.hostname)})</option>`).join("")}
+              ${!machines.length ? `<option value="">No machines</option>` : ""}
+            </select>
+          </div>
+          <div class="field-wrap">
+            <label class="field">Remote user</label>
+            <input id="termUser" list="remoteUserList" value="root" />
+            <datalist id="remoteUserList">${REMOTE_USERS.map((u) => `<option value="${u}">`).join("")}</datalist>
+          </div>
+          <button type="button" class="btn" id="termConnect">Connect</button>
+          <button type="button" class="btn secondary" id="termDisconnect" disabled>Disconnect</button>
+        </div>
+        <div class="term-frame">
+          <div class="term-status">
+            <span><span class="dot off" id="termDot"></span><span id="termStatusText">disconnected</span></span>
+            <span id="termMeta">—</span>
+          </div>
+          <div id="xtermHost"></div>
+        </div>
+      </div>`;
+
+    const host = document.getElementById("xtermHost");
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+      fontSize: 13,
+      theme: {
+        background: "#05090b",
+        foreground: "#e8f0f2",
+        cursor: "#e8a54b",
+        selectionBackground: "rgba(232,165,75,0.3)",
+        black: "#0a1214",
+        brightBlack: "#5e747c",
+        red: "#f87171",
+        green: "#34d399",
+        yellow: "#fbbf24",
+        blue: "#38bdf8",
+        magenta: "#c084fc",
+        cyan: "#2dd4bf",
+        white: "#e8f0f2",
+      },
+    });
+    let fitAddon = null;
+    try {
+      const FitCtor = (typeof FitAddon !== "undefined" && (FitAddon.FitAddon || FitAddon))
+        || (window.FitAddon && (window.FitAddon.FitAddon || window.FitAddon));
+      if (typeof FitCtor === "function") {
+        fitAddon = new FitCtor();
+        term.loadAddon(fitAddon);
+      }
+    } catch (_) { /* fit optional */ }
+    term.open(host);
+    if (fitAddon) {
+      try { fitAddon.fit(); } catch (_) { /* ignore */ }
+    }
+    state.term.xterm = term;
+    state.term.fit = fitAddon;
+
+    term.onData((data) => {
+      const ws = state.term.ws;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+    });
+
+    const setStatus = (live, text) => {
+      document.getElementById("termDot").className = "dot " + (live ? "live" : "off");
+      document.getElementById("termStatusText").textContent = text;
+      document.getElementById("termConnect").disabled = live;
+      document.getElementById("termDisconnect").disabled = !live;
+    };
+
+    const onResize = () => {
+      if (fitAddon) {
+        try { fitAddon.fit(); } catch (_) { /* ignore */ }
+      }
+      if (state.term.ws && state.term.ws.readyState === WebSocket.OPEN && term.cols && term.rows) {
+        state.term.ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    };
+    window.addEventListener("resize", onResize);
+    state.term._onResize = onResize;
+
+    document.getElementById("termConnect").onclick = () => {
+      const machine = document.getElementById("termMachine").value.trim();
+      const user = document.getElementById("termUser").value.trim() || "root";
+      if (!machine) { toast("Select a machine", "error"); return; }
+      if (state.term.ws) {
+        try { state.term.ws.close(); } catch (_) { /* ignore */ }
+        state.term.ws = null;
+      }
+
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const qs = new URLSearchParams({
+        machine,
+        user,
+        token: state.token || "",
+      });
+      // Cookie session_token (set at login) authenticates Gin middleware for same-origin WS.
+      const ws = new WebSocket(`${proto}://${location.host}/api/v1/terminal/ws?${qs.toString()}`);
+      ws.binaryType = "arraybuffer";
+      state.term.ws = ws;
+      setStatus(false, "connecting…");
+      document.getElementById("termMeta").textContent = `${machine} as ${user}`;
+
+      ws.onopen = () => {
+        state.term.connected = true;
+        setStatus(true, "connected");
+        term.focus();
+        onResize();
+        toast("Terminal connected", "ok");
+      };
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          term.write(new Uint8Array(ev.data));
+        } else if (typeof ev.data === "string") {
+          term.write(ev.data);
+        } else if (ev.data instanceof Blob) {
+          ev.data.arrayBuffer().then((buf) => term.write(new Uint8Array(buf)));
+        }
+      };
+      ws.onclose = () => {
+        if (state.term.ws === ws) state.term.ws = null;
+        state.term.connected = false;
+        setStatus(false, "disconnected");
+      };
+      ws.onerror = () => {
+        setStatus(false, "error");
+        toast("WebSocket error", "error");
+      };
+    };
+
+    document.getElementById("termDisconnect").onclick = () => {
+      if (state.term.ws) state.term.ws.close();
+      setStatus(false, "disconnected");
+    };
+  }
+
+  /* ── Files ── */
+  function joinPath(base, name) {
+    if (!base || base === "/") return "/" + name.replace(/^\//, "");
+    return base.replace(/\/$/, "") + "/" + name;
+  }
+
+  function parentPath(p) {
+    if (!p || p === "/") return "/";
+    const parts = p.replace(/\/$/, "").split("/");
+    parts.pop();
+    return parts.join("/") || "/";
+  }
+
+  async function renderFiles(root) {
+    let machines = [];
+    try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
+    if (!state.files.machine && machines[0]) state.files.machine = machines[0].name;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Files</h1>
+          <p>Browse and transfer files on remote machines.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="term-toolbar">
+          <div class="field-wrap">
+            <label class="field">Machine</label>
+            <select id="fileMachine">
+              ${machines.map((m) => `<option value="${esc(m.name)}" ${m.name === state.files.machine ? "selected" : ""}>${esc(m.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field-wrap">
+            <label class="field">Remote user</label>
+            <input id="fileUser" list="remoteUserList2" value="${esc(state.files.user)}" />
+            <datalist id="remoteUserList2">${REMOTE_USERS.map((u) => `<option value="${u}">`).join("")}</datalist>
+          </div>
+          <button type="button" class="btn secondary" id="fileRefresh">Refresh</button>
+        </div>
+        <div class="path-bar">
+          <button type="button" class="btn secondary sm" id="fileUp">↑ Up</button>
+          <input id="filePath" value="${esc(state.files.path)}" />
+          <button type="button" class="btn sm" id="fileGo">Go</button>
+          <button type="button" class="btn secondary sm" id="fileMkdir">New folder</button>
+          <label class="btn secondary sm" style="cursor:pointer;margin:0">
+            Upload
+            <input type="file" id="fileUpload" hidden />
+          </label>
+        </div>
+        <div id="fileList"><p class="muted">Loading…</p></div>
+      </div>`;
+
+    const syncState = () => {
+      state.files.machine = document.getElementById("fileMachine").value;
+      state.files.user = document.getElementById("fileUser").value.trim() || "root";
+      state.files.path = document.getElementById("filePath").value.trim() || "/";
+    };
+
+    async function loadList() {
+      syncState();
+      const box = document.getElementById("fileList");
+      box.innerHTML = `<p class="muted">Loading…</p>`;
+      try {
+        const q = new URLSearchParams({
+          machine: state.files.machine,
+          path: state.files.path,
+          user: state.files.user,
+        });
+        const data = await api("/files/list?" + q.toString());
+        if (data.raw && !data.entries) {
+          box.innerHTML = `<pre class="code">${esc(data.raw)}</pre>`;
+          return;
+        }
+        if (data.error) {
+          box.innerHTML = `<div class="err">${esc(data.error)}</div>`;
+          return;
+        }
+        const entries = data.entries || [];
+        if (!entries.length) {
+          box.innerHTML = `<div class="empty">Empty directory.</div>`;
+          return;
+        }
+        box.innerHTML = `<table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+          <tbody>${entries.map((e) => `<tr>
+            <td>
+              <span class="file-row-name ${e.is_dir ? "dir" : ""}" data-path="${esc(e.path)}" data-dir="${e.is_dir ? "1" : "0"}">
+                ${e.is_dir ? "📁 " : "📄 "}${esc(e.name)}
+              </span>
+            </td>
+            <td class="mono">${e.is_dir ? "—" : esc(String(e.size ?? ""))}</td>
+            <td class="mono">${e.mtime ? esc(fmtTime(e.mtime * 1000)) : "—"}</td>
+            <td class="row">
+              ${!e.is_dir ? `<button type="button" class="btn ghost sm" data-dl="${esc(e.path)}">Download</button>` : ""}
+              <button type="button" class="btn danger sm" data-rm="${esc(e.path)}">Delete</button>
+            </td>
+          </tr>`).join("")}</tbody></table>`;
+
+        box.querySelectorAll(".file-row-name").forEach((el) => {
+          el.onclick = () => {
+            if (el.dataset.dir === "1") {
+              document.getElementById("filePath").value = el.dataset.path;
+              loadList();
+            }
+          };
+        });
+        box.querySelectorAll("[data-dl]").forEach((btn) => {
+          btn.onclick = async () => {
+            syncState();
+            const q = new URLSearchParams({
+              machine: state.files.machine,
+              path: btn.dataset.dl,
+              user: state.files.user,
+            });
+            try {
+              const res = await apiRaw("/files/download?" + q.toString());
+              if (!res.ok) throw new Error("download failed");
+              const blob = await res.blob();
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = btn.dataset.dl.split("/").pop() || "download";
+              a.click();
+              URL.revokeObjectURL(a.href);
+            } catch (e) { toast(e.message, "error"); }
+          };
+        });
+        box.querySelectorAll("[data-rm]").forEach((btn) => {
+          btn.onclick = async () => {
+            if (!confirm("Delete " + btn.dataset.rm + "?")) return;
+            syncState();
+            const q = new URLSearchParams({
+              machine: state.files.machine,
+              path: btn.dataset.rm,
+              user: state.files.user,
+            });
+            try {
+              await api("/files?" + q.toString(), { method: "DELETE" });
+              toast("Deleted", "ok");
+              loadList();
+            } catch (e) { toast(e.message, "error"); }
+          };
+        });
+      } catch (e) {
+        box.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+      }
+    }
+
+    document.getElementById("fileRefresh").onclick = loadList;
+    document.getElementById("fileGo").onclick = loadList;
+    document.getElementById("fileUp").onclick = () => {
+      document.getElementById("filePath").value = parentPath(document.getElementById("filePath").value);
+      loadList();
+    };
+    document.getElementById("fileMachine").onchange = loadList;
+    document.getElementById("fileMkdir").onclick = async () => {
+      const name = prompt("Folder name");
+      if (!name) return;
+      syncState();
+      const path = joinPath(state.files.path, name);
+      try {
+        await api("/files/mkdir", {
+          method: "POST",
+          body: JSON.stringify({ machine: state.files.machine, path, user: state.files.user }),
+        });
+        toast("Folder created", "ok");
+        loadList();
+      } catch (e) { toast(e.message, "error"); }
+    };
+    document.getElementById("fileUpload").onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      syncState();
+      const path = joinPath(state.files.path, file.name);
+      const fd = new FormData();
+      fd.append("machine", state.files.machine);
+      fd.append("path", path);
+      fd.append("user", state.files.user);
+      fd.append("file", file);
+      try {
+        await api("/files/upload", { method: "POST", body: fd });
+        toast("Uploaded " + file.name, "ok");
+        loadList();
+      } catch (e) { toast(e.message, "error"); }
+      ev.target.value = "";
+    };
+
+    if (machines.length) loadList();
+    else document.getElementById("fileList").innerHTML = `<div class="empty">No machines available.</div>`;
+  }
+
+  /* ── Sessions ── */
+  async function renderSessions(root) {
+    let sessions = [];
+    try { sessions = (await api("/sessions")) || []; } catch (_) {
+      try { sessions = (await api("/sessions/active")) || []; } catch (__) { sessions = []; }
+    }
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Sessions</h1>
+          <p>Recorded and live privileged sessions.</p>
+        </div>
+      </div>
+      <div class="card">
+        ${sessions.length ? `<table><thead><tr>
+          <th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Started</th><th>Status</th><th></th>
+        </tr></thead><tbody>${sessions.map((s) => `<tr>
+          <td class="mono">${esc(shortId(s.id))}</td>
+          <td class="mono">${esc(s.user_id)}</td>
+          <td class="mono">${esc(s.machine_id)}</td>
+          <td class="mono">${esc(s.remote_user || "—")}</td>
+          <td class="mono">${esc(fmtTime(s.start_time))}</td>
+          <td>${badge(s.status)}</td>
+          <td><button type="button" class="btn secondary sm" data-play="${esc(s.id)}">Playback</button></td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No sessions.</div>`}
+        <div id="playback"></div>
+      </div>`;
+
+    root.querySelectorAll("[data-play]").forEach((btn) => {
+      btn.onclick = async () => {
+        const box = document.getElementById("playback");
+        box.innerHTML = `<p class="muted">Loading recording…</p>`;
+        try {
+          const res = await apiRaw("/sessions/" + encodeURIComponent(btn.dataset.play) + "/content");
+          const text = await res.text();
+          if (!res.ok) {
+            let msg = text;
+            try { msg = JSON.parse(text).error || text; } catch (_) { /* ignore */ }
+            throw new Error(msg || "failed to load recording");
+          }
+          box.innerHTML = `<h3 style="margin:1rem 0 .5rem">Recording ${esc(shortId(btn.dataset.play))}</h3><pre class="session"></pre>`;
+          box.querySelector("pre").textContent = text;
+        } catch (e) {
+          box.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+        }
+      };
+    });
+  }
+
+  /* ── Users ── */
+  async function renderUsers(root) {
+    const users = (await api("/users")) || [];
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Users</h1>
+          <p>Accounts with PAM roles and MFA posture.</p>
+        </div>
+      </div>
+      <div class="card">
+        <table><thead><tr>
+          <th>Username</th><th>Email</th><th>Role</th><th>MFA</th><th>WebAuthn</th><th>Created</th>
+        </tr></thead>
+        <tbody>${users.map((u) => {
+          const r = u.role || (u.is_admin ? "admin" : "user");
+          return `<tr>
+            <td><strong>${esc(u.username)}</strong><div class="mono muted" style="font-size:.72rem">${esc(shortId(u.id))}</div></td>
+            <td>${esc(u.email)}</td>
+            <td><span class="role-pill">${esc(r)}</span></td>
+            <td>${u.mfa_enabled ? badge("enabled") : badge("off")}</td>
+            <td>${u.webauthn_enabled ? badge("enabled") : badge("off")}</td>
+            <td class="mono">${esc(fmtTime(u.created_at))}</td>
+          </tr>`;
+        }).join("") || `<tr><td colspan="6" class="muted">No users</td></tr>`}</tbody></table>
+      </div>`;
+  }
+
+  /* ── Agents ── */
+  async function renderAgents(root) {
+    let connected = [];
+    try {
+      const data = await api("/admin/agents/connected");
+      connected = Array.isArray(data) ? data : (data.agents || data.connected || []);
+    } catch (e) {
+      root.innerHTML = `<div class="page-head"><div><h1>Agents</h1></div></div>
+        <div class="card"><div class="err">${esc(e.message)}</div></div>`;
+      return;
+    }
+    let machines = [];
+    try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
+    const connectedSet = new Set(connected.map(String));
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Agents</h1>
+          <p>Connected agent tunnels and machine control.</p>
+        </div>
+        <button type="button" class="btn secondary sm" id="agentRefresh">Refresh</button>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="stat-label">Connected</div><div class="stat">${connected.length}</div></div>
+        <div class="card"><div class="stat-label">Registered machines</div><div class="stat">${machines.length}</div></div>
+      </div>
+      <div class="card">
+        <h3>Live connections</h3>
+        ${connected.length ? `<table><thead><tr><th>Machine ID</th><th>Name</th><th>Status</th></tr></thead>
+          <tbody>${connected.map((id) => {
+            const m = machines.find((x) => x.id === id || x.name === id);
+            return `<tr>
+              <td class="mono">${esc(id)}</td>
+              <td>${esc(m ? m.name : "—")}</td>
+              <td>${badge("online")}</td>
+            </tr>`;
+          }).join("")}</tbody></table>` : `<div class="empty">No agents connected.</div>`}
+      </div>
+      <div class="card">
+        <h3>All machines</h3>
+        <table><thead><tr><th>Name</th><th>Host</th><th>Tunnel</th></tr></thead>
+        <tbody>${machines.map((m) => `<tr>
+          <td>${esc(m.name)}</td>
+          <td class="mono">${esc(m.hostname)}:${esc(m.port)}</td>
+          <td>${connectedSet.has(m.id) || connectedSet.has(m.name) ? badge("online") : badge("offline")}</td>
+        </tr>`).join("") || `<tr><td colspan="3" class="muted">No machines</td></tr>`}</tbody></table>
+      </div>`;
+    document.getElementById("agentRefresh").onclick = () => render();
+  }
+
+  /* ── Audit ── */
+  async function renderAudit(root) {
+    const logs = (await api("/audit-logs")) || [];
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Audit</h1>
+          <p>Immutable trail of privileged actions.</p>
+        </div>
+      </div>
+      <div class="card">
+        ${logs.length ? `<table><thead><tr>
+          <th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>IP</th>
+        </tr></thead><tbody>${logs.map((l) => `<tr>
+          <td class="mono">${esc(fmtTime(l.timestamp))}</td>
+          <td class="mono">${esc(l.user_id)}</td>
+          <td>${esc(l.action)}</td>
+          <td class="mono">${esc(l.resource)}</td>
+          <td class="mono">${esc(l.ip_address || "—")}</td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No audit entries.</div>`}
+      </div>`;
+  }
+
+  /* ── Security ── */
+  async function renderSecurity(root) {
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Security</h1>
+          <p>MFA, WebAuthn authenticators, and SSH public keys.</p>
+        </div>
+      </div>
+      <div class="tabs">
+        <button type="button" data-tab="mfa" class="${state.secTab === "mfa" ? "active" : ""}">TOTP / MFA</button>
+        <button type="button" data-tab="webauthn" class="${state.secTab === "webauthn" ? "active" : ""}">WebAuthn</button>
+        <button type="button" data-tab="ssh" class="${state.secTab === "ssh" ? "active" : ""}">SSH keys</button>
+      </div>
+      <div id="secBody"></div>`;
+
+    root.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.onclick = () => {
+        state.secTab = btn.dataset.tab;
+        renderSecurity(root);
+      };
+    });
+
+    const body = document.getElementById("secBody");
+    if (state.secTab === "mfa") await renderMFAPanel(body);
+    else if (state.secTab === "webauthn") await renderWebAuthnPanel(body);
+    else await renderSSHKeysPanel(body);
+  }
+
+  async function renderMFAPanel(body) {
+    const st = await api("/mfa/status");
+    body.innerHTML = `
+      <div class="card">
+        <h3>Time-based one-time passwords</h3>
+        <p>Status: ${st.mfa_enabled ? badge("enabled") : badge("off")}
+          ${st.mfa_required ? `<span class="muted"> · organization requires MFA</span>` : ""}</p>
+        <div class="row" style="margin-top:.75rem">
+          <button type="button" class="btn" id="mfaEnroll" ${st.mfa_enabled ? "disabled" : ""}>Enroll TOTP</button>
+          <button type="button" class="btn danger" id="mfaDisable" ${st.mfa_enabled ? "" : "disabled"}>Disable MFA</button>
+        </div>
+        <div id="mfaOut"></div>
+      </div>`;
+
+    document.getElementById("mfaEnroll").onclick = async () => {
+      const out = document.getElementById("mfaOut");
+      try {
+        const data = await api("/mfa/enroll", { method: "POST", body: "{}" });
+        out.innerHTML = `
+          <p class="okmsg">Scan the otpauth URL in your authenticator, then confirm with a code.</p>
+          <label class="field">Secret</label>
+          <input class="mono" readonly value="${esc(data.secret)}" />
+          <label class="field">otpauth URL</label>
+          <textarea class="mono" rows="2" readonly>${esc(data.otpauth_url)}</textarea>
+          <label class="field">Backup codes — save these</label>
+          <pre class="session">${esc((data.backup_codes || []).join("\n"))}</pre>
+          <label class="field">Confirm code</label>
+          <input id="mfaConfirmCode" autocomplete="one-time-code" />
+          <button type="button" class="btn" id="mfaConfirmBtn">Confirm enrollment</button>
+          <div id="mfaMsg"></div>`;
+        document.getElementById("mfaConfirmBtn").onclick = async () => {
+          try {
+            await api("/mfa/confirm", {
+              method: "POST",
+              body: JSON.stringify({ code: document.getElementById("mfaConfirmCode").value.trim() }),
+            });
+            document.getElementById("mfaMsg").innerHTML = `<p class="okmsg">MFA enabled.</p>`;
+            toast("MFA enabled", "ok");
+            render();
+          } catch (e) {
+            document.getElementById("mfaMsg").innerHTML = `<p class="err">${esc(e.message)}</p>`;
+          }
+        };
+      } catch (e) {
+        out.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+      }
+    };
+
+    document.getElementById("mfaDisable").onclick = async () => {
+      const code = prompt("Enter TOTP or backup code to disable MFA");
+      if (!code) return;
+      try {
+        await api("/mfa/disable", { method: "POST", body: JSON.stringify({ code }) });
+        toast("MFA disabled", "ok");
+        render();
+      } catch (e) { toast(e.message, "error"); }
+    };
+  }
+
+  async function renderWebAuthnPanel(body) {
+    let creds = [];
+    try { creds = (await api("/webauthn/credentials")) || []; } catch (e) {
+      body.innerHTML = `<div class="card"><div class="err">${esc(e.message)}</div>
+        <p class="muted">WebAuthn may be disabled on this server.</p></div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="card">
+        <h3>Registered authenticators</h3>
+        <div class="row" style="margin-bottom:.85rem">
+          <button type="button" class="btn teal" id="waRegister">Register YubiKey / FIDO2</button>
+        </div>
+        <div id="waMsg"></div>
+        ${creds.length ? `<table><thead><tr><th>Name</th><th>Credential</th><th>Created</th><th></th></tr></thead>
+          <tbody>${creds.map((c) => `<tr>
+            <td>${esc(c.name)}</td>
+            <td class="mono">${esc((c.cred_id || "").slice(0, 16))}…</td>
+            <td class="mono">${esc(fmtTime(c.created_at))}</td>
+            <td><button type="button" class="btn danger sm" data-wa-del="${esc(c.id)}">Delete</button></td>
+          </tr>`).join("")}</tbody></table>` : `<div class="empty">No WebAuthn credentials yet.</div>`}
+      </div>`;
+
+    document.getElementById("waRegister").onclick = async () => {
+      const msg = document.getElementById("waMsg");
+      msg.innerHTML = "";
+      try {
+        const begin = await api("/webauthn/register/begin", { method: "POST", body: "{}" });
+        const publicKey = preparePublicKeyOptions(begin.publicKey || begin);
+        const cred = await navigator.credentials.create({ publicKey });
+        const json = publicKeyCredentialToJSON(cred);
+        await api("/webauthn/register/finish", {
+          method: "POST",
+          body: JSON.stringify(json),
+        });
+        toast("Authenticator registered", "ok");
+        render();
+      } catch (e) {
+        msg.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+      }
+    };
+
+    body.querySelectorAll("[data-wa-del]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm("Remove this authenticator?")) return;
+        try {
+          await api("/webauthn/credentials/" + encodeURIComponent(btn.dataset.waDel), { method: "DELETE" });
+          toast("Credential removed", "ok");
+          render();
+        } catch (e) { toast(e.message, "error"); }
+      };
+    });
+  }
+
+  async function renderSSHKeysPanel(body) {
+    let keys = [];
+    try { keys = (await api("/ssh-keys")) || []; } catch (e) {
+      body.innerHTML = `<div class="card"><div class="err">${esc(e.message)}</div></div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="card">
+        <h3>SSH public keys</h3>
+        <p class="muted" style="margin-top:0">Supports classic and FIDO/sk-* key types.</p>
+        <label class="field">Name</label>
+        <input id="sshKeyName" placeholder="laptop, yubikey-work…" />
+        <label class="field">Public key</label>
+        <textarea id="sshKeyPub" rows="3" placeholder="ssh-ed25519 AAAA… or sk-ssh-ed25519@openssh.com AAAA…"></textarea>
+        <button type="button" class="btn" id="sshKeyAdd">Add key</button>
+        <div id="sshKeyMsg"></div>
+      </div>
+      <div class="card">
+        <h3>Your keys</h3>
+        ${keys.length ? `<table><thead><tr><th>Name</th><th>Type</th><th>Fingerprint</th><th>Created</th><th></th></tr></thead>
+          <tbody>${keys.map((k) => `<tr>
+            <td>${esc(k.name)}</td>
+            <td class="mono">${esc(k.key_type)}</td>
+            <td class="mono" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(k.public_key)}">${esc((k.public_key || "").split(" ").slice(0, 2).join(" ").slice(0, 48))}…</td>
+            <td class="mono">${esc(fmtTime(k.created_at))}</td>
+            <td><button type="button" class="btn danger sm" data-ssh-del="${esc(k.id)}">Delete</button></td>
+          </tr>`).join("")}</tbody></table>` : `<div class="empty">No SSH keys stored.</div>`}
+      </div>`;
+
+    document.getElementById("sshKeyAdd").onclick = async () => {
+      const msg = document.getElementById("sshKeyMsg");
+      msg.innerHTML = "";
+      try {
+        await api("/ssh-keys", {
+          method: "POST",
+          body: JSON.stringify({
+            name: document.getElementById("sshKeyName").value.trim(),
+            public_key: document.getElementById("sshKeyPub").value.trim(),
+          }),
+        });
+        toast("SSH key added", "ok");
+        render();
+      } catch (e) {
+        msg.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+      }
+    };
+
+    body.querySelectorAll("[data-ssh-del]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm("Delete this SSH key?")) return;
+        try {
+          await api("/ssh-keys/" + encodeURIComponent(btn.dataset.sshDel), { method: "DELETE" });
+          toast("SSH key deleted", "ok");
+          render();
+        } catch (e) { toast(e.message, "error"); }
+      };
+    });
+  }
+
+  /* ── Init ── */
+  (async function init() {
+    if (state.token) setSessionCookie(state.token);
+    if (!state.token) {
+      showLogin();
+      return;
+    }
+    try {
+      await refreshMe();
+      state.view = defaultViewForRole(roleOf(state.user));
+      showApp();
+    } catch {
+      clearAuth();
+      showLogin();
+    }
+  })();
 })();
 </script>
 </body>

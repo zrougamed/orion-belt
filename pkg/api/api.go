@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
@@ -31,6 +32,8 @@ type APIServer struct {
 	agentCommander  AgentCommander
 	mfaRequired    bool
 	recordingCrypt *recording.Crypto
+	webAuthn       *webauthn.WebAuthn
+	terminalBridge TerminalBridge
 }
 
 // AgentCommander sends control commands to connected agents.
@@ -48,6 +51,8 @@ type Options struct {
 	MetricsEnabled bool
 	MFARequired    bool
 	RecordingCrypt *recording.Crypto
+	WebAuthn       *webauthn.WebAuthn
+	TerminalBridge TerminalBridge
 }
 
 // NewAPIServer creates a new API server
@@ -75,17 +80,21 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		rateLimiter:    newRateLimiter(60, time.Minute),
 		mfaRequired:    opt.MFARequired,
 		recordingCrypt: opt.RecordingCrypt,
+		webAuthn:       opt.WebAuthn,
+		terminalBridge: opt.TerminalBridge,
 	}
 
-	// Middleware
 	api.router.Use(gin.Recovery())
 	api.router.Use(api.loggingMiddleware())
 	api.router.Use(api.metricsMiddleware())
-
-	// Routes
 	api.setupRoutes(opt.MetricsEnabled)
 
 	return api
+}
+
+// SetTerminalBridge wires web terminal / file browser after construction.
+func (s *APIServer) SetTerminalBridge(b TerminalBridge) {
+	s.terminalBridge = b
 }
 
 // SetAgentCommander wires remote agent control after the server is constructed.
@@ -165,6 +174,10 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 
 		// MFA
 		s.registerMFARoutes(protected)
+
+		// WebAuthn / FIDO2, terminal, files, SSH keys
+		s.registerWebAuthnRoutes(protected, public)
+		s.registerTerminalRoutes(protected)
 	}
 
 	// Admin-only endpoints

@@ -17,6 +17,13 @@ auth:
   jwt_secret: "change-me-to-a-long-random-secret"
   jwt_expiry_hours: 24
   mfa_required: false
+  webauthn:
+    enabled: true
+    rp_display_name: "Orion Belt"
+    rp_id: "localhost"
+    origins:
+      - "http://localhost:8080"
+      - "https://localhost:8080"
   openfga:
     enabled: false
     api_url: "http://localhost:8081"

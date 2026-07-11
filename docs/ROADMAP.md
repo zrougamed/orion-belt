@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Version:** Alpha v0.4 (MFA, admin UI, OpenFGA, recording encryption)
-**Status:** Phase 1 hardening complete on master through v0.3.1; v0.4 features on `feature/v0.4-mfa-ui-openfga-recording`
+**Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
+**Status:** v0.3.1 on master; v0.4 work on `feature/v0.4-mfa-ui-openfga-recording`
 
 ## What Orion Belt Is
 
@@ -126,12 +126,11 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] Disable with MFA proof
   - [x] Enforcement on API login paths (`totp_code`)
   - [x] `auth.mfa_required` blocks SSH until enrolled
-  - [ ] WebAuthn / hardware keys
-
-* **Web Admin UI**
-  - [x] Embedded SPA at `/ui/` (login, dashboard, approvals, machines, sessions, users, audit, MFA)
-  - [x] Session playback in browser
-  - [ ] Richer permission editor / machine CRUD forms
+  - [x] WebAuthn / hardware keys (YubiKey FIDO2)
+  - [x] FIDO SSH public keys (`sk-ssh-ed25519@openssh.com`, etc.)
+  - [x] OpenSSH agentless clients (`user+machine@gateway`)
+  - [x] High-fidelity web console with roles, web terminal, file browser
+  - [ ] Certificate lifecycle / SSH CA
 
 * **OpenFGA**
   - [x] Optional OpenFGA HTTP client (`auth.openfga`)
@@ -154,7 +153,8 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Structured logs (Loki/ELK)
 - [ ] OpenTelemetry tracing
 - [ ] Notification templates / user preferences
-- [ ] WebAuthn
+- [ ] Recording compression
+- [ ] Richer permission editor / machine CRUD in UI
 
 ## Roadmap — Later Phases
 
@@ -222,22 +222,22 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.2:** REST API, API keys / session auth
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
-* **v0.4:** MFA (TOTP), embedded admin UI, OpenFGA optional authz, recording encryption + retention
-* **v0.5:** HA, IdP integrations, live session monitoring, WebAuthn
+* **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
+* **v0.5:** HA, IdP integrations, live session monitoring, SSH CA
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
 
 ## Contribution
 
-Open source — focus areas: WebAuthn, IdP integrations, recording compression, HA, docs, and tests.
+Open source — focus areas: IdP integrations, recording compression, HA, SSH CA, docs, and tests.
 
 **High-priority contribution areas (next):**
-- WebAuthn / hardware MFA
 - Identity provider integrations (OIDC/SAML)
 - Live session monitoring
 - SSH certificate authority
 - OpenAPI specification
+- Recording compression
 
 ---
 
