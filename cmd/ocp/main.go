@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/client"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
@@ -17,11 +18,12 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "ocp source destination",
-	Short: "Orion-Belt SCP Client",
-	Long:  `ocp is the Orion-Belt SCP client for copying files through the Orion-Belt server.`,
-	Args:  cobra.ExactArgs(2),
-	Run:   runSCP,
+	Use:     "ocp source destination",
+	Short:   "Orion-Belt SCP Client",
+	Long:    `ocp is the Orion-Belt SCP client for copying files through the Orion-Belt server.`,
+	Version: version.String(),
+	Args:    cobra.ExactArgs(2),
+	Run:     runSCP,
 }
 
 func init() {

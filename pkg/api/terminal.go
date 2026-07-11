@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -56,21 +58,70 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("user_id")
+	uid, _ := userID.(string)
 	m, err := s.terminalBridge.ResolveMachine(machine)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "machine not found"})
 		return
 	}
-	if err := s.authService.CheckPermissionWithRemoteUser(c.Request.Context(), userID.(string), m.ID, "ssh", remoteUser); err != nil {
+	if err := s.authService.CheckPermissionWithRemoteUser(c.Request.Context(), uid, m.ID, "ssh", remoteUser); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+		return
+	}
+
+	if s.recorder == nil {
+		s.logger.Error("web terminal: recorder not configured; refusing session without audit trail")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "session recording unavailable"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	storagePath := s.recorder.GetRecordingStoragePath()
+	session := common.NewSessionWithSource(uid, m.ID, remoteUser, storagePath, "web")
+	if err := s.store.CreateSession(ctx, session); err != nil {
+		s.logger.Error("Failed to create web terminal session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create session record"})
+		return
+	}
+	s.recordAudit(c, "session.web_terminal.start", "session:"+session.ID, map[string]interface{}{
+		"machine_id":  m.ID,
+		"machine":     m.Name,
+		"remote_user": remoteUser,
+		"source":      "web",
+	})
+	metrics.Default.SessionStarted()
+
+	title := fmt.Sprintf("%s as %s (web)", m.Name, remoteUser)
+	sessionRecorder, recErr := s.recorder.StartRecordingSized(session.ID, 120, 40, title)
+	if recErr != nil {
+		s.logger.Error("Failed to start web terminal recording: %v", recErr)
+		_ = s.store.EndSession(context.Background(), session.ID, time.Now())
+		metrics.Default.SessionEnded()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start session recording"})
 		return
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		_ = s.recorder.StopRecording(session.ID)
+		_ = s.store.EndSession(context.Background(), session.ID, time.Now())
+		metrics.Default.SessionEnded()
 		return
 	}
 	defer conn.Close()
+	defer func() {
+		endTime := time.Now()
+		bg := context.Background()
+		_ = s.store.EndSession(bg, session.ID, endTime)
+		_ = s.recorder.StopRecording(session.ID)
+		metrics.Default.SessionEnded()
+		entry := common.NewAuditLog(uid, "session.web_terminal.end", "session:"+session.ID, c.ClientIP(), map[string]interface{}{
+			"machine_id": m.ID,
+			"machine":    m.Name,
+			"source":     "web",
+		})
+		_ = s.store.CreateAuditLog(bg, entry)
+	}()
 
 	channel, reqs, err := s.terminalBridge.OpenAgentSession(m.ID, remoteUser)
 	if err != nil {
@@ -98,9 +149,14 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 		for {
 			n, err := channel.Read(buf)
 			if n > 0 {
+				if sessionRecorder != nil {
+					_ = sessionRecorder.Write(buf[:n])
+				}
 				_ = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 			if err != nil {
+				// Agent side ended first — unblock the WS read loop.
+				_ = conn.Close()
 				return
 			}
 		}
@@ -120,13 +176,21 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 				_, _ = channel.SendRequest("window-change", false, ssh.Marshal(&struct {
 					Columns, Rows, Width, Height uint32
 				}{r.Cols, r.Rows, 0, 0}))
+				if sessionRecorder != nil {
+					_ = sessionRecorder.RecordResize(r.Cols, r.Rows)
+				}
 			}
 			continue
 		}
+		// Output-only cast: do not record keystrokes (PTY echo would duplicate them).
 		if _, err := channel.Write(data); err != nil {
 			break
 		}
 	}
+	// Client disconnect (or channel write failure): close the agent channel so
+	// the agent→ws goroutine exits. Without this, <-done blocks forever while
+	// the shell stays open, so EndSession/StopRecording never run.
+	_ = channel.Close()
 	<-done
 }
 

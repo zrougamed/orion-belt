@@ -1,0 +1,77 @@
+#cloud-config
+hostname: {{HOSTNAME}}
+manage_etc_hosts: true
+users:
+  - default
+  - name: {{LOGIN}}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/sh
+    ssh_authorized_keys:
+      - {{SSH_PUBKEY}}
+
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+  - openssh-client
+
+write_files:
+  - path: /etc/orion-belt/agent.yaml
+    permissions: "0640"
+    content: |
+      server:
+        host: "10.0.2.2"
+        port: 2222
+      agent:
+        name: "{{HOSTNAME}}"
+        tags:
+          environment: qemu-lab
+          distro: "{{DISTRO}}"
+      auth:
+        key_file: "/etc/orion-belt/agent_key"
+        known_hosts: "/etc/orion-belt/known_hosts"
+        strict_host_key_checking: "no"
+
+runcmd:
+  - mkdir -p /etc/orion-belt
+  - |
+    set -e
+    BASE="{{PKG_BASE_URL}}"
+    FMT="{{PACKAGE_FMT}}"
+    # Stable binary name first (served from dist/ by the lab HTTP mirror).
+    if curl -fsSL -o /usr/bin/orion-belt-agent "$BASE/orion-belt-agent"; then
+      chmod +x /usr/bin/orion-belt-agent
+    else
+      case "$FMT" in
+        deb)
+          curl -fsSL -o /tmp/agent.deb "$BASE/orion-belt-agent_{{VERSION}}_amd64.deb" || true
+          if [ -f /tmp/agent.deb ]; then dpkg -i /tmp/agent.deb || apt-get install -f -y; fi
+          ;;
+        rpm)
+          curl -fsSL -o /tmp/agent.rpm "$BASE/orion-belt-agent-{{VERSION}}-1.x86_64.rpm" || true
+          if [ -f /tmp/agent.rpm ]; then rpm -Uvh /tmp/agent.rpm || zypper -n install /tmp/agent.rpm || true; fi
+          ;;
+        apk)
+          curl -fsSL -o /tmp/agent.apk "$BASE/orion-belt-agent_{{VERSION}}_x86_64.apk" || true
+          if [ -f /tmp/agent.apk ]; then apk add --allow-untrusted /tmp/agent.apk || true; fi
+          ;;
+      esac
+    fi
+  - |
+    if [ ! -f /etc/orion-belt/agent_key ]; then
+      ssh-keygen -t ed25519 -f /etc/orion-belt/agent_key -N ""
+    fi
+  - |
+    # Retry loop: server VM may still be finishing cloud-init when agents boot.
+    (
+      i=0
+      while [ "$i" -lt 60 ]; do
+        i=$((i + 1))
+        if /usr/bin/orion-belt-agent -c /etc/orion-belt/agent.yaml >>/var/log/orion-agent.log 2>&1; then
+          break
+        fi
+        echo "agent connect attempt $i failed; retrying in 10s" >>/var/log/orion-agent.log
+        sleep 10
+      done
+    ) &
+    echo "orion-belt agent launcher started on {{HOSTNAME}}"

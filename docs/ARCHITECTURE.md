@@ -58,13 +58,13 @@ Clients authenticate with SSH public keys (including FIDO `sk-*` keys). Gateway 
 4. Record I/O; enforce remote-user ACL  
 
 ### 4. Session Recording
-Recordings are buffered then written under `recording.storage_path`, optionally AES-GCM encrypted, with retention cleanup.
+PTY **output** is recorded as a timed cast (asciinema-compatible v2, `.cast` under `recording.storage_path`). Recordings may be AES-GCM encrypted at rest, with retention cleanup for `.cast` / legacy `.txt` / `.rec` files. The web console replays casts in xterm (play/pause/seek).
 
 ### 5. Access Request Workflow
 Users request temporary access; admins/operators approve via API, `oadmin`, or `/ui`. Grants are time-limited.
 
 ### 6. Web Console
-Embedded SPA at `/ui` (roles: admin, operator, auditor, user) with approvals, live terminal (WebSocket), and file browser.
+Embedded SPA at `/ui` (roles: admin, operator, auditor, user) with approvals, live terminal (WebSocket, recorded as `source=web`), file browser, timed session playback, **Add agent** install scripts, audit trail, user/machine management, and build version display. See [SRS-UI.md](SRS-UI.md).
 
 ## Key Features
 
@@ -91,19 +91,26 @@ OpenSSH: ssh alice+web-01@gateway
 - **Protocol**: SSH (`golang.org/x/crypto/ssh`), HTTP/WS (Gin)  
 - **MFA**: TOTP (`pquerna/otp`), WebAuthn (`go-webauthn`)  
 - **Architecture**: Bastion with reverse tunnels  
-- **Deployment**: Docker Compose, Alpine, or any Unix-like host  
+- **Deployment**: Docker Compose, native packages (deb/rpm/apk, GPG-signed repos), Alpine, or any Unix-like host
+- **API docs**: OpenAPI 3.0 at `docs/openapi/openapi.yaml` / `GET /api/v1/openapi.yaml`
 
 ## Documentation index
 
 | Doc | Status |
 |-----|--------|
-| [README.md](../README.md) | Current (v0.4 overview) |
+| [README.md](../README.md) | Current overview |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Current |
+| [SRS-UI.md](SRS-UI.md) | Web console SRS (as implemented) |
+| [openapi/openapi.yaml](openapi/openapi.yaml) | OpenAPI 3.0 (also `GET /api/v1/openapi.yaml`) |
+| [API/README.md](API/README.md) | Swagger/Postman how-to |
+| [PACKAGING.md](PACKAGING.md) | deb/rpm/apk + GPG-signed repos |
 | [ROADMAP.md](ROADMAP.md) | Current |
+| [SETUP.md](SETUP.md) | First-run |
 | [openssh-clients.md](openssh-clients.md) | Current |
 | [openfga-model.fga](openfga-model.fga) | Current |
-| [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) | Current for plugin API |
-| [SREVER-CLI.md](SREVER-CLI.md) | Server CLI still accurate (filename typo: “SREVER”) |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Generic; still valid |
+| [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) | Plugin API |
+| [SREVER-CLI.md](SREVER-CLI.md) | Server CLI (filename typo: “SREVER”) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Current |
+| [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md) | QEMU lab QA |
 
-**Not yet written:** OpenAPI/Swagger, deployment hardening guide (listed as debt in roadmap).
+**Still open:** dedicated deployment hardening guide.

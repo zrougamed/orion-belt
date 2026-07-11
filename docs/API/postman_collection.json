@@ -195,6 +195,33 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "Generate Agent Install Script (admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-Session-Token",
+								"value": "{{session_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"web-02\",\n  \"hostname\": \"web-02.lab\",\n  \"port\": 22,\n  \"os\": \"debian\",\n  \"gateway_host\": \"orion.example.com\",\n  \"gateway_port\": 2222,\n  \"package_base_url\": \"https://packages.example.com\",\n  \"version\": \"0.5.0\",\n  \"tags\": {\n    \"environment\": \"production\",\n    \"os\": \"debian\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/agents/install-script",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "admin", "agents", "install-script"]
+						},
+						"description": "Registers the agent and returns a root bash install script (embeds private key)."
+					},
+					"response": []
 				}
 			]
 		},

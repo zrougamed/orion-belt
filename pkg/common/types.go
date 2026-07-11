@@ -33,12 +33,18 @@ const (
 )
 
 // EffectiveRole returns the user's role, mapping legacy is_admin to admin.
+// A stale role="user" with is_admin=true (CreateUser historically omitted role)
+// is treated as admin.
 func (u *User) EffectiveRole() string {
-	if u.Role != "" {
+	switch u.Role {
+	case RoleAdmin, RoleOperator, RoleAuditor:
 		return u.Role
 	}
 	if u.IsAdmin {
 		return RoleAdmin
+	}
+	if u.Role != "" {
+		return u.Role
 	}
 	return RoleUser
 }
@@ -87,12 +93,13 @@ type Machine struct {
 	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
-// Session represents an SSH session
+// Session represents an SSH or web-terminal session
 type Session struct {
 	ID            string     `json:"id"`
 	UserID        string     `json:"user_id"`
 	MachineID     string     `json:"machine_id"`
 	RemoteUser    string     `json:"remote_user"` // User on target machine (root, user, etc)
+	Source        string     `json:"source"`      // ssh | web
 	StartTime     time.Time  `json:"start_time"`
 	EndTime       *time.Time `json:"end_time,omitempty"`
 	RecordingPath string     `json:"recording_path"`
@@ -197,15 +204,24 @@ func NewMachine(name, hostname string, port int, tags map[string]string) *Machin
 	}
 }
 
-// NewSession creates a new session
+// NewSession creates a new session (source defaults to "ssh").
 func NewSession(userID, machineID, remoteUser, storagePath string) *Session {
+	return NewSessionWithSource(userID, machineID, remoteUser, storagePath, "ssh")
+}
+
+// NewSessionWithSource creates a session tagged with a source (ssh|web).
+func NewSessionWithSource(userID, machineID, remoteUser, storagePath, source string) *Session {
 	sessionID := uuid.New().String()
-	recordingPath := filepath.Join(storagePath, fmt.Sprintf("%s.txt", sessionID))
+	recordingPath := filepath.Join(storagePath, fmt.Sprintf("%s.cast", sessionID))
+	if source == "" {
+		source = "ssh"
+	}
 	return &Session{
 		ID:            sessionID,
 		UserID:        userID,
 		MachineID:     machineID,
 		RemoteUser:    remoteUser,
+		Source:        source,
 		StartTime:     time.Now(),
 		RecordingPath: recordingPath,
 		Status:        "active",

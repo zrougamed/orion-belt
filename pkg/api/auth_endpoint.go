@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"golang.org/x/crypto/ssh"
 )
@@ -83,14 +84,12 @@ func (s *APIServer) revokeAPIKey(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 
-	// TODO: implemet auth checks
 	key, err := s.store.GetAPIKey(ctx, keyID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found"})
 		return
 	}
 
-	// TODO: implemet auth checks
 	isAdmin, _ := c.Get("is_admin")
 	if key.UserID != userID.(string) && !isAdmin.(bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
@@ -113,14 +112,12 @@ func (s *APIServer) deleteAPIKey(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 
-	// TODO: implemet auth checks
 	key, err := s.store.GetAPIKey(ctx, keyID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found"})
 		return
 	}
 
-	// TODO: implemet auth checks
 	isAdmin, _ := c.Get("is_admin")
 	if key.UserID != userID.(string) && !isAdmin.(bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
@@ -154,6 +151,7 @@ type LoginResponse struct {
 		Username   string `json:"username"`
 		Email      string `json:"email"`
 		IsAdmin    bool   `json:"is_admin"`
+		Role       string `json:"role"`
 		MFAEnabled bool   `json:"mfa_enabled"`
 	} `json:"user"`
 }
@@ -215,15 +213,20 @@ func (s *APIServer) login(c *gin.Context) {
 	response.User.ID = user.ID
 	response.User.Username = user.Username
 	response.User.Email = user.Email
-	response.User.IsAdmin = user.IsAdmin
+	response.User.IsAdmin = user.IsAdmin || user.EffectiveRole() == common.RoleAdmin
+	response.User.Role = user.EffectiveRole()
 	response.User.MFAEnabled = user.MFAEnabled
 
 	if s.jwt != nil && s.jwt.Enabled() {
-		if token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin); err == nil {
+		if token, exp, err := s.jwt.Issue(user.ID, user.Username, response.User.IsAdmin); err == nil {
 			response.AccessToken = token
 			response.ExpiresAt = exp
 		}
 	}
+
+	_ = s.store.CreateAuditLog(ctx, common.NewAuditLog(user.ID, "auth.login", "user:"+user.ID, c.ClientIP(), map[string]interface{}{
+		"username": user.Username,
+	}))
 
 	c.JSON(http.StatusOK, response)
 }
@@ -261,7 +264,6 @@ func (s *APIServer) logout(c *gin.Context) {
 
 // getCurrentUser returns the currently authenticated user
 func (s *APIServer) getCurrentUser(c *gin.Context) {
-	// TODO: implemet auth checks
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 
@@ -271,5 +273,16 @@ func (s *APIServer) getCurrentUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, gin.H{
+		"id":               user.ID,
+		"username":         user.Username,
+		"email":            user.Email,
+		"public_key":       user.PublicKey,
+		"is_admin":         user.IsAdmin || user.EffectiveRole() == common.RoleAdmin,
+		"role":             user.EffectiveRole(),
+		"mfa_enabled":      user.MFAEnabled,
+		"webauthn_enabled": user.WebAuthnEnabled,
+		"created_at":       user.CreatedAt,
+		"updated_at":       user.UpdatedAt,
+	})
 }

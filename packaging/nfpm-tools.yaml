@@ -1,0 +1,26 @@
+name: orion-belt-tools
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+description: Orion Belt CLI tools (osh, ocp, oadmin)
+homepage: https://github.com/zrougamed/orion-belt
+license: Apache-2.0
+contents:
+  - src: dist/osh
+    dst: /usr/bin/osh
+    file_info:
+      mode: 0755
+  - src: dist/ocp
+    dst: /usr/bin/ocp
+    file_info:
+      mode: 0755
+  - src: dist/oadmin
+    dst: /usr/bin/oadmin
+    file_info:
+      mode: 0755
+  - src: config/client.example.yaml
+    dst: /etc/orion-belt/client.yaml
+    type: config|noreplace

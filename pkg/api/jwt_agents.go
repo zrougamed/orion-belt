@@ -62,7 +62,11 @@ func (s *APIServer) rateLimitMiddleware() gin.HandlerFunc {
 			key = "user:" + userID.(string)
 		}
 		if !s.rateLimiter.allow(key) {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "rate limit exceeded",
+				"hint":  "raise auth.rate_limit_per_minute in server config (default 600/min)",
+			})
 			c.Abort()
 			return
 		}

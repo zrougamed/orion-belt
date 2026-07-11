@@ -10,13 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
+	"github.com/zrougamed/orion-belt/docs/openapi"
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
 	"github.com/zrougamed/orion-belt/pkg/recording"
+	"github.com/zrougamed/orion-belt/pkg/version"
 	"github.com/zrougamed/orion-belt/web"
 )
 
@@ -32,6 +33,7 @@ type APIServer struct {
 	agentCommander  AgentCommander
 	mfaRequired    bool
 	recordingCrypt *recording.Crypto
+	recorder       *recording.Recorder
 	webAuthn       *webauthn.WebAuthn
 	terminalBridge TerminalBridge
 }
@@ -44,15 +46,17 @@ type AgentCommander interface {
 
 // Options configures optional API server dependencies.
 type Options struct {
-	JWTSecret      string
-	JWTExpiryHours int
-	PluginManager  *plugin.Manager
-	AgentCommander AgentCommander
-	MetricsEnabled bool
-	MFARequired    bool
-	RecordingCrypt *recording.Crypto
-	WebAuthn       *webauthn.WebAuthn
-	TerminalBridge TerminalBridge
+	JWTSecret          string
+	JWTExpiryHours     int
+	PluginManager      *plugin.Manager
+	AgentCommander     AgentCommander
+	MetricsEnabled     bool
+	MFARequired        bool
+	RecordingCrypt     *recording.Crypto
+	Recorder           *recording.Recorder
+	WebAuthn           *webauthn.WebAuthn
+	TerminalBridge     TerminalBridge
+	RateLimitPerMinute int
 }
 
 // NewAPIServer creates a new API server
@@ -69,6 +73,11 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		ttl = 24 * time.Hour
 	}
 
+	rateLimit := opt.RateLimitPerMinute
+	if rateLimit <= 0 {
+		rateLimit = 600 // SPA-friendly default (was 60; too low for /ui)
+	}
+
 	api := &APIServer{
 		store:          store,
 		authService:    authService,
@@ -77,9 +86,10 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		agentCommander: opt.AgentCommander,
 		logger:         logger,
 		router:         gin.New(),
-		rateLimiter:    newRateLimiter(60, time.Minute),
+		rateLimiter:    newRateLimiter(rateLimit, time.Minute),
 		mfaRequired:    opt.MFARequired,
 		recordingCrypt: opt.RecordingCrypt,
+		recorder:       opt.Recorder,
 		webAuthn:       opt.WebAuthn,
 		terminalBridge: opt.TerminalBridge,
 	}
@@ -109,6 +119,23 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		c.JSON(200, gin.H{
 			"status":  "healthy",
 			"service": "orion-belt-api",
+			"version": version.Info(),
+		})
+	})
+
+	s.router.GET("/api/v1/version", func(c *gin.Context) {
+		c.JSON(200, version.Info())
+	})
+
+	s.router.GET("/api/v1/openapi.yaml", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=300")
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openapi.Spec)
+	})
+	s.router.GET("/api/v1/openapi.json", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Use /api/v1/openapi.yaml for the full OpenAPI 3.0 specification",
+			"yaml":    "/api/v1/openapi.yaml",
+			"docs":    "https://github.com/zrougamed/orion-belt/blob/master/docs/openapi/openapi.yaml",
 		})
 	})
 
@@ -172,6 +199,9 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
 
+		// First-run / operator setup checklist
+		protected.GET("/setup/status", s.setupStatus)
+
 		// MFA
 		s.registerMFARoutes(protected)
 
@@ -186,6 +216,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 	admin.Use(s.adminMiddleware())
 	{
 		// User management
+		admin.POST("/users", s.createUser)
 		admin.PUT("/users/:id", s.updateUser)
 		admin.DELETE("/users/:id", s.deleteUser)
 
@@ -205,6 +236,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Agent remote management
 		admin.GET("/agents/connected", s.listConnectedAgents)
 		admin.POST("/agents/:machine_id/command", s.sendAgentCommand)
+		admin.POST("/agents/install-script", s.generateAgentInstallScript)
 	}
 }
 
@@ -454,6 +486,10 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 
 	s.logger.Info("Access request created: request_id=%s, user_id=%s, machine_id=%s",
 		accessReq.ID, userID, req.MachineID)
+	s.recordAudit(c, "access.request", "access_request:"+accessReq.ID, map[string]interface{}{
+		"machine_id": req.MachineID,
+		"duration":   req.Duration,
+	})
 
 	c.JSON(http.StatusCreated, accessReq)
 }
@@ -479,7 +515,7 @@ func (s *APIServer) getAccessRequest(c *gin.Context) {
 
 // ApproveAccessRequestRequest represents an approval request
 type ApproveAccessRequestRequest struct {
-	ReviewerID string `json:"reviewer_id" binding:"required"`
+	ReviewerID string `json:"reviewer_id"` // optional; defaults to authenticated user
 }
 
 // approveAccessRequest handles access request approval
@@ -487,28 +523,38 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 	requestID := c.Param("id")
 
 	var req ApproveAccessRequestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	_ = c.ShouldBindJSON(&req)
+
+	reviewerID := req.ReviewerID
+	if reviewerID == "" {
+		if uid, ok := c.Get("user_id"); ok {
+			reviewerID, _ = uid.(string)
+		}
+	}
+	if reviewerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reviewer_id required"})
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
-	// Approve the request
-	if err := s.authService.ApproveAccessRequest(ctx, requestID, req.ReviewerID); err != nil {
+	if err := s.authService.ApproveAccessRequest(ctx, requestID, reviewerID); err != nil {
 		s.logger.Error("Failed to approve access request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get updated request
 	accessReq, err := s.store.GetAccessRequest(ctx, requestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "request approved but failed to fetch"})
 		return
 	}
 
-	s.logger.Info("Access request approved: request_id=%s, reviewer_id=%s", requestID, req.ReviewerID)
+	s.logger.Info("Access request approved: request_id=%s, reviewer_id=%s", requestID, reviewerID)
+	s.recordAudit(c, "access.approve", "access_request:"+requestID, map[string]interface{}{
+		"user_id":    accessReq.UserID,
+		"machine_id": accessReq.MachineID,
+	})
 
 	if s.pluginManager != nil {
 		_ = s.pluginManager.TriggerHook(ctx, plugin.HookAccessGranted, &plugin.HookContext{
@@ -516,7 +562,7 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 			MachineID: accessReq.MachineID,
 			Data: map[string]interface{}{
 				"request_id":  requestID,
-				"reviewer_id": req.ReviewerID,
+				"reviewer_id": reviewerID,
 				"status":      "approved",
 			},
 		})
@@ -527,7 +573,7 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 
 // RejectAccessRequestRequest represents a rejection request
 type RejectAccessRequestRequest struct {
-	ReviewerID string `json:"reviewer_id" binding:"required"`
+	ReviewerID string `json:"reviewer_id"`
 }
 
 // rejectAccessRequest handles access request rejection
@@ -535,28 +581,38 @@ func (s *APIServer) rejectAccessRequest(c *gin.Context) {
 	requestID := c.Param("id")
 
 	var req RejectAccessRequestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	_ = c.ShouldBindJSON(&req)
+
+	reviewerID := req.ReviewerID
+	if reviewerID == "" {
+		if uid, ok := c.Get("user_id"); ok {
+			reviewerID, _ = uid.(string)
+		}
+	}
+	if reviewerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reviewer_id required"})
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
-	// Reject the request
-	if err := s.authService.RejectAccessRequest(ctx, requestID, req.ReviewerID); err != nil {
+	if err := s.authService.RejectAccessRequest(ctx, requestID, reviewerID); err != nil {
 		s.logger.Error("Failed to reject access request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get updated request
 	accessReq, err := s.store.GetAccessRequest(ctx, requestID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "request rejected but failed to fetch"})
 		return
 	}
 
-	s.logger.Info("Access request rejected: request_id=%s, reviewer_id=%s", requestID, req.ReviewerID)
+	s.logger.Info("Access request rejected: request_id=%s, reviewer_id=%s", requestID, reviewerID)
+	s.recordAudit(c, "access.reject", "access_request:"+requestID, map[string]interface{}{
+		"user_id":    accessReq.UserID,
+		"machine_id": accessReq.MachineID,
+	})
 
 	c.JSON(http.StatusOK, accessReq)
 }
@@ -586,7 +642,7 @@ func (s *APIServer) listAccessRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, requests)
 }
 
-// Placeholder implementations for other endpoints
+// Placeholder section marker kept for readability of legacy handlers.
 func (s *APIServer) listUsers(c *gin.Context) {
 	ctx := context.Background()
 	users, err := s.store.ListUsers(ctx, 100, 0)
@@ -608,11 +664,74 @@ func (s *APIServer) getUser(c *gin.Context) {
 }
 
 func (s *APIServer) updateUser(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "not implemented yet"})
+	ctx := c.Request.Context()
+	user, err := s.store.GetUser(ctx, c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	var req struct {
+		Email     *string `json:"email"`
+		PublicKey *string `json:"public_key"`
+		IsAdmin   *bool   `json:"is_admin"`
+		Role      *string `json:"role"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Email != nil {
+		user.Email = *req.Email
+	}
+	if req.PublicKey != nil {
+		user.PublicKey = *req.PublicKey
+	}
+	if req.Role != nil {
+		switch *req.Role {
+		case common.RoleAdmin, common.RoleOperator, common.RoleAuditor, common.RoleUser:
+			user.Role = *req.Role
+			user.IsAdmin = (*req.Role == common.RoleAdmin)
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role (admin|operator|auditor|user)"})
+			return
+		}
+	}
+	if req.IsAdmin != nil {
+		user.IsAdmin = *req.IsAdmin
+		if *req.IsAdmin {
+			user.Role = common.RoleAdmin
+		} else if user.Role == common.RoleAdmin || user.Role == "" {
+			user.Role = common.RoleUser
+		}
+	}
+
+	if err := s.store.UpdateUser(ctx, user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.recordAudit(c, "user.update", "user:"+user.ID, map[string]interface{}{
+		"username": user.Username,
+		"role":     user.Role,
+	})
+	c.JSON(http.StatusOK, user)
 }
 
 func (s *APIServer) deleteUser(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "not implemented yet"})
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	user, _ := s.store.GetUser(ctx, id)
+	if err := s.store.DeleteUser(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	meta := map[string]interface{}{}
+	if user != nil {
+		meta["username"] = user.Username
+	}
+	s.recordAudit(c, "user.delete", "user:"+id, meta)
+	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 }
 
 func (s *APIServer) listMachines(c *gin.Context) {
@@ -635,23 +754,8 @@ func (s *APIServer) getMachine(c *gin.Context) {
 	c.JSON(http.StatusOK, machine)
 }
 
-func (s *APIServer) createMachine(c *gin.Context) {
-	// TODO: implement machine registration
-	c.JSON(http.StatusOK, gin.H{"error": "not implemented yet"})
-}
-
-func (s *APIServer) updateMachine(c *gin.Context) {
-	// TODO: implement machine update
-	c.JSON(http.StatusOK, gin.H{"message": "not implemented yet"})
-}
-
-func (s *APIServer) deleteMachine(c *gin.Context) {
-	// TODO: implement machine archive and delete
-	c.JSON(http.StatusOK, gin.H{"message": "not implemented yet"})
-}
-
 func (s *APIServer) getUserPermissions(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	permissions, err := s.store.ListUserPermissions(ctx, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -661,7 +765,7 @@ func (s *APIServer) getUserPermissions(c *gin.Context) {
 }
 
 func (s *APIServer) getMachinePermissions(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	permissions, err := s.store.ListMachinePermissions(ctx, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -670,12 +774,185 @@ func (s *APIServer) getMachinePermissions(c *gin.Context) {
 	c.JSON(http.StatusOK, permissions)
 }
 
+func (s *APIServer) createUser(c *gin.Context) {
+	var req struct {
+		Username  string `json:"username" binding:"required"`
+		Email     string `json:"email" binding:"required"`
+		PublicKey string `json:"public_key"`
+		Role      string `json:"role"`
+		IsAdmin   bool   `json:"is_admin"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	role := req.Role
+	if role == "" {
+		if req.IsAdmin {
+			role = common.RoleAdmin
+		} else {
+			role = common.RoleUser
+		}
+	}
+	switch role {
+	case common.RoleAdmin, common.RoleOperator, common.RoleAuditor, common.RoleUser:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role (admin|operator|auditor|user)"})
+		return
+	}
+
+	user := common.NewUser(req.Username, req.Email, req.PublicKey, role == common.RoleAdmin)
+	user.Role = role
+	user.IsAdmin = role == common.RoleAdmin
+
+	ctx := c.Request.Context()
+	if err := s.store.CreateUser(ctx, user); err != nil {
+		s.logger.Error("Failed to create user: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+		return
+	}
+
+	s.recordAudit(c, "user.create", "user:"+user.ID, map[string]interface{}{
+		"username": user.Username,
+		"role":     user.Role,
+	})
+	c.JSON(http.StatusCreated, user)
+}
+
+func (s *APIServer) createMachine(c *gin.Context) {
+	var req struct {
+		Name     string            `json:"name" binding:"required"`
+		Hostname string            `json:"hostname" binding:"required"`
+		Port     int               `json:"port"`
+		Tags     map[string]string `json:"tags"`
+		AgentID  string            `json:"agent_id"`
+		IsActive *bool             `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Port <= 0 {
+		req.Port = 22
+	}
+
+	ctx := c.Request.Context()
+	if existing, err := s.store.GetMachineByName(ctx, req.Name); err == nil && existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "machine name already exists"})
+		return
+	}
+
+	machine := common.NewMachine(req.Name, req.Hostname, req.Port, req.Tags)
+	machine.AgentID = req.AgentID
+	if req.IsActive != nil {
+		machine.IsActive = *req.IsActive
+	}
+
+	if err := s.store.CreateMachine(ctx, machine); err != nil {
+		s.logger.Error("Failed to create machine: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create machine"})
+		return
+	}
+
+	s.recordAudit(c, "machine.create", "machine:"+machine.ID, map[string]interface{}{
+		"name": machine.Name,
+	})
+	c.JSON(http.StatusCreated, machine)
+}
+
+func (s *APIServer) updateMachine(c *gin.Context) {
+	ctx := c.Request.Context()
+	machine, err := s.store.GetMachine(ctx, c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "machine not found"})
+		return
+	}
+
+	var req struct {
+		Name     *string            `json:"name"`
+		Hostname *string            `json:"hostname"`
+		Port     *int               `json:"port"`
+		Tags     *map[string]string `json:"tags"`
+		AgentID  *string            `json:"agent_id"`
+		IsActive *bool              `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name != nil && *req.Name != "" && *req.Name != machine.Name {
+		if existing, err := s.store.GetMachineByName(ctx, *req.Name); err == nil && existing != nil && existing.ID != machine.ID {
+			c.JSON(http.StatusConflict, gin.H{"error": "machine name already exists"})
+			return
+		}
+		machine.Name = *req.Name
+	}
+	if req.Hostname != nil {
+		machine.Hostname = *req.Hostname
+	}
+	if req.Port != nil && *req.Port > 0 {
+		machine.Port = *req.Port
+	}
+	if req.Tags != nil {
+		machine.Tags = *req.Tags
+	}
+	if req.AgentID != nil {
+		machine.AgentID = *req.AgentID
+	}
+	if req.IsActive != nil {
+		machine.IsActive = *req.IsActive
+	}
+
+	if err := s.store.UpdateMachine(ctx, machine); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.recordAudit(c, "machine.update", "machine:"+machine.ID, map[string]interface{}{
+		"name": machine.Name,
+	})
+	c.JSON(http.StatusOK, machine)
+}
+
+func (s *APIServer) deleteMachine(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	machine, err := s.store.GetMachine(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "machine not found"})
+		return
+	}
+
+	archive := c.Query("archive") == "true" || c.Query("soft") == "true"
+	if archive {
+		machine.IsActive = false
+		if err := s.store.UpdateMachine(ctx, machine); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		s.recordAudit(c, "machine.archive", "machine:"+id, map[string]interface{}{"name": machine.Name})
+		c.JSON(http.StatusOK, gin.H{"message": "machine archived", "machine": machine})
+		return
+	}
+
+	if err := s.store.DeleteMachine(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.recordAudit(c, "machine.delete", "machine:"+id, map[string]interface{}{"name": machine.Name})
+	c.JSON(http.StatusOK, gin.H{"message": "machine deleted"})
+}
+
 func (s *APIServer) grantPermission(c *gin.Context) {
 	var req struct {
-		UserID     string `json:"user_id" binding:"required"`
-		MachineID  string `json:"machine_id" binding:"required"`
-		AccessType string `json:"access_type" binding:"required"` // 'ssh', 'scp', or 'both'
-		ExpiresAt  string `json:"expires_at"`                     // Optional
+		UserID      string   `json:"user_id" binding:"required"`
+		MachineID   string   `json:"machine_id" binding:"required"`
+		AccessType  string   `json:"access_type" binding:"required"` // ssh, scp, or both
+		RemoteUsers []string `json:"remote_users"`
+		ExpiresAt   string   `json:"expires_at"`
+		DurationSec *int     `json:"duration_seconds"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -683,59 +960,111 @@ func (s *APIServer) grantPermission(c *gin.Context) {
 		return
 	}
 
-	// TODO: add proper checks with ReBac
 	adminID, _ := c.Get("user_id")
+	grantedBy, _ := adminID.(string)
 
-	permission := &common.Permission{
-		ID:         uuid.New().String(),
-		UserID:     req.UserID,
-		MachineID:  req.MachineID,
-		AccessType: req.AccessType,
-		GrantedBy:  adminID.(string),
-		GrantedAt:  time.Now(),
+	var duration *time.Duration
+	if req.DurationSec != nil && *req.DurationSec > 0 {
+		d := time.Duration(*req.DurationSec) * time.Second
+		duration = &d
+	} else if req.ExpiresAt != "" {
+		t, err := time.Parse(time.RFC3339, req.ExpiresAt)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be RFC3339"})
+			return
+		}
+		d := time.Until(t)
+		if d <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be in the future"})
+			return
+		}
+		duration = &d
 	}
 
-	if err := s.store.CreatePermission(context.Background(), permission); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	ctx := c.Request.Context()
+	if err := s.authService.GrantPermission(ctx, req.UserID, req.MachineID, req.AccessType, req.RemoteUsers, grantedBy, duration); err != nil {
+		s.logger.Error("Failed to grant permission: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to grant permission"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, permission)
+	s.recordAudit(c, "permission.grant", "machine:"+req.MachineID, map[string]interface{}{
+		"user_id":     req.UserID,
+		"access_type": req.AccessType,
+	})
+
+	// Return the latest permission for this pair (best-effort).
+	perms, err := s.store.ListUserPermissions(ctx, req.UserID)
+	if err == nil {
+		for _, p := range perms {
+			if p.MachineID == req.MachineID && p.AccessType == req.AccessType {
+				c.JSON(http.StatusCreated, p)
+				return
+			}
+		}
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "permission granted"})
 }
 
 func (s *APIServer) revokePermission(c *gin.Context) {
-	ctx := context.Background()
-	if err := s.store.DeletePermission(ctx, c.Param("id")); err != nil {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	if err := s.authService.RevokePermission(ctx, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.recordAudit(c, "permission.revoke", "permission:"+id, nil)
 	c.JSON(http.StatusOK, gin.H{"message": "permission revoked"})
 }
 
 func (s *APIServer) listSessions(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
+	status := strings.TrimSpace(c.Query("status"))
 
+	var (
+		sessions []*common.Session
+		err      error
+	)
+	switch status {
+	case "active":
+		sessions, err = s.store.ListActiveSessions(ctx)
+	default:
+		sessions, err = s.store.ListSessions(ctx, 200, 0)
+		if err == nil && status != "" {
+			filtered := sessions[:0]
+			for _, sess := range sessions {
+				if sess.Status == status {
+					filtered = append(filtered, sess)
+				}
+			}
+			sessions = filtered
+		}
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if sessions == nil {
+		sessions = []*common.Session{}
+	}
+	c.JSON(http.StatusOK, sessions)
+}
+
+func (s *APIServer) listActiveSessions(c *gin.Context) {
+	ctx := c.Request.Context()
 	sessions, err := s.store.ListActiveSessions(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, sessions)
-}
-
-func (s *APIServer) listActiveSessions(c *gin.Context) {
-	ctx := context.Background()
-	sessions, err := s.store.ListActiveSessions(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	if sessions == nil {
+		sessions = []*common.Session{}
 	}
 	c.JSON(http.StatusOK, sessions)
 }
 
 func (s *APIServer) getSession(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	session, err := s.store.GetSession(ctx, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
@@ -745,16 +1074,30 @@ func (s *APIServer) getSession(c *gin.Context) {
 }
 
 func (s *APIServer) getSessionContent(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	session, err := s.store.GetSession(ctx, c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
 
+	if session.RecordingPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no recording for this session"})
+		return
+	}
 	if _, err := os.Stat(session.RecordingPath); os.IsNotExist(err) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "recording file missing on server"})
 		return
+	}
+
+	s.recordAudit(c, "session.playback", "session:"+session.ID, map[string]interface{}{
+		"machine_id": session.MachineID,
+		"user_id":    session.UserID,
+	})
+
+	contentType := "text/plain; charset=utf-8"
+	if strings.HasSuffix(session.RecordingPath, ".cast") {
+		contentType = "application/x-asciicast"
 	}
 
 	if s.recordingCrypt != nil && s.recordingCrypt.Enabled() {
@@ -764,16 +1107,25 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt recording"})
 			return
 		}
-		c.Data(http.StatusOK, "text/plain; charset=utf-8", plain)
+		c.Data(http.StatusOK, contentType, plain)
 		return
 	}
 
+	c.Header("Content-Type", contentType)
 	c.File(session.RecordingPath)
 }
 
 func (s *APIServer) listAuditLogs(c *gin.Context) {
-	ctx := context.Background()
-	logs, err := s.store.ListAuditLogs(ctx, 100, 0, nil)
+	ctx := c.Request.Context()
+	limit := 100
+	if v := c.Query("limit"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 1 && err == nil && limit > 0 {
+			if limit > 500 {
+				limit = 500
+			}
+		}
+	}
+	logs, err := s.store.ListAuditLogs(ctx, limit, 0, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

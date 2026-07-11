@@ -42,10 +42,11 @@ type AuthConfig struct {
 	AllowTempAccess       bool   `yaml:"allow_temp_access,omitempty"`
 	KnownHosts            string `yaml:"known_hosts,omitempty"`
 	StrictHostKeyChecking string `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
-	JWTSecret             string        `yaml:"jwt_secret,omitempty"`
-	JWTExpiryHours        int           `yaml:"jwt_expiry_hours,omitempty"`
-	MFARequired           bool          `yaml:"mfa_required,omitempty"`
-	OpenFGA               OpenFGAConfig `yaml:"openfga,omitempty"`
+	JWTSecret             string         `yaml:"jwt_secret,omitempty"`
+	JWTExpiryHours        int            `yaml:"jwt_expiry_hours,omitempty"`
+	MFARequired           bool           `yaml:"mfa_required,omitempty"`
+	RateLimitPerMinute    int            `yaml:"rate_limit_per_minute,omitempty"` // API requests per user/IP; default 600
+	OpenFGA               OpenFGAConfig  `yaml:"openfga,omitempty"`
 	WebAuthn              WebAuthnConfig `yaml:"webauthn,omitempty"`
 }
 

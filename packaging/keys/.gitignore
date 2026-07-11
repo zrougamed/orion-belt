@@ -1,0 +1,15 @@
+# Packaging keys (public material may be committed; private keys must not)
+
+# Public key exports (safe to commit after first gen in your org)
+# orion-belt.asc
+# orion-belt.gpg
+# orion-belt.fingerprint
+# orion-belt.rsa.pub
+
+# NEVER commit private material
+orion-belt.private.asc
+*.private.asc
+*.rsa
+!*.rsa.pub
+secring.*
+*.key

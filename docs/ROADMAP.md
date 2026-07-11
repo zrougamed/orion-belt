@@ -3,7 +3,7 @@
 ## Current Status
 
 **Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
-**Status:** v0.3.1 on master; v0.4 work on `feature/v0.4-mfa-ui-openfga-recording`
+**Status:** v0.4 merged on `master`; packaging / CVE / multi-distro lab in progress
 
 ## What Orion Belt Is
 
@@ -108,7 +108,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 * **Agent Command Interface**
   - [x] Agent control commands: `orion:ping`, `orion:health`, `orion:status`, `orion:info`
-  - [x] Admin API: `GET /api/v1/admin/agents/connected`, `POST /api/v1/admin/agents/:machine_id/command`
+  - [x] Admin API: `GET /api/v1/admin/agents/connected`, `POST /api/v1/admin/agents/:machine_id/command`, `POST /api/v1/admin/agents/install-script`
   - [ ] Richer remote management (reload config, drain, update)
 
 * **Observability**
@@ -154,7 +154,20 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] OpenTelemetry tracing
 - [ ] Notification templates / user preferences
 - [ ] Recording compression
-- [ ] Richer permission editor / machine CRUD in UI
+- [ ] Richer permission editor in UI
+- [x] Machine CRUD in UI
+- [x] Session recording playback + audit trail + user management in `/ui`
+- [x] Web terminal sessions recorded with `source=web`
+- [x] Timed cast (`.cast`) recordings + xterm playback; UI **Add agent** install scripts
+- [x] Build version on binaries, `/health`, `/api/v1/version`, and UI
+- [x] GPG signing for release checksums + APT/RPM repos (`make packaging-key`, `make repos`)
+
+### Ops / release (in progress on this branch)
+
+- [x] Go 1.26.5 + dependency bump; `govulncheck` 0-CVE gate (`make cve`, CI)
+- [x] Native packages: deb / rpm / apk via GoReleaser + nFPM (`make packages`)
+- [x] Multi-distro lab: Docker Compose + QEMU cloud images (Ubuntu, Alpine, openSUSE, Debian, Rocky)
+- [x] QEMU lab clean/start pipeline + formal E2E QA plan (`docs/E2E_TEST_PLAN.md`)
 
 ## Roadmap — Later Phases
 
@@ -194,7 +207,8 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 - [ ] Hit ~80% unit test coverage
 - [ ] Integration test suites
-- [ ] End-to-end test suites
+- [x] End-to-end CVE gate (`e2e/cve`, `scripts/cve-check.sh`)
+- [x] Multi-distro e2e lab (compose + QEMU) + [E2E test plan](E2E_TEST_PLAN.md)
 - [ ] Performance benchmarks
 - [ ] Architecture Decision Records (ADRs)
 
@@ -203,13 +217,15 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Error handling standardization
 - [ ] Logging standardization
 - [ ] Config validation improvements
-- [ ] Complete remaining machine CRUD admin stubs
+- [x] Complete remaining machine CRUD admin stubs
+- [x] Session recording playback + audit trail + user management in `/ui`
+- [x] Timed cast recordings + **Add agent** OS install scripts (`POST /admin/agents/install-script`)
 
 **Documentation**
 
-- [ ] OpenAPI/Swagger specification
-- [ ] Deployment guides
-- [ ] Security hardening guides
+- [x] OpenAPI/Swagger specification (`docs/openapi/openapi.yaml`, `GET /api/v1/openapi.yaml`)
+- [x] Web console SRS (`docs/SRS-UI.md`)
+- [ ] Deployment hardening guides
 - [x] Plugin development guides
 - [x] Contributing guidelines
 - [x] Architecture documentation
@@ -223,7 +239,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
 * **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
-* **v0.5:** HA, IdP integrations, live session monitoring, SSH CA
+* **v0.5:** Native packages (deb/rpm/apk) + GPG-signed repos, 0-CVE CI gate, multi-distro QEMU/Compose lab, OpenAPI, UI sessions/audit/users + versioning; then HA, IdP integrations, live session monitoring, SSH CA
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
@@ -236,14 +252,14 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 - Identity provider integrations (OIDC/SAML)
 - Live session monitoring
 - SSH certificate authority
-- OpenAPI specification
+- Deployment / security hardening guides
 - Recording compression
 
 ---
 
 ## Notes
 
-This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) plus merged PRs through Phase 1 hardening are the source of truth for shipped releases; this branch tracks v0.4 until tagged.
+This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.4** is on `master`; packaging/CVE/lab work targets the next cut.
 
 **Last Updated:** July 2026  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

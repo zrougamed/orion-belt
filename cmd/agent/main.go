@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/agent"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
@@ -18,10 +19,11 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "orion-belt-agent",
-	Short: "Orion-Belt Agent",
-	Long:  `Orion-Belt agent runs on target machines to receive SSH connections.`,
-	Run:   runAgent,
+	Use:     "orion-belt-agent",
+	Short:   "Orion-Belt Agent",
+	Long:    `Orion-Belt agent runs on target machines to receive SSH connections.`,
+	Version: version.String(),
+	Run:     runAgent,
 }
 
 func init() {

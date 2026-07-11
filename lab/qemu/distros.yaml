@@ -1,0 +1,51 @@
+# Orion Belt QEMU multi-distro lab — image pins (latest as of 2026-07-11)
+#
+# Prefer "current" / "latest" URLs so `make lab-qemu-images` pulls fresh builds.
+# Force re-download: ORION_REFRESH_IMAGES=1 make lab-qemu-images
+#
+# Agents dial 10.0.2.2:2222 (QEMU usermode → host → server VM hostfwd).
+
+images:
+  ubuntu:
+    role: server
+    # Ubuntu 24.04 LTS minimal — daily "current" build (newest cloud image)
+    url: https://cloud-images.ubuntu.com/minimal/daily/noble/current/noble-minimal-cloudimg-amd64.img
+    login: ubuntu
+    package_fmt: deb
+    note: "Ubuntu 24.04 LTS (noble) minimal daily"
+  alpine:
+    role: agent
+    # Alpine 3.22.4 nocloud BIOS + cloud-init (latest in v3.22 / latest-stable)
+    url: https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/cloud/nocloud_alpine-3.22.4-x86_64-bios-cloudinit-r0.qcow2
+    login: alpine
+    package_fmt: apk
+    note: "Alpine Linux 3.22.4"
+  opensuse:
+    role: agent
+    # openSUSE Tumbleweed Minimal VM Cloud — rolling, refreshed frequently
+    url: https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-Minimal-VM.x86_64-Cloud.qcow2
+    login: opensuse
+    package_fmt: rpm
+    note: "openSUSE Tumbleweed Minimal (rolling)"
+  debian:
+    role: agent
+    # Debian 13 (trixie) genericcloud — current stable track as of mid-2026
+    url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+    login: debian
+    package_fmt: deb
+    note: "Debian 13 (trixie)"
+  rocky:
+    role: agent
+    # Rocky Linux 9 GenericCloud (official cloud images)
+    url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2
+    login: rocky
+    package_fmt: rpm
+    note: "Rocky Linux 9 GenericCloud (latest)"
+
+qemu:
+  memory_mb: 1024
+  cpus: 2
+  server_ssh_hostfwd: 2222
+  server_api_hostfwd: 8080
+  server_ssh_mgmt: 2200
+  agent_ssh_base: 2201

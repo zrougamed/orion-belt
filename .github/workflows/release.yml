@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: CVE gate before release
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          bash scripts/cve-check.sh
+
+      - name: Import packaging GPG key
+        id: import_gpg
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Export public packaging key
+        if: steps.import_gpg.outcome == 'success'
+        run: |
+          mkdir -p packaging/keys
+          FPR="${{ steps.import_gpg.outputs.fingerprint }}"
+          echo "$FPR" > packaging/keys/orion-belt.fingerprint
+          gpg --armor --export "$FPR" > packaging/keys/orion-belt.asc
+          gpg --export "$FPR" > packaging/keys/orion-belt.gpg
+
+      - name: Select GoReleaser args
+        id: goreleaser_args
+        run: |
+          if [ -n "${{ steps.import_gpg.outputs.fingerprint }}" ]; then
+            echo "args=release --clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=release --clean --skip=sign" >> "$GITHUB_OUTPUT"
+            echo "::warning::GPG_PRIVATE_KEY secret not set — publishing unsigned checksums/packages"
+          fi
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: ${{ steps.goreleaser_args.outputs.args }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GPG_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Build signed package repositories
+        if: steps.import_gpg.outcome == 'success'
+        env:
+          ORION_GPG_KEY: ${{ steps.import_gpg.outputs.fingerprint }}
+          ORION_REQUIRE_SIGN: "1"
+          ORION_DIST: dist
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c rpm
+          bash scripts/publish-repos.sh
+
+      - name: Upload repos artifact
+        if: steps.import_gpg.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-belt-repos
+          path: repos/
+          if-no-files-found: warn

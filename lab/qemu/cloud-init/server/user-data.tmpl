@@ -1,0 +1,78 @@
+#cloud-config
+hostname: orion-server
+manage_etc_hosts: true
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - {{SSH_PUBKEY}}
+  - name: debian
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - {{SSH_PUBKEY}}
+
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+  - openssh-client
+  - postgresql
+  - postgresql-contrib
+
+write_files:
+  - path: /etc/orion-belt/server.yaml
+    permissions: "0640"
+    content: |
+      server:
+        host: "0.0.0.0"
+        port: 2222
+        api_port: 8080
+        ssh_host_key: "/etc/orion-belt/ssh_host_key"
+        api_endpoint: "http://127.0.0.1:8080/api"
+        plugin_dir: "/etc/orion-belt/plugins"
+        metrics_enabled: true
+      database:
+        driver: "postgres"
+        connection_string: "postgres://orionbelt:password@127.0.0.1:5432/orionbelt?sslmode=disable"
+      auth:
+        rebac_enabled: true
+        allow_temp_access: true
+        jwt_secret: "qemu-lab-secret-change-me"
+        jwt_expiry_hours: 24
+        mfa_required: false
+      recording:
+        enabled: true
+        storage_path: "/var/lib/orion-belt/recordings"
+        retention_days: 7
+
+runcmd:
+  - mkdir -p /var/lib/orion-belt/recordings /etc/orion-belt /var/log/orion-belt
+  - |
+    if command -v apt-get >/dev/null; then
+      export DEBIAN_FRONTEND=noninteractive
+      systemctl enable --now postgresql || service postgresql start || true
+      sudo -u postgres psql -c "CREATE USER orionbelt WITH PASSWORD 'password';" || true
+      sudo -u postgres psql -c "CREATE DATABASE orionbelt OWNER orionbelt;" || true
+    fi
+  - |
+    set -e
+    BASE="{{PKG_BASE_URL}}"
+    # Prefer raw binary (stable name); fall back to deb if present.
+    if curl -fsSL -o /tmp/orion-belt-server "$BASE/orion-belt-server"; then
+      install -m 0755 /tmp/orion-belt-server /usr/bin/orion-belt-server
+    else
+      curl -fsSL -o /tmp/orion-belt.deb "$BASE/orion-belt_{{VERSION}}_amd64.deb" || true
+      curl -fsSL -o /tmp/orion-belt.deb "$BASE/orion-belt_{{VERSION}}_linux_amd64.deb" || true
+      if [ -f /tmp/orion-belt.deb ]; then
+        dpkg -i /tmp/orion-belt.deb || apt-get install -f -y
+      fi
+    fi
+  - |
+    if [ ! -f /etc/orion-belt/ssh_host_key ]; then
+      ssh-keygen -t ed25519 -f /etc/orion-belt/ssh_host_key -N ""
+    fi
+  - |
+    nohup /usr/bin/orion-belt-server -c /etc/orion-belt/server.yaml >/var/log/orion-belt/server.log 2>&1 &
+    echo "orion-belt server started"

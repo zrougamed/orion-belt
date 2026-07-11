@@ -1,0 +1,216 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: orion-belt
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: server
+    main: ./cmd/server
+    binary: orion-belt-server
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
+
+  - id: agent
+    main: ./cmd/agent
+    binary: orion-belt-agent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
+
+  - id: osh
+    main: ./cmd/osh
+    binary: osh
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
+
+  - id: ocp
+    main: ./cmd/ocp
+    binary: ocp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
+
+  - id: oadmin
+    main: ./cmd/oadmin
+    binary: oadmin
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
+
+archives:
+  - id: tarballs
+    builds: [server, agent, osh, ocp, oadmin]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - config/*.example.yaml
+      - packaging/systemd/*
+
+nfpms:
+  - id: orion-belt
+    package_name: orion-belt
+    homepage: https://github.com/zrougamed/orion-belt
+    maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+    description: Orion Belt PAM gateway server (SSH bastion + API)
+    license: Apache-2.0
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    section: net
+    priority: optional
+    builds: [server]
+    contents:
+      - src: packaging/systemd/orion-belt-server.service
+        dst: /lib/systemd/system/orion-belt-server.service
+        type: config
+      - src: config/server.example.yaml
+        dst: /etc/orion-belt/server.yaml
+        type: config|noreplace
+      - dst: /var/lib/orion-belt/recordings
+        type: dir
+        file_info:
+          mode: 0750
+      - dst: /var/log/orion-belt
+        type: dir
+        file_info:
+          mode: 0750
+      - dst: /etc/orion-belt
+        type: dir
+        file_info:
+          mode: 0750
+    scripts:
+      postinstall: packaging/scripts/server-postinstall.sh
+      preremove: packaging/scripts/server-preremove.sh
+    overrides:
+      deb:
+        dependencies:
+          - systemd
+      rpm:
+        dependencies:
+          - systemd
+      apk:
+        dependencies:
+          - openrc
+
+  - id: orion-belt-agent
+    package_name: orion-belt-agent
+    homepage: https://github.com/zrougamed/orion-belt
+    maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+    description: Orion Belt reverse-SSH agent
+    license: Apache-2.0
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    builds: [agent]
+    contents:
+      - src: packaging/systemd/orion-belt-agent.service
+        dst: /lib/systemd/system/orion-belt-agent.service
+        type: config
+      - src: config/agent.example.yaml
+        dst: /etc/orion-belt/agent.yaml
+        type: config|noreplace
+      - dst: /etc/orion-belt
+        type: dir
+        file_info:
+          mode: 0750
+    scripts:
+      postinstall: packaging/scripts/agent-postinstall.sh
+
+  - id: orion-belt-tools
+    package_name: orion-belt-tools
+    homepage: https://github.com/zrougamed/orion-belt
+    maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+    description: Orion Belt CLI tools (osh, ocp, oadmin)
+    license: Apache-2.0
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    builds: [osh, ocp, oadmin]
+    contents:
+      - src: config/client.example.yaml
+        dst: /etc/orion-belt/client.yaml
+        type: config|noreplace
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+signs:
+  - id: checksums
+    artifacts: checksum
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - -u
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    stdin: "{{ .Env.GPG_PASSWORD }}"
+
+  - id: packages
+    artifacts: package
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - -u
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --armor
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    stdin: "{{ .Env.GPG_PASSWORD }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+release:
+  github:
+    owner: zrougamed
+    name: orion-belt
+  draft: false
+  prerelease: auto

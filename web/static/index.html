@@ -106,10 +106,18 @@
       text-shadow: 0 0 40px var(--accent-glow);
     }
     .login-tag {
-      margin: 0 0 2rem;
+      margin: 0 0 0.65rem;
       color: var(--muted);
       font-size: 1.05rem;
       letter-spacing: 0.01em;
+    }
+    .login-version {
+      margin: 0 0 1.75rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      min-height: 1.1em;
+      opacity: 0.9;
     }
     .login-panel {
       text-align: left;
@@ -237,6 +245,26 @@
     main.workspace {
       padding: 1.75rem 2rem 2.5rem;
       min-width: 0;
+    }
+    .workspace-bar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 0 1rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .workspace-bar-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+    .workspace-version {
+      font-size: 0.78rem;
+      color: var(--accent);
+      opacity: 0.95;
     }
     .page-head {
       display: flex;
@@ -401,6 +429,98 @@
       line-height: 1.45;
       margin: 0.75rem 0 0;
     }
+    .playback-panel {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line-soft);
+    }
+    .cast-player {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin-top: 0.75rem;
+    }
+    #castHost {
+      height: 360px;
+      padding: 0.35rem;
+      background: #070d0f;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+    }
+    .cast-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+    }
+    .cast-controls input[type="range"] {
+      flex: 1;
+      min-width: 120px;
+      accent-color: var(--accent);
+    }
+    .cast-time {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-width: 7.5rem;
+    }
+    .cast-speed {
+      font-size: 0.8rem;
+      padding: 0.25rem 0.45rem;
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+    }
+    .os-picker {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.45rem;
+    }
+    button.os-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      text-align: left;
+      padding: 0.85rem 0.95rem;
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+    }
+    button.os-card:hover {
+      background: var(--bg-hover);
+    }
+    button.os-card.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    button.os-card strong {
+      font-weight: 600;
+    }
+    button.os-card span {
+      font-size: 0.78rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .meta-chip {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     /* Terminal */
     .term-toolbar {
@@ -524,6 +644,7 @@
     <div class="login-compose">
       <h1 class="login-brand">Orion <em>Belt</em></h1>
       <p class="login-tag">Privileged access management for operators who ship.</p>
+      <p class="login-version mono" id="loginVersion" title="Server build"></p>
       <div class="login-panel">
         <label class="field" for="loginUser">Username</label>
         <input id="loginUser" autocomplete="username" spellcheck="false" />
@@ -542,6 +663,10 @@
   <div id="appView" class="shell hidden">
     <nav class="side" id="sideNav"></nav>
     <main class="workspace">
+      <div class="workspace-bar">
+        <span class="workspace-bar-label">Orion Belt</span>
+        <span class="mono workspace-version" id="appVersionBar" title="Server build">…</span>
+      </div>
       <div id="view"></div>
     </main>
   </div>
@@ -555,6 +680,7 @@
   const NAV = {
     admin: [
       { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "setup", label: "Setup guide", ico: "?" },
       { id: "requests", label: "Access requests", ico: "◇" },
       { id: "machines", label: "Machines", ico: "▣" },
       { id: "terminal", label: "Terminal", ico: "▸" },
@@ -562,11 +688,13 @@
       { id: "sessions", label: "Sessions", ico: "◎" },
       { id: "users", label: "Users", ico: "○" },
       { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "add-agent", label: "Add agent", ico: "+" },
       { id: "audit", label: "Audit", ico: "≡" },
       { id: "security", label: "Security", ico: "✦" },
     ],
     operator: [
       { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "setup", label: "Setup guide", ico: "?" },
       { id: "requests", label: "Access requests", ico: "◇" },
       { id: "machines", label: "Machines", ico: "▣" },
       { id: "terminal", label: "Terminal", ico: "▸" },
@@ -574,19 +702,24 @@
       { id: "sessions", label: "Sessions", ico: "◎" },
       { id: "users", label: "Users", ico: "○" },
       { id: "agents", label: "Agents", ico: "⚡" },
+      { id: "add-agent", label: "Add agent", ico: "+" },
       { id: "audit", label: "Audit", ico: "≡" },
       { id: "security", label: "Security", ico: "✦" },
     ],
     auditor: [
       { id: "dashboard", label: "Dashboard", ico: "◆" },
       { id: "sessions", label: "Sessions", ico: "◎" },
+      { id: "users", label: "Users", ico: "○" },
       { id: "audit", label: "Audit", ico: "≡" },
+      { id: "security", label: "Security", ico: "✦" },
     ],
     user: [
       { id: "machines", label: "Machines", ico: "▣" },
       { id: "terminal", label: "Terminal", ico: "▸" },
       { id: "files", label: "Files", ico: "▤" },
+      { id: "sessions", label: "Sessions", ico: "◎" },
       { id: "requests", label: "Access requests", ico: "◇" },
+      { id: "audit", label: "Audit", ico: "≡" },
       { id: "security", label: "Security", ico: "✦" },
     ],
   };
@@ -598,16 +731,20 @@
     jwt: localStorage.getItem("ob_jwt") || "",
     user: JSON.parse(localStorage.getItem("ob_user") || "null"),
     view: "dashboard",
+    version: null,
     term: { ws: null, xterm: null, fit: null, connected: false },
+    cast: { timer: null, xterm: null, fit: null, playing: false },
     files: { machine: "", user: "root", path: "/" },
     secTab: "mfa",
+    sessionFilter: "all",
   };
 
   function roleOf(user) {
     if (!user) return "user";
-    if (user.role) return user.role;
+    const r = user.role || "";
+    if (r === "admin" || r === "operator" || r === "auditor") return r;
     if (user.is_admin) return "admin";
-    return "user";
+    return r || "user";
   }
 
   function canApprove() {
@@ -644,7 +781,7 @@
   function badge(status) {
     const s = String(status || "").toLowerCase();
     let cls = "warn";
-    if (["approved", "active", "completed", "healthy", "enabled", "online", "ok"].includes(s)) cls = "ok";
+    if (["approved", "active", "completed", "healthy", "enabled", "online", "ok", "web", "ssh"].includes(s)) cls = "ok";
     if (["rejected", "denied", "failed", "offline", "expired", "terminated"].includes(s)) cls = "danger";
     if (["off", "inactive", "-"].includes(s)) cls = "neutral";
     return `<span class="badge ${cls}">${esc(status || "—")}</span>`;
@@ -817,12 +954,14 @@
           <strong>${esc(state.user && state.user.username)}</strong>
           <span class="role-pill">${esc(role)}</span>
           <div class="muted" style="margin-top:.2rem;font-size:.75rem">${esc(state.user && state.user.email)}</div>
+          <div class="muted mono" id="appVersion" style="margin-top:.35rem;font-size:.7rem">…</div>
         </div>
         <button type="button" class="btn secondary sm" id="logoutBtn">Sign out</button>
       </div>`;
     nav.querySelectorAll("button.nav-item").forEach((btn) => {
       btn.onclick = () => {
         if (state.view === "terminal" && btn.dataset.view !== "terminal") disconnectTerminal();
+        if (state.view === "sessions" && btn.dataset.view !== "sessions") stopCastPlayer();
         state.view = btn.dataset.view;
         buildNav();
         render();
@@ -833,6 +972,30 @@
       clearAuth();
       showLogin();
     };
+    loadAppVersion();
+  }
+
+  async function loadAppVersion() {
+    const targets = ["loginVersion", "appVersion", "appVersionBar"]
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+    if (!targets.length) return;
+    try {
+      const res = await fetch("/api/v1/version");
+      const info = await res.json();
+      const label = info.display || info.version || "dev";
+      const tip = [info.version, info.commit, info.date].filter(Boolean).join(" · ");
+      targets.forEach((el) => {
+        el.textContent = label;
+        el.title = tip || label;
+      });
+      state.version = info;
+    } catch (_) {
+      targets.forEach((el) => {
+        if (el.id === "loginVersion") el.textContent = "";
+        else el.textContent = "version unknown";
+      });
+    }
   }
 
   /* ── Login handlers ── */
@@ -895,6 +1058,7 @@
     try {
       const map = {
         dashboard: renderDashboard,
+        setup: renderSetup,
         requests: renderRequests,
         machines: renderMachines,
         terminal: renderTerminal,
@@ -902,6 +1066,7 @@
         sessions: renderSessions,
         users: renderUsers,
         agents: renderAgents,
+        "add-agent": renderAddAgent,
         audit: renderAudit,
         security: renderSecurity,
       };
@@ -924,10 +1089,20 @@
   /* ── Dashboard ── */
   async function renderDashboard(root) {
     const role = roleOf(state.user);
-    let machines = [], sessions = [], pending = [];
+    let machines = [], sessions = [], pending = [], setup = null;
     try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
     try { sessions = (await api("/sessions/active")) || []; } catch (_) { sessions = []; }
     try { pending = (await api("/access-requests/pending")) || []; } catch (_) { pending = []; }
+    if (role === "admin" || role === "operator") {
+      try { setup = await api("/setup/status"); } catch (_) { setup = null; }
+    }
+
+    const setupBanner = setup && !setup.complete ? `
+      <div class="card" style="border-color: var(--accent); background: var(--accent-soft)">
+        <h3>Finish setup</h3>
+        <p class="muted" style="margin:0 0 0.75rem">${esc(setup.next || "")}</p>
+        <button type="button" class="btn primary" data-goto-setup>Open setup guide</button>
+      </div>` : "";
 
     root.innerHTML = `
       <div class="page-head">
@@ -936,6 +1111,7 @@
           <p>Live posture across machines, sessions, and access.</p>
         </div>
       </div>
+      ${setupBanner}
       <div class="grid">
         <div class="card"><div class="stat-label">Machines</div><div class="stat">${machines.length}</div></div>
         <div class="card"><div class="stat-label">Active sessions</div><div class="stat">${sessions.length}</div></div>
@@ -951,16 +1127,70 @@
         ${sessionMiniTable(sessions)}
       </div>`;
     bindRequestActions(root);
+    const go = root.querySelector("[data-goto-setup]");
+    if (go) go.onclick = () => { state.view = "setup"; buildNav(); render(); };
   }
+
+  /* ── Setup guide ── */
+  async function renderSetup(root) {
+    let setup = { steps: {}, counts: {}, next: "", complete: false };
+    try { setup = await api("/setup/status"); } catch (e) {
+      root.innerHTML = `<div class="card"><div class="err">${esc(e.message)}</div></div>`;
+      return;
+    }
+    const s = setup.steps || {};
+    const c = setup.counts || {};
+    const row = (ok, title, detail) => `
+      <div style="display:flex;gap:0.75rem;align-items:flex-start;padding:0.65rem 0;border-bottom:1px solid var(--line-soft)">
+        <span style="color:${ok ? "var(--ok)" : "var(--warn)"};font-weight:600">${ok ? "✓" : "○"}</span>
+        <div><strong>${esc(title)}</strong><div class="muted" style="margin-top:0.2rem">${detail}</div></div>
+      </div>`;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Setup guide</h1>
+          <p>Checklist to get agents, users, and access working.</p>
+        </div>
+      </div>
+      <div class="card">
+        <p style="margin-top:0">${setup.complete
+          ? `<span class="okmsg">Core setup looks complete.</span>`
+          : `<span class="muted">Next:</span> <strong>${esc(setup.next || "")}</strong>`}</p>
+        ${row(!!s.admin_exists, "Admin account", `${c.admins || 0} admin(s)`)}
+        ${row(!!s.has_machines, "Machines registered", `${c.machines || 0} machine(s)`)}
+        ${row(!!s.has_connected_agents, "Agents connected", `${c.connected_agents || 0} online`)}
+        ${row(!!s.has_users, "Non-admin users", `${c.users || 0} user(s)`)}
+        ${row(!!s.has_permissions, "Machine grants", `${c.permissions || 0} permission(s)`)}
+      </div>
+      <div class="card">
+        <h3>1. Admin</h3>
+        <p class="muted">CLI: <code class="mono">orion-belt-server setup</code> or
+        <code class="mono">orion-belt-server user create --admin …</code></p>
+        <h3>2. Agents</h3>
+        <p class="muted">Install <code class="mono">orion-belt-agent</code> on targets, point
+        <code class="mono">agent.yaml</code> at this gateway (:2222), enable the service, then register
+        (Agents page or public register API).</p>
+        <h3>3. Users &amp; grants</h3>
+        <p class="muted">Create users under Users, then grant machine access with allowed
+        <code class="mono">remote_users</code> (e.g. root). Sessions (SSH gateway + web terminal) are recorded automatically.</p>
+        <h3>4. Connect</h3>
+        <p class="muted mono">ssh -i key -p 2222 user+machine@gateway</p>
+        <p class="muted">Or use Terminal in this UI — those sessions appear under Sessions too.</p>
+      </div>`;
+  }
+
+  /* ── Machines ── */
 
   function sessionMiniTable(rows) {
     if (!rows.length) return `<div class="empty">No active sessions.</div>`;
-    return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Status</th></tr></thead>
+    return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Source</th><th>Status</th></tr></thead>
       <tbody>${rows.map((s) => `<tr>
         <td class="mono">${esc(shortId(s.id))}</td>
         <td class="mono">${esc(s.user_id)}</td>
         <td class="mono">${esc(s.machine_id)}</td>
         <td class="mono">${esc(s.remote_user || "—")}</td>
+        <td>${badge(s.source || "ssh")}</td>
         <td>${badge(s.status)}</td>
       </tr>`).join("")}</tbody></table>`;
   }
@@ -1082,6 +1312,7 @@
   /* ── Machines ── */
   async function renderMachines(root) {
     const machines = (await api("/machines")) || [];
+    const manage = canApprove();
     root.innerHTML = `
       <div class="page-head">
         <div>
@@ -1089,6 +1320,16 @@
           <p>Registered targets and agent health.</p>
         </div>
       </div>
+      ${manage ? `<div class="card">
+        <h3>Register machine</h3>
+        <div class="form-grid">
+          <div><label class="field">Name</label><input id="mName" placeholder="web-01" /></div>
+          <div><label class="field">Hostname</label><input id="mHost" placeholder="10.0.0.12" /></div>
+          <div><label class="field">Port</label><input id="mPort" type="number" value="22" /></div>
+        </div>
+        <button type="button" class="btn" id="mCreate">Create</button>
+        <div id="mMsg"></div>
+      </div>` : ""}
       <div class="card">
         ${machines.length ? `<table><thead><tr>
           <th>Name</th><th>Host</th><th>Status</th><th>Agent</th><th>Last seen</th><th></th>
@@ -1101,6 +1342,8 @@
           <td class="row">
             <button type="button" class="btn secondary sm" data-goto-term="${esc(m.name)}">Terminal</button>
             <button type="button" class="btn ghost sm" data-goto-files="${esc(m.name)}">Files</button>
+            ${manage ? `<button type="button" class="btn ghost sm" data-archive="${esc(m.id)}">Archive</button>
+            <button type="button" class="btn danger sm" data-del-machine="${esc(m.id)}">Delete</button>` : ""}
           </td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No machines registered.</div>`}
       </div>`;
@@ -1113,6 +1356,45 @@
         state.view = "files";
         buildNav();
         render();
+      };
+    });
+    const createBtn = document.getElementById("mCreate");
+    if (createBtn) {
+      createBtn.onclick = async () => {
+        const msg = document.getElementById("mMsg");
+        try {
+          await api("/admin/machines", {
+            method: "POST",
+            body: JSON.stringify({
+              name: document.getElementById("mName").value.trim(),
+              hostname: document.getElementById("mHost").value.trim(),
+              port: Number(document.getElementById("mPort").value) || 22,
+            }),
+          });
+          toast("Machine created", "ok");
+          render();
+        } catch (e) {
+          msg.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+        }
+      };
+    }
+    root.querySelectorAll("[data-archive]").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api("/admin/machines/" + encodeURIComponent(b.dataset.archive) + "?archive=true", { method: "DELETE" });
+          toast("Machine archived", "ok");
+          render();
+        } catch (e) { toast(e.message, "err"); }
+      };
+    });
+    root.querySelectorAll("[data-del-machine]").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm("Permanently delete this machine?")) return;
+        try {
+          await api("/admin/machines/" + encodeURIComponent(b.dataset.delMachine), { method: "DELETE" });
+          toast("Machine deleted", "ok");
+          render();
+        } catch (e) { toast(e.message, "err"); }
       };
     });
   }
@@ -1133,6 +1415,221 @@
       state.term.fit = null;
     }
     state.term.connected = false;
+  }
+
+  function stopCastPlayer() {
+    if (state.cast.timer) {
+      clearTimeout(state.cast.timer);
+      state.cast.timer = null;
+    }
+    state.cast.playing = false;
+    if (state.cast._onResize) {
+      window.removeEventListener("resize", state.cast._onResize);
+      state.cast._onResize = null;
+    }
+    if (state.cast.xterm) {
+      try { state.cast.xterm.dispose(); } catch (_) { /* ignore */ }
+      state.cast.xterm = null;
+      state.cast.fit = null;
+    }
+  }
+
+  function parseCast(text) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+    if (!lines.length) throw new Error("empty recording");
+    const header = JSON.parse(lines[0]);
+    if (!header || header.version !== 2) {
+      return null; // legacy plain-text recording
+    }
+    const events = [];
+    for (let i = 1; i < lines.length; i++) {
+      const ev = JSON.parse(lines[i]);
+      if (!Array.isArray(ev) || ev.length < 3) continue;
+      events.push({ t: Number(ev[0]) || 0, type: String(ev[1]), data: String(ev[2]) });
+    }
+    return { header, events };
+  }
+
+  function fmtCastTime(sec) {
+    const s = Math.max(0, sec || 0);
+    const m = Math.floor(s / 60);
+    const r = s - m * 60;
+    return m + ":" + r.toFixed(1).padStart(4, "0");
+  }
+
+  function mountCastPlayer(box, sessionId, castText, downloadName) {
+    stopCastPlayer();
+    const cast = parseCast(castText);
+    if (!cast) {
+      box.innerHTML = `
+        <div class="row" style="justify-content:space-between">
+          <h3 style="margin:0">Recording ${esc(shortId(sessionId))}</h3>
+          <button type="button" class="btn secondary sm" id="dlRec">Download</button>
+        </div>
+        <pre class="session"></pre>`;
+      box.querySelector("pre").textContent = castText;
+      document.getElementById("dlRec").onclick = () => {
+        const blob = new Blob([castText], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = downloadName;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      return;
+    }
+
+    const duration = cast.events.length ? cast.events[cast.events.length - 1].t : 0;
+    const cols = cast.header.width || 120;
+    const rows = cast.header.height || 40;
+
+    box.innerHTML = `
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Recording ${esc(shortId(sessionId))}</h3>
+        <button type="button" class="btn secondary sm" id="dlRec">Download</button>
+      </div>
+      <div class="cast-player">
+        <div id="castHost"></div>
+        <div class="cast-controls">
+          <button type="button" class="btn sm" id="castPlay">Play</button>
+          <button type="button" class="btn secondary sm" id="castRestart">Restart</button>
+          <input type="range" id="castSeek" min="0" max="${Math.max(duration, 0.1)}" step="0.05" value="0" />
+          <span class="cast-time" id="castTime">0:00.0 / ${esc(fmtCastTime(duration))}</span>
+          <select class="cast-speed" id="castSpeed" title="Playback speed">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
+      </div>`;
+
+    document.getElementById("dlRec").onclick = () => {
+      const blob = new Blob([castText], { type: "application/x-asciicast" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = downloadName.replace(/\.txt$/, ".cast");
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+
+    const host = document.getElementById("castHost");
+    const term = new Terminal({
+      cursorBlink: false,
+      disableStdin: true,
+      convertEol: true,
+      fontFamily: "JetBrains Mono, ui-monospace, monospace",
+      fontSize: 13,
+      theme: {
+        background: "#070d0f",
+        foreground: "#e8f0f2",
+        cursor: "#e8a54b",
+        selectionBackground: "rgba(232,165,75,0.35)",
+      },
+      cols,
+      rows,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(host);
+    try { fit.fit(); } catch (_) { /* ignore */ }
+    state.cast.xterm = term;
+    state.cast.fit = fit;
+    state.cast._onResize = () => { try { fit.fit(); } catch (_) { /* ignore */ } };
+    window.addEventListener("resize", state.cast._onResize);
+
+    let idx = 0;
+    let clock = 0;
+    let speed = 1;
+
+    const seekEl = document.getElementById("castSeek");
+    const timeEl = document.getElementById("castTime");
+    const playBtn = document.getElementById("castPlay");
+
+    function applyEvent(ev) {
+      if (ev.type === "o") term.write(ev.data);
+      else if (ev.type === "r") {
+        const m = /^(\d+)x(\d+)$/.exec(ev.data);
+        if (m) {
+          try { term.resize(Number(m[1]), Number(m[2])); } catch (_) { /* ignore */ }
+        }
+      }
+    }
+
+    function renderTo(t) {
+      term.reset();
+      idx = 0;
+      while (idx < cast.events.length && cast.events[idx].t <= t + 1e-9) {
+        applyEvent(cast.events[idx]);
+        idx++;
+      }
+      clock = t;
+      seekEl.value = String(t);
+      timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+    }
+
+    function stopTimer() {
+      if (state.cast.timer) {
+        clearTimeout(state.cast.timer);
+        state.cast.timer = null;
+      }
+      state.cast.playing = false;
+      playBtn.textContent = "Play";
+    }
+
+    function schedule() {
+      if (!state.cast.playing) return;
+      if (idx >= cast.events.length) {
+        stopTimer();
+        clock = duration;
+        seekEl.value = String(duration);
+        timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+        return;
+      }
+      const next = cast.events[idx];
+      const delayMs = Math.max(0, ((next.t - clock) * 1000) / speed);
+      state.cast.timer = setTimeout(() => {
+        applyEvent(next);
+        idx++;
+        clock = next.t;
+        seekEl.value = String(clock);
+        timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+        schedule();
+      }, delayMs);
+    }
+
+    function play() {
+      if (state.cast.playing) {
+        stopTimer();
+        return;
+      }
+      if (clock >= duration - 1e-6) renderTo(0);
+      state.cast.playing = true;
+      playBtn.textContent = "Pause";
+      schedule();
+    }
+
+    playBtn.onclick = play;
+    document.getElementById("castRestart").onclick = () => {
+      stopTimer();
+      renderTo(0);
+      play();
+    };
+    document.getElementById("castSpeed").onchange = (e) => {
+      speed = Number(e.target.value) || 1;
+      if (state.cast.playing) {
+        if (state.cast.timer) clearTimeout(state.cast.timer);
+        schedule();
+      }
+    };
+    seekEl.oninput = () => {
+      const was = state.cast.playing;
+      stopTimer();
+      renderTo(Number(seekEl.value) || 0);
+      if (was) play();
+    };
+
+    renderTo(0);
   }
 
   async function renderTerminal(root) {
@@ -1481,36 +1978,66 @@
 
   /* ── Sessions ── */
   async function renderSessions(root) {
+    const filter = state.sessionFilter || "all";
     let sessions = [];
-    try { sessions = (await api("/sessions")) || []; } catch (_) {
+    let users = [];
+    let machines = [];
+    try {
+      const q = filter === "active" ? "?status=active" : filter === "completed" ? "?status=completed" : "";
+      sessions = (await api("/sessions" + q)) || [];
+    } catch (_) {
       try { sessions = (await api("/sessions/active")) || []; } catch (__) { sessions = []; }
     }
+    try { users = (await api("/users")) || []; } catch (_) { users = []; }
+    try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
+    const userName = (id) => {
+      const u = users.find((x) => x.id === id);
+      return u ? u.username : shortId(id);
+    };
+    const machineName = (id) => {
+      const m = machines.find((x) => x.id === id);
+      return m ? m.name : shortId(id);
+    };
 
     root.innerHTML = `
       <div class="page-head">
         <div>
           <h1>Sessions</h1>
-          <p>Recorded and live privileged sessions.</p>
+          <p>Live and recorded privileged sessions — open Playback to view the audit recording.</p>
+        </div>
+        <div class="row">
+          <button type="button" class="btn ${filter === "all" ? "" : "secondary"} sm" data-sf="all">All</button>
+          <button type="button" class="btn ${filter === "active" ? "" : "secondary"} sm" data-sf="active">Active</button>
+          <button type="button" class="btn ${filter === "completed" ? "" : "secondary"} sm" data-sf="completed">Completed</button>
+          <button type="button" class="btn secondary sm" id="sessRefresh">Refresh</button>
         </div>
       </div>
       <div class="card">
         ${sessions.length ? `<table><thead><tr>
-          <th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Started</th><th>Status</th><th></th>
+          <th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Source</th><th>Started</th><th>Ended</th><th>Status</th><th></th>
         </tr></thead><tbody>${sessions.map((s) => `<tr>
           <td class="mono">${esc(shortId(s.id))}</td>
-          <td class="mono">${esc(s.user_id)}</td>
-          <td class="mono">${esc(s.machine_id)}</td>
+          <td>${esc(userName(s.user_id))}</td>
+          <td>${esc(machineName(s.machine_id))}</td>
           <td class="mono">${esc(s.remote_user || "—")}</td>
+          <td>${badge(s.source || "ssh")}</td>
           <td class="mono">${esc(fmtTime(s.start_time))}</td>
+          <td class="mono">${esc(fmtTime(s.end_time))}</td>
           <td>${badge(s.status)}</td>
-          <td><button type="button" class="btn secondary sm" data-play="${esc(s.id)}">Playback</button></td>
+          <td><button type="button" class="btn secondary sm" data-play="${esc(s.id)}" ${s.recording_path ? "" : "disabled"} title="${s.recording_path ? "View recording" : "No recording"}">Playback</button></td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">No sessions.</div>`}
-        <div id="playback"></div>
+        <div id="playback" class="playback-panel"></div>
       </div>`;
+
+    root.querySelectorAll("[data-sf]").forEach((b) => {
+      b.onclick = () => { state.sessionFilter = b.dataset.sf; render(); };
+    });
+    document.getElementById("sessRefresh").onclick = () => render();
 
     root.querySelectorAll("[data-play]").forEach((btn) => {
       btn.onclick = async () => {
         const box = document.getElementById("playback");
+        stopCastPlayer();
         box.innerHTML = `<p class="muted">Loading recording…</p>`;
         try {
           const res = await apiRaw("/sessions/" + encodeURIComponent(btn.dataset.play) + "/content");
@@ -1520,8 +2047,8 @@
             try { msg = JSON.parse(text).error || text; } catch (_) { /* ignore */ }
             throw new Error(msg || "failed to load recording");
           }
-          box.innerHTML = `<h3 style="margin:1rem 0 .5rem">Recording ${esc(shortId(btn.dataset.play))}</h3><pre class="session"></pre>`;
-          box.querySelector("pre").textContent = text;
+          const dlName = "session-" + btn.dataset.play.slice(0, 8) + ".cast";
+          mountCastPlayer(box, btn.dataset.play, text, dlName);
         } catch (e) {
           box.innerHTML = `<div class="err">${esc(e.message)}</div>`;
         }
@@ -1532,29 +2059,104 @@
   /* ── Users ── */
   async function renderUsers(root) {
     const users = (await api("/users")) || [];
+    const manage = canApprove();
     root.innerHTML = `
       <div class="page-head">
         <div>
           <h1>Users</h1>
-          <p>Accounts with PAM roles and MFA posture.</p>
+          <p>Accounts, roles, and MFA posture.${manage ? " Create or edit users below." : ""}</p>
         </div>
       </div>
+      ${manage ? `<div class="card">
+        <h3>Create user</h3>
+        <div class="form-grid">
+          <div><label class="field">Username</label><input id="uName" /></div>
+          <div><label class="field">Email</label><input id="uEmail" type="email" /></div>
+          <div><label class="field">Role</label>
+            <select id="uRole">
+              <option value="user">user</option>
+              <option value="auditor">auditor</option>
+              <option value="operator">operator</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="span-2"><label class="field">SSH public key (optional)</label>
+            <textarea id="uKey" rows="2" placeholder="ssh-ed25519 AAAA…"></textarea></div>
+        </div>
+        <button type="button" class="btn" id="uCreate">Create user</button>
+        <div id="uMsg"></div>
+      </div>` : ""}
       <div class="card">
         <table><thead><tr>
           <th>Username</th><th>Email</th><th>Role</th><th>MFA</th><th>WebAuthn</th><th>Created</th>
+          ${manage ? "<th></th>" : ""}
         </tr></thead>
         <tbody>${users.map((u) => {
           const r = u.role || (u.is_admin ? "admin" : "user");
-          return `<tr>
+          return `<tr data-uid="${esc(u.id)}">
             <td><strong>${esc(u.username)}</strong><div class="mono muted" style="font-size:.72rem">${esc(shortId(u.id))}</div></td>
-            <td>${esc(u.email)}</td>
-            <td><span class="role-pill">${esc(r)}</span></td>
+            <td>${manage ? `<input class="u-email" value="${esc(u.email)}" style="min-width:160px" />` : esc(u.email)}</td>
+            <td>${manage ? `<select class="u-role">
+                ${["user","auditor","operator","admin"].map((opt) => `<option value="${opt}" ${opt===r?"selected":""}>${opt}</option>`).join("")}
+              </select>` : `<span class="role-pill">${esc(r)}</span>`}</td>
             <td>${u.mfa_enabled ? badge("enabled") : badge("off")}</td>
             <td>${u.webauthn_enabled ? badge("enabled") : badge("off")}</td>
             <td class="mono">${esc(fmtTime(u.created_at))}</td>
+            ${manage ? `<td class="row">
+              <button type="button" class="btn secondary sm" data-save-user="${esc(u.id)}">Save</button>
+              <button type="button" class="btn danger sm" data-del-user="${esc(u.id)}">Delete</button>
+            </td>` : ""}
           </tr>`;
-        }).join("") || `<tr><td colspan="6" class="muted">No users</td></tr>`}</tbody></table>
+        }).join("") || `<tr><td colspan="${manage ? 7 : 6}" class="muted">No users</td></tr>`}</tbody></table>
       </div>`;
+
+    const createBtn = document.getElementById("uCreate");
+    if (createBtn) {
+      createBtn.onclick = async () => {
+        const msg = document.getElementById("uMsg");
+        try {
+          await api("/admin/users", {
+            method: "POST",
+            body: JSON.stringify({
+              username: document.getElementById("uName").value.trim(),
+              email: document.getElementById("uEmail").value.trim(),
+              role: document.getElementById("uRole").value,
+              public_key: document.getElementById("uKey").value.trim(),
+            }),
+          });
+          toast("User created", "ok");
+          render();
+        } catch (e) {
+          msg.innerHTML = `<p class="err">${esc(e.message)}</p>`;
+        }
+      };
+    }
+    root.querySelectorAll("[data-save-user]").forEach((b) => {
+      b.onclick = async () => {
+        const tr = b.closest("tr");
+        try {
+          await api("/admin/users/" + encodeURIComponent(b.dataset.saveUser), {
+            method: "PUT",
+            body: JSON.stringify({
+              email: tr.querySelector(".u-email").value.trim(),
+              role: tr.querySelector(".u-role").value,
+            }),
+          });
+          toast("User updated", "ok");
+          render();
+        } catch (e) { toast(e.message, "err"); }
+      };
+    });
+    root.querySelectorAll("[data-del-user]").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm("Delete this user?")) return;
+        try {
+          await api("/admin/users/" + encodeURIComponent(b.dataset.delUser), { method: "DELETE" });
+          toast("User deleted", "ok");
+          render();
+        } catch (e) { toast(e.message, "err"); }
+      };
+    });
   }
 
   /* ── Agents ── */
@@ -1608,27 +2210,216 @@
     document.getElementById("agentRefresh").onclick = () => render();
   }
 
+  /* ── Add agent (OS install script) ── */
+  async function renderAddAgent(root) {
+    let ver = (state.version && (state.version.version || state.version.display)) || "0.0.0";
+    if (String(ver).startsWith("v")) ver = String(ver).slice(1);
+    if (ver === "dev") ver = "0.0.0";
+    const defaultGw = window.location.hostname || "127.0.0.1";
+    const defaultPkg = window.location.origin.replace(/:\d+$/, "") + ":8765";
+
+    const osOptions = [
+      { id: "debian", label: "Debian / Ubuntu", hint: "deb package, systemd" },
+      { id: "rhel", label: "RHEL / Rocky / Fedora", hint: "rpm package, systemd" },
+      { id: "suse", label: "openSUSE", hint: "rpm via zypper, systemd" },
+      { id: "alpine", label: "Alpine", hint: "apk package (or binary fallback)" },
+      { id: "linux", label: "Generic Linux", hint: "raw binary + systemd/nohup" },
+    ];
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Add agent</h1>
+          <p>Pick the target OS, generate an install script with credentials, then run it as root on the host.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Target</h3>
+        <div class="form-grid">
+          <div>
+            <label class="field">Agent name</label>
+            <input id="aaName" placeholder="web-01" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field">Hostname</label>
+            <input id="aaHost" placeholder="defaults to agent name" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field">Host SSH port</label>
+            <input id="aaPort" type="number" value="22" min="1" max="65535" />
+          </div>
+          <div>
+            <label class="field">Environment tag</label>
+            <input id="aaEnv" value="production" />
+          </div>
+        </div>
+        <label class="field" style="margin-top:0.85rem">Operating system</label>
+        <div class="os-picker" id="aaOsPicker">
+          ${osOptions.map((o, i) => `
+            <button type="button" class="os-card ${i === 0 ? "active" : ""}" data-os="${esc(o.id)}">
+              <strong>${esc(o.label)}</strong>
+              <span class="muted">${esc(o.hint)}</span>
+            </button>`).join("")}
+        </div>
+      </div>
+      <div class="card">
+        <h3>Connection &amp; packages</h3>
+        <div class="form-grid">
+          <div>
+            <label class="field">Gateway host</label>
+            <input id="aaGw" value="${esc(defaultGw)}" />
+          </div>
+          <div>
+            <label class="field">Gateway SSH port</label>
+            <input id="aaGwPort" type="number" value="2222" min="1" max="65535" />
+          </div>
+          <div>
+            <label class="field">Package base URL</label>
+            <input id="aaPkg" value="${esc(defaultPkg)}" placeholder="https://packages.example.com" />
+          </div>
+          <div>
+            <label class="field">Package version</label>
+            <input id="aaVer" value="${esc(ver)}" />
+          </div>
+        </div>
+        <p class="muted" style="margin:0.75rem 0 0">
+          Packages are downloaded from the base URL
+          (<span class="mono">orion-belt-agent_&lt;ver&gt;_*.deb|rpm|apk</span>
+          or <span class="mono">orion-belt-agent</span> binary. Generating the script also registers the agent on the server.
+        </p>
+        <div class="row" style="margin-top:1rem">
+          <button type="button" class="btn" id="aaGen">Generate install script</button>
+        </div>
+        <div id="aaErr" class="err" style="display:none;margin-top:0.75rem"></div>
+      </div>
+      <div class="card" id="aaOutCard" style="display:none">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h3 style="margin:0">Install script</h3>
+          <div class="row">
+            <button type="button" class="btn secondary sm" id="aaCopy">Copy</button>
+            <button type="button" class="btn secondary sm" id="aaDl">Download</button>
+          </div>
+        </div>
+        <p class="muted" id="aaMsg" style="margin:0.5rem 0"></p>
+        <pre class="code" id="aaScript" style="max-height:420px"></pre>
+        <p class="muted" style="margin:0.75rem 0 0">
+          On the target host: <span class="mono">sudo bash orion-belt-install-&lt;name&gt;.sh</span>
+        </p>
+      </div>`;
+
+    let selectedOs = "debian";
+    root.querySelectorAll("[data-os]").forEach((btn) => {
+      btn.onclick = () => {
+        selectedOs = btn.dataset.os;
+        root.querySelectorAll("[data-os]").forEach((b) => b.classList.toggle("active", b === btn));
+      };
+    });
+
+    let lastScript = "";
+    let lastFilename = "orion-belt-install-agent.sh";
+
+    document.getElementById("aaGen").onclick = async () => {
+      const errEl = document.getElementById("aaErr");
+      errEl.style.display = "none";
+      const name = document.getElementById("aaName").value.trim();
+      if (!name) {
+        errEl.textContent = "Agent name is required";
+        errEl.style.display = "block";
+        return;
+      }
+      const body = {
+        name,
+        hostname: document.getElementById("aaHost").value.trim() || name,
+        port: Number(document.getElementById("aaPort").value) || 22,
+        os: selectedOs,
+        gateway_host: document.getElementById("aaGw").value.trim(),
+        gateway_port: Number(document.getElementById("aaGwPort").value) || 2222,
+        package_base_url: document.getElementById("aaPkg").value.trim(),
+        version: document.getElementById("aaVer").value.trim(),
+        tags: {
+          os: selectedOs,
+          environment: document.getElementById("aaEnv").value.trim() || "production",
+        },
+      };
+      try {
+        document.getElementById("aaGen").disabled = true;
+        const res = await api("/admin/agents/install-script", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        lastScript = res.script || "";
+        lastFilename = res.filename || ("orion-belt-install-" + name + ".sh");
+        document.getElementById("aaOutCard").style.display = "";
+        document.getElementById("aaMsg").textContent = res.message || "Script ready.";
+        document.getElementById("aaScript").textContent = lastScript;
+        toast("Agent registered — run the script on the host");
+      } catch (e) {
+        errEl.textContent = e.message || String(e);
+        errEl.style.display = "block";
+      } finally {
+        document.getElementById("aaGen").disabled = false;
+      }
+    };
+
+    document.getElementById("aaCopy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(lastScript);
+        toast("Script copied");
+      } catch (_) {
+        toast("Copy failed — select the script manually");
+      }
+    };
+    document.getElementById("aaDl").onclick = () => {
+      const blob = new Blob([lastScript], { type: "text/x-shellscript" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = lastFilename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+  }
+
   /* ── Audit ── */
   async function renderAudit(root) {
-    const logs = (await api("/audit-logs")) || [];
+    let logs = [];
+    try { logs = (await api("/audit-logs?limit=200")) || []; } catch (e) {
+      root.innerHTML = `<div class="page-head"><div><h1>Audit</h1></div></div>
+        <div class="card"><div class="err">${esc(e.message)}</div></div>`;
+      return;
+    }
+    let users = [];
+    try { users = (await api("/users")) || []; } catch (_) { users = []; }
+    const userName = (id) => {
+      if (!id) return "—";
+      const u = users.find((x) => x.id === id);
+      return u ? u.username : shortId(id);
+    };
+    const metaStr = (m) => {
+      if (!m || typeof m !== "object") return "—";
+      try { return JSON.stringify(m); } catch { return String(m); }
+    };
+
     root.innerHTML = `
       <div class="page-head">
         <div>
           <h1>Audit</h1>
-          <p>Immutable trail of privileged actions.</p>
+          <p>Trail of privileged actions (grants, user/machine changes, recording playback).</p>
         </div>
+        <button type="button" class="btn secondary sm" id="auditRefresh">Refresh</button>
       </div>
       <div class="card">
         ${logs.length ? `<table><thead><tr>
-          <th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>IP</th>
+          <th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th><th>Details</th>
         </tr></thead><tbody>${logs.map((l) => `<tr>
           <td class="mono">${esc(fmtTime(l.timestamp))}</td>
-          <td class="mono">${esc(l.user_id)}</td>
-          <td>${esc(l.action)}</td>
+          <td>${esc(userName(l.user_id))}</td>
+          <td><strong>${esc(l.action)}</strong></td>
           <td class="mono">${esc(l.resource)}</td>
           <td class="mono">${esc(l.ip_address || "—")}</td>
-        </tr>`).join("")}</tbody></table>` : `<div class="empty">No audit entries.</div>`}
+          <td><span class="meta-chip" title="${esc(metaStr(l.metadata))}">${esc(metaStr(l.metadata))}</span></td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">No audit entries yet. Admin actions and session playback will appear here.</div>`}
       </div>`;
+    document.getElementById("auditRefresh").onclick = () => render();
   }
 
   /* ── Security ── */
@@ -1836,6 +2627,7 @@
 
   /* ── Init ── */
   (async function init() {
+    loadAppVersion();
     if (state.token) setSessionCookie(state.token);
     if (!state.token) {
       showLogin();

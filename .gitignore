@@ -43,3 +43,13 @@ recordings/
 *.db
 *.sqlite
 *.sqlite3
+
+# Release / packaging output
+dist/
+repos/
+
+# QEMU / compose lab state
+lab/qemu/images/
+lab/qemu/run/
+lab/compose/agent-keys/
+lab/credentials/

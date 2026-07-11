@@ -6,7 +6,7 @@ It provides **reverse SSH tunneling**, **relationship-based access control (ReBA
 
 Think of it as a lightweight, self-hosted alternative to traditional bastion hosts or commercial access gateways — built with simplicity, auditability, and extensibility in mind.
 
-> Status: **Alpha v0.4** — MFA/WebAuthn, OpenSSH clients, role-aware web console, OpenFGA, recording encryption
+> Status: **Alpha v0.4+** — MFA/WebAuthn, OpenSSH clients, role-aware web console, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
 
 ![Orion-Belt banner](assets/banner.png)
 
@@ -44,9 +44,12 @@ Orion-Belt solves this by:
 - **Host Key Verification**: TOFU / known_hosts for clients and agents
 - **API Auth**: API keys, session tokens, and JWT bearer tokens
 - **MFA**: TOTP + YubiKey/FIDO2 (WebAuthn) for the web console; FIDO SSH keys (`sk-*`)
-- **Web console**: Role-aware `/ui` with live terminal and file browser
+- **Web console**: Role-aware `/ui` with live terminal, files, sessions playback, audit, users/machines (see [SRS-UI.md](docs/SRS-UI.md))
+- **OpenAPI**: Full HTTP/WS spec — [docs/openapi/openapi.yaml](docs/openapi/openapi.yaml) / `GET /api/v1/openapi.yaml`
+- **Versioning**: `orion-belt-server --version`, `/health`, `/api/v1/version`, UI chrome
 - **OpenFGA**: Optional external authorization with ReBAC fallback
 - **Metrics**: Prometheus-format `/metrics` endpoint
+- **Packaging**: deb/rpm/apk + GPG-signed APT/RPM repos
 - **Database Agnostic**: Interface-based database layer for easy switching
 
 ## Architecture
@@ -72,11 +75,25 @@ Orion-Belt solves this by:
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.4** on branch `feature/v0.4-mfa-ui-openfga-recording` (merge pending); master has **v0.3.1** hardening.
+**Current Status:** Alpha **v0.4** is on `master` (PR #7). Packaging / CVE gate / multi-distro lab work lands next.
 
 **Shipped (through v0.4):** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins, remote users, host-key verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console (terminal + files), optional OpenFGA.
 
-**Next:** HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
+**Next:** Ship packaging/CVE/lab/OpenAPI as v0.5; then HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
+
+## Packaging & labs
+
+- **Native packages (deb/rpm/apk):** `make packages` — see [docs/PACKAGING.md](docs/PACKAGING.md)
+- **Signed repos:** `make packaging-key && ORION_REQUIRE_SIGN=1 make repos`
+- **Zero-CVE gate:** `make cve` (Go 1.26.5 + govulncheck)
+- **API docs:** [OpenAPI](docs/openapi/openapi.yaml) · [Swagger how-to](docs/API/README.md)
+- **UI SRS:** [docs/SRS-UI.md](docs/SRS-UI.md)
+- **Multi-distro lab:** Docker Compose or QEMU — see [lab/README.md](lab/README.md)
+- **E2E / QA plan (QEMU):** [docs/E2E_TEST_PLAN.md](docs/E2E_TEST_PLAN.md)
+
+```bash
+make lab-qemu-start    # clean → boot → admin → agents → RBAC users → SSH howto
+```
 
 See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
@@ -101,15 +118,33 @@ See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
 ## Installation
 
+### From source
+
 ```bash
-# Clone the repository
+# Requires Go 1.26.5+ (see go.mod toolchain)
 git clone https://github.com/zrougamed/orion-belt.git
 cd orion-belt
-
-# Build all components
 make build
+```
 
-# Or build individually
+### From packages (deb / rpm / apk)
+
+```bash
+make packages   # writes dist/*.deb *.rpm *.apk
+./scripts/gen-packaging-key.sh && ORION_REQUIRE_SIGN=1 make repos   # signed apt/rpm/apk trees
+# Debian/Ubuntu:
+sudo apt install ./dist/orion-belt_*_amd64.deb ./dist/orion-belt-agent_*_amd64.deb
+# RHEL/Rocky/Fedora/openSUSE:
+sudo rpm -Uvh dist/orion-belt-*.rpm dist/orion-belt-agent-*.rpm
+# Alpine:
+sudo apk add --allow-untrusted ./dist/orion-belt_*.apk ./dist/orion-belt-agent_*.apk
+```
+
+See [docs/PACKAGING.md](docs/PACKAGING.md) for systemd units, GPG-trusted repos, and release tagging.
+
+### Or build individually
+
+```bash
 make build-server
 make build-client
 make build-agent
@@ -201,13 +236,18 @@ ocp machine-name:/remote/file local-path
 ### Project Structure
 ```
 orion-belt/
-├── cmd/           # server, agent, osh, ocp, oadmin
-├── pkg/           # server, client, agent, api, auth, authz, recording, …
-├── web/           # embedded admin/ops console (/ui)
-├── plugins/       # Slack, email, webhook, audit-logger
-├── docs/          # architecture, roadmap, OpenSSH, OpenFGA, …
-├── config/        # example YAML
-└── docker/        # Compose + images
+├── cmd/              # server, agent, osh, ocp, oadmin
+├── pkg/              # server, client, agent, api, auth, authz, recording, …
+├── web/              # embedded admin/ops console (/ui)
+├── docs/
+│   ├── openapi/      # OpenAPI 3.0 (embedded + served)
+│   ├── SRS-UI.md     # Web console requirements (as implemented)
+│   └── API/          # Postman + Swagger how-to
+├── packaging/        # nfpm configs, systemd, GPG keys (public)
+├── plugins/          # Slack, email, webhook, audit-logger
+├── lab/              # Compose + QEMU multi-distro labs
+├── config/           # example YAML
+└── docker/           # Compose + images
 ```
 
 ### Building from Source
@@ -241,7 +281,9 @@ Apache License 2.0 – see [LICENSE](LICENSE) file for details.
 
 ## Architecture
 
-For a detailed architecture overview, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For a detailed architecture overview, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).  
+Web console SRS: [SRS-UI.md](docs/SRS-UI.md).  
+HTTP API: [openapi.yaml](docs/openapi/openapi.yaml).
 
 ## Contributing
 

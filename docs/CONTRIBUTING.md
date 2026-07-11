@@ -58,10 +58,11 @@ Well-thought-out proposals have a much higher chance of being accepted.
 
 ### Requirements
 
-* Go (latest stable version recommended)
+* Go **1.26.5+** (pinned in `go.mod` / `toolchain`)
 * PostgreSQL (or another supported database)
 * Make
 * SSH client (for testing)
+* Optional: Docker (compose lab), QEMU + cloud-image-utils (QEMU lab), `nfpm` (local packages)
 
 ### Clone the Repository
 
@@ -80,7 +81,19 @@ make build
 
 ```bash
 make test
+make cve                    # 0-CVE gate (govulncheck)
+ORION_CVE_E2E=1 go test ./e2e/cve/ -v
 ```
+
+### Packages & labs
+
+```bash
+make packages               # deb/rpm/apk → dist/
+make lab-compose-up         # multi-distro Docker agents
+make lab-qemu-start         # full QEMU E2E bring-up (cleans by default)
+```
+
+See [lab/README.md](../lab/README.md), [PACKAGING.md](PACKAGING.md), and the QA plan [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md).
 
 ---
 
@@ -131,6 +144,9 @@ Pull requests may be reviewed for:
 * Security implications
 * Architectural consistency
 * Documentation impact
+
+When changing the HTTP API, update **`docs/openapi/openapi.yaml`** (served at `/api/v1/openapi.yaml`).  
+When changing `/ui` behavior, update **`docs/SRS-UI.md`** so the SRS stays the acceptance baseline.
 
 Please be patient — reviews may take time.
 

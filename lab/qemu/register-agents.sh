@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Register QEMU agents with the running Orion Belt server via public API.
+# Requires pubkeys in lab/qemu/run/<name>.pub (see collect-agent-keys.sh).
+set -euo pipefail
+# shellcheck source=lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+need curl
+need python3
+wait_api "${ORION_WAIT_SECS:-180}"
+
+register_one() {
+  local name="$1" port="$2" user="$3" distro="$4"
+  local pubfile="$RUN_DIR/${name}.pub"
+  if [[ ! -s "$pubfile" ]]; then
+    echo "skip $name (no pubkey at $pubfile — run collect-agent-keys.sh first)"
+    return 0
+  fi
+  local pub
+  pub="$(tr -d '\n' <"$pubfile")"
+  echo "==> Registering $name (distro=$distro)"
+  local payload
+  payload="$(
+    ORION_A_NAME="$name" ORION_A_HOST="$name" ORION_A_PUB="$pub" ORION_A_DISTRO="$distro" python3 - <<'PY'
+import json, os
+print(json.dumps({
+  "name": os.environ["ORION_A_NAME"],
+  "hostname": os.environ["ORION_A_HOST"],
+  "port": 22,
+  "public_key": os.environ["ORION_A_PUB"],
+  "tags": {
+    "environment": "qemu-lab",
+    "distro": os.environ["ORION_A_DISTRO"],
+    "role": "agent",
+  },
+}))
+PY
+  )"
+  local tmp http_code
+  tmp="$(mktemp)"
+  http_code="$(curl -sS -o "$tmp" -w '%{http_code}' -X POST "$API/api/v1/public/register/agent" \
+    -H 'Content-Type: application/json' -d "$payload" || true)"
+  case "$http_code" in
+    201)
+      echo "  registered OK"
+      cat "$tmp"; echo
+      ;;
+    409)
+      echo "  already registered (OK)"
+      ;;
+    *)
+      echo "  FAILED HTTP $http_code: $(cat "$tmp")" >&2
+      ;;
+  esac
+  rm -f "$tmp"
+}
+
+each_agent register_one
+echo "Registration pass complete."

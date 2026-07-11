@@ -147,13 +147,15 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 
 	// Initialize API server
 	apiServer := api.NewAPIServer(store, authService, logger, api.Options{
-		JWTSecret:      config.Auth.JWTSecret,
-		JWTExpiryHours: config.Auth.JWTExpiryHours,
-		PluginManager:  pluginManager,
-		MetricsEnabled: true,
-		MFARequired:    config.Auth.MFARequired,
-		RecordingCrypt: recCrypto,
-		WebAuthn:       wa,
+		JWTSecret:          config.Auth.JWTSecret,
+		JWTExpiryHours:     config.Auth.JWTExpiryHours,
+		PluginManager:      pluginManager,
+		MetricsEnabled:     true,
+		MFARequired:        config.Auth.MFARequired,
+		RecordingCrypt:     recCrypto,
+		Recorder:           recorder,
+		WebAuthn:           wa,
+		RateLimitPerMinute: config.Auth.RateLimitPerMinute,
 	})
 
 	server := &Server{
@@ -818,18 +820,17 @@ func (s *Server) startInteractiveShell(clientChannel, agentChannel ssh.Channel, 
 	clientChannel.Close()
 }
 
-// proxyConnection proxies data between client and agent with recording
+// proxyConnection proxies data between client and agent with output-only recording.
 func (s *Server) proxyConnection(client, agent ssh.Channel, recorder *recording.SessionRecorder, waitBoth bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	done := make(chan struct{}, 2)
 
-	// Client -> Agent
+	// Client -> Agent (keystrokes are not recorded; PTY echo covers input in the cast)
 	go func() {
 		defer wg.Done()
-		reader := recording.NewRecordingReader(client, recorder)
-		io.Copy(agent, reader)
+		io.Copy(agent, client)
 
 		if cw, ok := agent.(interface{ CloseWrite() error }); ok {
 			cw.CloseWrite()
@@ -838,11 +839,14 @@ func (s *Server) proxyConnection(client, agent ssh.Channel, recorder *recording.
 		done <- struct{}{}
 	}()
 
-	// Agent -> Client
+	// Agent -> Client (PTY output → cast)
 	go func() {
 		defer wg.Done()
-		writer := recording.NewRecordingWriter(client, recorder)
-		io.Copy(writer, agent)
+		var out io.Writer = client
+		if recorder != nil {
+			out = recording.NewRecordingWriter(client, recorder)
+		}
+		io.Copy(out, agent)
 
 		client.CloseWrite()
 		s.logger.Debug("Agent -> Client I/O closed")

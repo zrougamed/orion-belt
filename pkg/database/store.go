@@ -30,6 +30,7 @@ type Store interface {
 	CreateSession(ctx context.Context, session *common.Session) error
 	GetSession(ctx context.Context, id string) (*common.Session, error)
 	UpdateSession(ctx context.Context, session *common.Session) error
+	ListSessions(ctx context.Context, limit, offset int) ([]*common.Session, error)
 	ListActiveSessions(ctx context.Context) ([]*common.Session, error)
 	ListUserSessions(ctx context.Context, userID string, limit, offset int) ([]*common.Session, error)
 	EndSession(ctx context.Context, id string, endTime time.Time) error
