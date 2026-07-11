@@ -1,0 +1,11 @@
+# OpenFGA authorization model for Orion Belt
+# Import into your OpenFGA store when auth.openfga.enabled=true
+model
+  schema 1.1
+
+type user
+
+type machine
+  relations
+    define viewer: [user]
+    define can_access: viewer

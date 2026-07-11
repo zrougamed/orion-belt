@@ -19,8 +19,13 @@ import (
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	store  database.Store
-	logger *common.Logger
+	store      database.Store
+	logger     *common.Logger
+	authorizer interface {
+		Check(ctx context.Context, userID, machineID, accessType string) (bool, error)
+		WriteGrant(ctx context.Context, userID, machineID, accessType string) error
+		DeleteGrant(ctx context.Context, userID, machineID, accessType string) error
+	}
 }
 
 // NewAuthService creates a new authentication service
@@ -29,6 +34,15 @@ func NewAuthService(store database.Store, logger *common.Logger) *AuthService {
 		store:  store,
 		logger: logger,
 	}
+}
+
+// SetAuthorizer sets an optional external authorizer (e.g. OpenFGA).
+func (a *AuthService) SetAuthorizer(authz interface {
+	Check(ctx context.Context, userID, machineID, accessType string) (bool, error)
+	WriteGrant(ctx context.Context, userID, machineID, accessType string) error
+	DeleteGrant(ctx context.Context, userID, machineID, accessType string) error
+}) {
+	a.authorizer = authz
 }
 
 // AuthenticateUser authenticates a user with public key
@@ -69,6 +83,18 @@ func (a *AuthService) CheckPermission(ctx context.Context, userID, machineID, ac
 		return nil
 	}
 
+	if a.authorizer != nil {
+		allowed, err := a.authorizer.Check(ctx, userID, machineID, accessType)
+		if err != nil {
+			a.logger.Warn("OpenFGA check failed, falling back to ReBAC: %v", err)
+		} else if allowed {
+			return nil
+		} else {
+			a.logger.Warn("Permission denied (OpenFGA) for user %s on machine %s", userID, machineID)
+			return database.ErrPermissionDenied
+		}
+	}
+
 	// Check ReBAC permissions
 	hasPermission, err := a.store.HasPermission(ctx, userID, machineID, accessType)
 	if err != nil {
@@ -95,6 +121,27 @@ func (a *AuthService) CheckPermissionWithRemoteUser(ctx context.Context, userID,
 	if user.IsAdmin {
 		a.logger.Debug("Admin access granted for user %s", userID)
 		return nil
+	}
+
+	if a.authorizer != nil {
+		allowed, err := a.authorizer.Check(ctx, userID, machineID, accessType)
+		if err != nil {
+			a.logger.Warn("OpenFGA check failed, falling back to ReBAC: %v", err)
+		} else if allowed {
+			// Still enforce remote_users via local ReBAC when available
+			hasLocal, localErr := a.store.HasPermissionWithRemoteUser(ctx, userID, machineID, accessType, remoteUser)
+			if localErr == nil && hasLocal {
+				return nil
+			}
+			if localErr == nil && !hasLocal {
+				// OpenFGA allowed machine access; remote user restriction from local store
+				a.logger.Warn("Permission denied for remote user %s on machine %s", remoteUser, machineID)
+				return fmt.Errorf("permission denied: %s not allowed to access %s", remoteUser, machineID)
+			}
+			return nil
+		} else {
+			return fmt.Errorf("permission denied: %s not allowed to access %s", remoteUser, machineID)
+		}
 	}
 
 	// Check ReBAC permissions with remote user
@@ -126,6 +173,12 @@ func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, ac
 		return fmt.Errorf("failed to create permission: %w", err)
 	}
 
+	if a.authorizer != nil {
+		if err := a.authorizer.WriteGrant(ctx, userID, machineID, accessType); err != nil {
+			a.logger.Warn("Failed to write OpenFGA tuple: %v", err)
+		}
+	}
+
 	a.logger.Info("Permission granted: user=%s, machine=%s, type=%s, remote_users=%v",
 		userID, machineID, accessType, remoteUsers)
 	return nil
@@ -133,8 +186,19 @@ func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, ac
 
 // RevokePermission revokes a user's permission
 func (a *AuthService) RevokePermission(ctx context.Context, permissionID string) error {
+	perm, err := a.store.GetPermission(ctx, permissionID)
+	if err != nil {
+		return fmt.Errorf("failed to get permission: %w", err)
+	}
+
 	if err := a.store.DeletePermission(ctx, permissionID); err != nil {
 		return fmt.Errorf("failed to revoke permission: %w", err)
+	}
+
+	if a.authorizer != nil {
+		if err := a.authorizer.DeleteGrant(ctx, perm.UserID, perm.MachineID, perm.AccessType); err != nil {
+			a.logger.Warn("Failed to delete OpenFGA tuple: %v", err)
+		}
 	}
 
 	a.logger.Info("Permission revoked: %s", permissionID)

@@ -44,6 +44,18 @@ type AuthConfig struct {
 	StrictHostKeyChecking string `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
 	JWTSecret             string `yaml:"jwt_secret,omitempty"`
 	JWTExpiryHours        int    `yaml:"jwt_expiry_hours,omitempty"`
+	MFARequired           bool   `yaml:"mfa_required,omitempty"`
+	OpenFGA               OpenFGAConfig `yaml:"openfga,omitempty"`
+}
+
+// OpenFGAConfig configures optional OpenFGA authorization.
+type OpenFGAConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	APIURL   string `yaml:"api_url"`
+	StoreID  string `yaml:"store_id"`
+	ModelID  string `yaml:"model_id,omitempty"`
+	APIToken string `yaml:"api_token,omitempty"`
+	Relation string `yaml:"relation,omitempty"` // default: can_access
 }
 
 // AgentConfig contains agent-specific configuration
@@ -57,6 +69,7 @@ type RecordingConfig struct {
 	Enabled       bool   `yaml:"enabled"`
 	StoragePath   string `yaml:"storage_path"`
 	RetentionDays int    `yaml:"retention_days,omitempty"`
+	EncryptionKey string `yaml:"encryption_key,omitempty"` // 32-byte key, base64 or raw 32 chars
 }
 
 // LoadConfig loads configuration from a YAML file

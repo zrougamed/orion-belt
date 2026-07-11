@@ -60,11 +60,11 @@ Orion-Belt solves this by:
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.3.0** tagged; Phase 1 hardening on master toward **v0.3.1**.
+**Current Status:** Alpha **v0.3.1** on master; **v0.4** adds MFA, admin UI, OpenFGA, and recording encryption.
 
-**Shipped:** SSH proxy, ReBAC, session recording, REST API + API keys, plugins, remote users, client list/request-access, `oadmin`, Docker Compose.
+**Shipped:** SSH proxy, ReBAC, session recording, REST API + API keys/JWT, plugins, remote users, client workflows, Docker Compose, host-key verification, metrics.
 
-**What's next (Phase 1 remainder / v0.4):** MFA, OpenFGA, web admin UI, recording encryption.
+**v0.4:** TOTP MFA, embedded `/ui` admin console, optional OpenFGA, AES recording encryption + retention.
 
 See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 

@@ -10,13 +10,16 @@ import (
 
 // User represents a system user
 type User struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	PublicKey string    `json:"public_key"`
-	IsAdmin   bool      `json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Username        string    `json:"username"`
+	Email           string    `json:"email"`
+	PublicKey       string    `json:"public_key"`
+	IsAdmin         bool      `json:"is_admin"`
+	MFAEnabled      bool      `json:"mfa_enabled"`
+	TOTPSecret      string    `json:"-"` // never expose in API JSON
+	BackupCodesHash string    `json:"-"` // bcrypt/sha hashes joined
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // Machine represents a target machine

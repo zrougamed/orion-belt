@@ -75,6 +75,7 @@ func (s *APIServer) loginJWT(c *gin.Context) {
 	var req struct {
 		Username  string `json:"username" binding:"required"`
 		PublicKey string `json:"public_key" binding:"required"`
+		TOTPCode  string `json:"totp_code,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -110,6 +111,10 @@ func (s *APIServer) loginJWT(c *gin.Context) {
 		return
 	}
 
+	if !s.enforceMFAAfterPubkey(c, user.ID, req.TOTPCode) {
+		return
+	}
+
 	token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin)
 	if err != nil {
 		s.logger.Error("Failed to issue JWT: %v", err)
@@ -122,10 +127,11 @@ func (s *APIServer) loginJWT(c *gin.Context) {
 		"token_type":   "Bearer",
 		"expires_at":   exp,
 		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"is_admin": user.IsAdmin,
+			"id":          user.ID,
+			"username":    user.Username,
+			"email":       user.Email,
+			"is_admin":    user.IsAdmin,
+			"mfa_enabled": user.MFAEnabled,
 		},
 	})
 }

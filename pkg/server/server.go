@@ -12,6 +12,7 @@ import (
 
 	"github.com/zrougamed/orion-belt/pkg/api"
 	"github.com/zrougamed/orion-belt/pkg/auth"
+	"github.com/zrougamed/orion-belt/pkg/authz"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
@@ -67,6 +68,13 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	// Initialize services
 	authService := auth.NewAuthService(store, logger)
 
+	if fga, err := authz.NewOpenFGA(config.Auth.OpenFGA, logger); err != nil {
+		return nil, fmt.Errorf("openfga config: %w", err)
+	} else if fga != nil {
+		authService.SetAuthorizer(fga)
+		logger.Info("OpenFGA authorizer enabled (%s)", config.Auth.OpenFGA.APIURL)
+	}
+
 	// Initialize recorder
 	storagePath := resolveDirWithCreate(
 		config.Recording.StoragePath,
@@ -76,6 +84,15 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	recorder, err := recording.NewRecorder(storagePath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recorder: %w", err)
+	}
+
+	recCrypto, err := recording.NewCrypto(config.Recording.EncryptionKey, logger)
+	if err != nil {
+		return nil, fmt.Errorf("recording encryption: %w", err)
+	}
+	recorder.SetCrypto(recCrypto)
+	if recCrypto.Enabled() {
+		logger.Info("Session recording encryption enabled")
 	}
 
 	// Initialize plugin manager
@@ -108,6 +125,8 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		JWTExpiryHours: config.Auth.JWTExpiryHours,
 		PluginManager:  pluginManager,
 		MetricsEnabled: true,
+		MFARequired:    config.Auth.MFARequired,
+		RecordingCrypt: recCrypto,
 	})
 
 	server := &Server{
@@ -186,6 +205,11 @@ func (s *Server) Start() error {
 
 	s.logger.Info("Starting Orion-Belt SSH server on %s", addr)
 
+	// Periodic recording retention cleanup
+	if s.config.Recording.RetentionDays > 0 {
+		go s.runRetentionLoop()
+	}
+
 	for {
 		select {
 		case <-s.shutdown:
@@ -257,6 +281,11 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	if err != nil {
 		s.logger.Warn("Authentication failed for user: %s", username)
 		return nil, fmt.Errorf("authentication failed")
+	}
+
+	if s.config.Auth.MFARequired && !user.MFAEnabled {
+		s.logger.Warn("SSH denied for %s: MFA enrollment required", username)
+		return nil, fmt.Errorf("mfa enrollment required")
 	}
 
 	// Store user info in permissions
@@ -765,6 +794,27 @@ func (s *Server) GetStore() database.Store {
 // GetAuthService returns the auth service
 func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
+}
+
+// runRetentionLoop periodically deletes expired recordings.
+func (s *Server) runRetentionLoop() {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	path := s.recorder.GetRecordingStoragePath()
+	days := s.config.Recording.RetentionDays
+	if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
+		s.logger.Warn("retention cleanup: %v", err)
+	}
+	for {
+		select {
+		case <-s.shutdown:
+			return
+		case <-ticker.C:
+			if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
+				s.logger.Warn("retention cleanup: %v", err)
+			}
+		}
+	}
 }
 
 // ListConnectedAgents returns machine IDs of connected agents.

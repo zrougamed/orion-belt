@@ -7,6 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.5.0
 	github.com/lib/pq v1.10.9
+	github.com/pquerna/otp v1.4.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.40.0
 	golang.org/x/term v0.33.0
@@ -14,6 +15,7 @@ require (
 )
 
 require (
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect

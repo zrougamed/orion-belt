@@ -15,18 +15,22 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
+	"github.com/zrougamed/orion-belt/pkg/recording"
+	"github.com/zrougamed/orion-belt/web"
 )
 
 // APIServer provides REST API endpoints
 type APIServer struct {
-	store         database.Store
-	authService   *auth.AuthService
-	jwt           *auth.JWTManager
-	pluginManager *plugin.Manager
-	logger        *common.Logger
-	router        *gin.Engine
-	rateLimiter   *rateLimiter
-	agentCommander AgentCommander
+	store          database.Store
+	authService    *auth.AuthService
+	jwt            *auth.JWTManager
+	pluginManager  *plugin.Manager
+	logger         *common.Logger
+	router         *gin.Engine
+	rateLimiter    *rateLimiter
+	agentCommander  AgentCommander
+	mfaRequired    bool
+	recordingCrypt *recording.Crypto
 }
 
 // AgentCommander sends control commands to connected agents.
@@ -42,6 +46,8 @@ type Options struct {
 	PluginManager  *plugin.Manager
 	AgentCommander AgentCommander
 	MetricsEnabled bool
+	MFARequired    bool
+	RecordingCrypt *recording.Crypto
 }
 
 // NewAPIServer creates a new API server
@@ -67,6 +73,8 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		logger:         logger,
 		router:         gin.New(),
 		rateLimiter:    newRateLimiter(60, time.Minute),
+		mfaRequired:    opt.MFARequired,
+		recordingCrypt: opt.RecordingCrypt,
 	}
 
 	// Middleware
@@ -98,6 +106,8 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 	if metricsEnabled {
 		s.router.GET("/metrics", gin.WrapH(metrics.Default.Handler()))
 	}
+
+	web.Register(s.router)
 
 	v1 := s.router.Group("/api/v1")
 
@@ -152,6 +162,9 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
+
+		// MFA
+		s.registerMFARoutes(protected)
 	}
 
 	// Admin-only endpoints
@@ -202,6 +215,7 @@ type RegisterAgentResponse struct {
 type LoginWithKeyRequest struct {
 	Username  string `json:"username" binding:"required"`
 	PublicKey string `json:"public_key" binding:"required"`
+	TOTPCode  string `json:"totp_code,omitempty"`
 }
 
 // LoginWithKeyResponse represents an API key login response
@@ -250,6 +264,10 @@ func (s *APIServer) loginWithKey(c *gin.Context) {
 		s.logger.Info("req %s", req.PublicKey)
 		s.logger.Warn("Public key mismatch for user: %s", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	if !s.enforceMFAAfterPubkey(c, user.ID, req.TOTPCode) {
 		return
 	}
 
@@ -721,12 +739,22 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 		return
 	}
 
-	// Ensure the recording exists on disk
 	if _, err := os.Stat(session.RecordingPath); os.IsNotExist(err) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "recording file missing on server"})
 		return
 	}
-	// serve the file
+
+	if s.recordingCrypt != nil && s.recordingCrypt.Enabled() {
+		plain, err := s.recordingCrypt.DecryptFile(session.RecordingPath)
+		if err != nil {
+			s.logger.Error("Failed to decrypt recording: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt recording"})
+			return
+		}
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", plain)
+		return
+	}
+
 	c.File(session.RecordingPath)
 }
 

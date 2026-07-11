@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orion Belt Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c1219;
+      --bg-elev: #141c27;
+      --bg-panel: #1a2433;
+      --line: #2a3a4f;
+      --text: #e8eef6;
+      --muted: #8fa3bb;
+      --accent: #3d9cfd;
+      --accent-dim: #1e4f7a;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+      --danger: #f07178;
+      --radius: 10px;
+      --font: "DM Sans", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: var(--font); color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #1a3050 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #123028 0%, transparent 50%),
+        var(--bg);
+    }
+    a { color: var(--accent); }
+    .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    nav {
+      background: rgba(20,28,39,.92); border-right: 1px solid var(--line);
+      padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: .5rem;
+    }
+    .brand {
+      font-weight: 700; font-size: 1.15rem; letter-spacing: .02em;
+      padding: .25rem .5rem 1.25rem; border-bottom: 1px solid var(--line); margin-bottom: .75rem;
+    }
+    .brand span { color: var(--accent); }
+    nav button {
+      text-align: left; background: transparent; border: 0; color: var(--muted);
+      padding: .65rem .75rem; border-radius: 8px; cursor: pointer; font: inherit;
+    }
+    nav button:hover, nav button.active { background: var(--bg-panel); color: var(--text); }
+    main { padding: 1.75rem 2rem; }
+    h1 { margin: 0 0 1rem; font-size: 1.5rem; font-weight: 700; }
+    .muted { color: var(--muted); }
+    .card {
+      background: var(--bg-elev); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem;
+    }
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .stat { font-size: 1.75rem; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { text-align: left; padding: .65rem .5rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    .badge {
+      display: inline-block; padding: .15rem .5rem; border-radius: 999px;
+      font-size: .75rem; font-weight: 600;
+    }
+    .badge.ok { background: rgba(62,207,142,.15); color: var(--ok); }
+    .badge.warn { background: rgba(240,180,41,.15); color: var(--warn); }
+    .badge.danger { background: rgba(240,113,120,.15); color: var(--danger); }
+    input, textarea, select {
+      width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+      border-radius: 8px; padding: .65rem .75rem; font: inherit; margin: .35rem 0 .85rem;
+    }
+    label { font-size: .85rem; color: var(--muted); }
+    .btn {
+      background: var(--accent); color: #041018; border: 0; border-radius: 8px;
+      padding: .6rem 1rem; font-weight: 700; cursor: pointer; font: inherit;
+    }
+    .btn.secondary { background: var(--bg-panel); color: var(--text); border: 1px solid var(--line); }
+    .btn.danger { background: var(--danger); color: #1a0505; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .login-wrap {
+      min-height: 100vh; display: grid; place-items: center; padding: 2rem;
+    }
+    .login-card { width: min(420px, 100%); }
+    .mono { font-family: var(--mono); font-size: .85rem; }
+    .err { color: var(--danger); margin: .5rem 0; }
+    .okmsg { color: var(--ok); margin: .5rem 0; }
+    pre.session {
+      background: #070b10; border: 1px solid var(--line); border-radius: 8px;
+      padding: 1rem; max-height: 420px; overflow: auto; white-space: pre-wrap;
+      font-family: var(--mono); font-size: .8rem;
+    }
+    @media (max-width: 800px) {
+      .shell { grid-template-columns: 1fr; }
+      nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { width: 100%; }
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="loginView" class="login-wrap">
+    <div class="card login-card">
+      <div class="brand" style="border:0;padding:0 0 1rem;margin:0">Orion <span>Belt</span></div>
+      <p class="muted" style="margin-top:0">Admin console — authenticate with username + SSH public key.</p>
+      <label>Username</label>
+      <input id="loginUser" autocomplete="username" />
+      <label>SSH public key</label>
+      <textarea id="loginKey" rows="4" class="mono" placeholder="ssh-ed25519 AAAA... comment"></textarea>
+      <label>TOTP / backup code (if MFA enabled)</label>
+      <input id="loginTotp" autocomplete="one-time-code" placeholder="123456" />
+      <div id="loginErr" class="err"></div>
+      <button class="btn" id="loginBtn" style="width:100%">Sign in</button>
+    </div>
+  </div>
+
+  <div id="appView" class="shell hidden">
+    <nav>
+      <div class="brand">Orion <span>Belt</span></div>
+      <button data-view="dashboard" class="active">Dashboard</button>
+      <button data-view="requests">Access requests</button>
+      <button data-view="machines">Machines</button>
+      <button data-view="sessions">Sessions</button>
+      <button data-view="users">Users</button>
+      <button data-view="audit">Audit</button>
+      <button data-view="mfa">MFA</button>
+      <div style="flex:1"></div>
+      <div class="muted" style="padding:.5rem;font-size:.85rem" id="whoami"></div>
+      <button id="logoutBtn" class="secondary">Sign out</button>
+    </nav>
+    <main>
+      <div id="view"></div>
+    </main>
+  </div>
+
+<script>
+const state = {
+  token: localStorage.getItem("ob_session") || "",
+  user: JSON.parse(localStorage.getItem("ob_user") || "null"),
+  view: "dashboard",
+};
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+  if (state.token) headers["X-Session-Token"] = state.token;
+  if (state.token && !headers["Authorization"]) headers["Authorization"] = "Bearer " + (localStorage.getItem("ob_jwt") || "");
+  const res = await fetch("/api/v1" + path, { ...opts, headers });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) {
+    const err = new Error((data && data.error) || res.statusText);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function showApp() {
+  document.getElementById("loginView").classList.add("hidden");
+  document.getElementById("appView").classList.remove("hidden");
+  document.getElementById("whoami").textContent = state.user
+    ? `${state.user.username}${state.user.is_admin ? " · admin" : ""}`
+    : "";
+  render();
+}
+
+function showLogin() {
+  document.getElementById("appView").classList.add("hidden");
+  document.getElementById("loginView").classList.remove("hidden");
+}
+
+document.getElementById("loginBtn").onclick = async () => {
+  const err = document.getElementById("loginErr");
+  err.textContent = "";
+  try {
+    const body = {
+      username: document.getElementById("loginUser").value.trim(),
+      public_key: document.getElementById("loginKey").value.trim(),
+      totp_code: document.getElementById("loginTotp").value.trim(),
+    };
+    const data = await api("/public/login", { method: "POST", body: JSON.stringify(body) });
+    state.token = data.session_token;
+    state.user = data.user;
+    localStorage.setItem("ob_session", state.token);
+    localStorage.setItem("ob_user", JSON.stringify(state.user));
+    if (data.access_token) localStorage.setItem("ob_jwt", data.access_token);
+    showApp();
+  } catch (e) {
+    if (e.data && e.data.mfa_required) err.textContent = "MFA code required.";
+    else if (e.data && e.data.mfa_enrollment_required) err.textContent = "MFA enrollment required before login.";
+    else err.textContent = e.message || "Login failed";
+  }
+};
+
+document.getElementById("logoutBtn").onclick = () => {
+  state.token = ""; state.user = null;
+  localStorage.removeItem("ob_session");
+  localStorage.removeItem("ob_user");
+  localStorage.removeItem("ob_jwt");
+  showLogin();
+};
+
+document.querySelectorAll("nav button[data-view]").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll("nav button[data-view]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.view = btn.dataset.view;
+    render();
+  };
+});
+
+function badge(status) {
+  const s = (status || "").toLowerCase();
+  let cls = "warn";
+  if (s === "approved" || s === "active" || s === "completed" || s === "healthy") cls = "ok";
+  if (s === "rejected" || s === "denied" || s === "failed") cls = "danger";
+  return `<span class="badge ${cls}">${status || "-"}</span>`;
+}
+
+async function render() {
+  const root = document.getElementById("view");
+  root.innerHTML = `<p class="muted">Loading…</p>`;
+  try {
+    if (state.view === "dashboard") await renderDashboard(root);
+    else if (state.view === "requests") await renderRequests(root);
+    else if (state.view === "machines") await renderMachines(root);
+    else if (state.view === "sessions") await renderSessions(root);
+    else if (state.view === "users") await renderUsers(root);
+    else if (state.view === "audit") await renderAudit(root);
+    else if (state.view === "mfa") await renderMFA(root);
+  } catch (e) {
+    if (e.status === 401) { showLogin(); return; }
+    root.innerHTML = `<div class="err">${e.message}</div>`;
+  }
+}
+
+async function renderDashboard(root) {
+  const [machines, sessions, pending] = await Promise.all([
+    api("/machines"),
+    api("/sessions/active"),
+    api("/access-requests/pending"),
+  ]);
+  root.innerHTML = `
+    <h1>Dashboard</h1>
+    <div class="grid">
+      <div class="card"><div class="muted">Machines</div><div class="stat">${(machines||[]).length}</div></div>
+      <div class="card"><div class="muted">Active sessions</div><div class="stat">${(sessions||[]).length}</div></div>
+      <div class="card"><div class="muted">Pending requests</div><div class="stat">${(pending||[]).length}</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Pending access</h3>
+      ${requestTable(pending || [])}
+    </div>`;
+  bindRequestActions();
+}
+
+function requestTable(rows) {
+  if (!rows.length) return `<p class="muted">No pending requests.</p>`;
+  return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="mono">${(r.id||"").slice(0,8)}</td>
+      <td class="mono">${r.user_id||""}</td>
+      <td class="mono">${r.machine_id||""}</td>
+      <td>${r.reason||""}</td>
+      <td>${badge(r.status)}</td>
+      <td class="row">
+        ${r.status === "pending" ? `
+          <button class="btn" data-approve="${r.id}">Approve</button>
+          <button class="btn danger" data-reject="${r.id}">Reject</button>` : ""}
+      </td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function bindRequestActions() {
+  document.querySelectorAll("[data-approve]").forEach(btn => {
+    btn.onclick = async () => {
+      await api(`/admin/access-requests/${btn.dataset.approve}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ reviewer_id: state.user.id }),
+      });
+      render();
+    };
+  });
+  document.querySelectorAll("[data-reject]").forEach(btn => {
+    btn.onclick = async () => {
+      await api(`/admin/access-requests/${btn.dataset.reject}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ reviewer_id: state.user.id }),
+      });
+      render();
+    };
+  });
+}
+
+async function renderRequests(root) {
+  const pending = await api("/access-requests/pending");
+  root.innerHTML = `<h1>Access requests</h1><div class="card">${requestTable(pending||[])}</div>`;
+  bindRequestActions();
+}
+
+async function renderMachines(root) {
+  const machines = await api("/machines");
+  root.innerHTML = `<h1>Machines</h1><div class="card">
+    <table><thead><tr><th>Name</th><th>Host</th><th>Active</th><th>Last seen</th></tr></thead>
+    <tbody>${(machines||[]).map(m => `<tr>
+      <td>${m.name}</td><td class="mono">${m.hostname}:${m.port}</td>
+      <td>${m.is_active ? badge("active") : badge("offline")}</td>
+      <td class="mono">${m.last_seen_at || "-"}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="muted">No machines</td></tr>`}
+    </tbody></table></div>`;
+}
+
+async function renderSessions(root) {
+  const sessions = await api("/sessions");
+  root.innerHTML = `<h1>Sessions</h1><div class="card">
+    <table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Status</th><th></th></tr></thead>
+    <tbody>${(sessions||[]).map(s => `<tr>
+      <td class="mono">${(s.id||"").slice(0,8)}</td>
+      <td class="mono">${s.user_id||""}</td>
+      <td class="mono">${s.machine_id||""}</td>
+      <td>${badge(s.status)}</td>
+      <td><button class="btn secondary" data-play="${s.id}">Playback</button></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="muted">No sessions</td></tr>`}
+    </tbody></table>
+    <div id="playback"></div>
+  </div>`;
+  document.querySelectorAll("[data-play]").forEach(btn => {
+    btn.onclick = async () => {
+      const box = document.getElementById("playback");
+      box.innerHTML = `<p class="muted">Loading recording…</p>`;
+      const res = await fetch(`/api/v1/sessions/${btn.dataset.play}/content`, {
+        headers: { "X-Session-Token": state.token }
+      });
+      const text = await res.text();
+      box.innerHTML = `<h3>Recording ${btn.dataset.play.slice(0,8)}</h3><pre class="session"></pre>`;
+      box.querySelector("pre").textContent = text;
+    };
+  });
+}
+
+async function renderUsers(root) {
+  const users = await api("/users");
+  root.innerHTML = `<h1>Users</h1><div class="card">
+    <table><thead><tr><th>Username</th><th>Email</th><th>Admin</th><th>MFA</th></tr></thead>
+    <tbody>${(users||[]).map(u => `<tr>
+      <td>${u.username}</td><td>${u.email}</td>
+      <td>${u.is_admin ? badge("admin") : "-"}</td>
+      <td>${u.mfa_enabled ? badge("enabled") : badge("off")}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+
+async function renderAudit(root) {
+  const logs = await api("/audit-logs");
+  root.innerHTML = `<h1>Audit log</h1><div class="card">
+    <table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th></tr></thead>
+    <tbody>${(logs||[]).map(l => `<tr>
+      <td class="mono">${l.timestamp||""}</td>
+      <td class="mono">${l.user_id||""}</td>
+      <td>${l.action||""}</td>
+      <td class="mono">${l.resource||""}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="muted">No audit entries</td></tr>`}
+    </tbody></table></div>`;
+}
+
+async function renderMFA(root) {
+  const st = await api("/mfa/status");
+  root.innerHTML = `<h1>Multi-factor auth</h1>
+    <div class="card">
+      <p>Status: ${st.mfa_enabled ? badge("enabled") : badge("off")}
+         ${st.mfa_required ? `<span class="muted"> · org requires MFA</span>` : ""}</p>
+      <div class="row">
+        <button class="btn" id="mfaEnroll" ${st.mfa_enabled ? "disabled" : ""}>Enroll TOTP</button>
+        <button class="btn danger" id="mfaDisable" ${st.mfa_enabled ? "" : "disabled"}>Disable MFA</button>
+      </div>
+      <div id="mfaOut"></div>
+    </div>`;
+  document.getElementById("mfaEnroll").onclick = async () => {
+    const out = document.getElementById("mfaOut");
+    const data = await api("/mfa/enroll", { method: "POST", body: "{}" });
+    out.innerHTML = `
+      <p class="okmsg">Scan this otpauth URL in your authenticator, then confirm with a code.</p>
+      <label>Secret</label><input class="mono" readonly value="${data.secret}" />
+      <label>otpauth URL</label><textarea class="mono" rows="2" readonly>${data.otpauth_url}</textarea>
+      <label>Backup codes (save these)</label>
+      <pre class="session">${(data.backup_codes||[]).join("\n")}</pre>
+      <label>Confirm code</label><input id="mfaConfirmCode" />
+      <button class="btn" id="mfaConfirmBtn">Confirm enrollment</button>
+      <div id="mfaMsg"></div>`;
+    document.getElementById("mfaConfirmBtn").onclick = async () => {
+      try {
+        await api("/mfa/confirm", {
+          method: "POST",
+          body: JSON.stringify({ code: document.getElementById("mfaConfirmCode").value.trim() }),
+        });
+        document.getElementById("mfaMsg").innerHTML = `<p class="okmsg">MFA enabled.</p>`;
+        render();
+      } catch (e) {
+        document.getElementById("mfaMsg").innerHTML = `<p class="err">${e.message}</p>`;
+      }
+    };
+  };
+  document.getElementById("mfaDisable").onclick = async () => {
+    const code = prompt("Enter TOTP or backup code to disable MFA");
+    if (!code) return;
+    await api("/mfa/disable", { method: "POST", body: JSON.stringify({ code }) });
+    render();
+  };
+}
+
+(async function init() {
+  if (!state.token) { showLogin(); return; }
+  try {
+    const me = await api("/auth/me");
+    state.user = me;
+    localStorage.setItem("ob_user", JSON.stringify(me));
+    showApp();
+  } catch {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

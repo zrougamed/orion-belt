@@ -16,11 +16,13 @@ auth:
   allow_temp_access: true
   jwt_secret: "dev-only-change-me"
   jwt_expiry_hours: 24
+  mfa_required: false
 
 recording:
   enabled: true
   storage_path: "/var/lib/orion-belt/recordings"
   retention_days: 90
+  encryption_key: ""
 
 plugins:
   audit-logger:

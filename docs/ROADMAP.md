@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Version:** Alpha v0.3.1 (Phase 1 hardening in progress)
-**Status:** Core PAM features shipped through v0.3.0; production hardening items below are the active focus
+**Version:** Alpha v0.4 (MFA, admin UI, OpenFGA, recording encryption)
+**Status:** Phase 1 hardening complete on master through v0.3.1; v0.4 features on `feature/v0.4-mfa-ui-openfga-recording`
 
 ## What Orion Belt Is
 
@@ -118,31 +118,43 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ---
 
-## Remaining Phase 1
+### v0.4 — MFA, Admin UI, OpenFGA, Recording Hardening
 
-**Access Control Enhancements**
+* **MFA (TOTP)**
+  - [x] TOTP enrollment (`POST /mfa/enroll`, `/mfa/confirm`)
+  - [x] Backup codes (hashed, single-use)
+  - [x] Disable with MFA proof
+  - [x] Enforcement on API login paths (`totp_code`)
+  - [x] `auth.mfa_required` blocks SSH until enrolled
+  - [ ] WebAuthn / hardware keys
 
-- [ ] OpenFGA integration for fine-grained policies
-- [ ] Enhanced MFA (TOTP enrollment UI, backup codes, WebAuthn)
-- [ ] Certificate lifecycle automation / SSH CA
-- [ ] HashiCorp Vault integration
+* **Web Admin UI**
+  - [x] Embedded SPA at `/ui/` (login, dashboard, approvals, machines, sessions, users, audit, MFA)
+  - [x] Session playback in browser
+  - [ ] Richer permission editor / machine CRUD forms
 
-**Logging & Recordings**
+* **OpenFGA**
+  - [x] Optional OpenFGA HTTP client (`auth.openfga`)
+  - [x] Check on permission paths with ReBAC fallback
+  - [x] Write/delete tuples on grant/revoke
+  - [x] Example model in `docs/openfga-model.fga`
 
-- [ ] Structured logs (Loki/ELK)
-- [ ] Session recording encryption
-- [ ] Session recording compression
-- [ ] Recording retention policy enforcement
-
-**Web Admin UI**
-
-- [ ] Dashboard
-- [ ] User/machine/permission management
-- [ ] Access approvals interface
-- [ ] Session playback
-- [ ] Auditing interface
+* **Recording encryption & retention**
+  - [x] AES-256-GCM at-rest encryption (`recording.encryption_key`)
+  - [x] Decrypt on playback API
+  - [x] Retention enforcement loop (`recording.retention_days`)
+  - [ ] Compression
 
 ---
+
+## Still open (post-v0.4)
+
+- [ ] Certificate lifecycle / SSH CA
+- [ ] HashiCorp Vault integration
+- [ ] Structured logs (Loki/ELK)
+- [ ] OpenTelemetry tracing
+- [ ] Notification templates / user preferences
+- [ ] WebAuthn
 
 ## Roadmap — Later Phases
 
@@ -210,21 +222,21 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.2:** REST API, API keys / session auth
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
-* **v0.4:** MFA, OpenFGA, web admin UI, recording encryption
-* **v0.5:** HA, IdP integrations, live session monitoring
+* **v0.4:** MFA (TOTP), embedded admin UI, OpenFGA optional authz, recording encryption + retention
+* **v0.5:** HA, IdP integrations, live session monitoring, WebAuthn
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
 
 ## Contribution
 
-Open source — focus areas: MFA/OpenFGA, web UI, recording encryption, IdP integrations, docs, and tests.
+Open source — focus areas: WebAuthn, IdP integrations, recording compression, HA, docs, and tests.
 
 **High-priority contribution areas (next):**
-- MFA (TOTP enrollment + enforcement)
-- OpenFGA policy integration
-- Web admin UI
-- Session recording encryption/compression
+- WebAuthn / hardware MFA
+- Identity provider integrations (OIDC/SAML)
+- Live session monitoring
+- SSH certificate authority
 - OpenAPI specification
 
 ---
