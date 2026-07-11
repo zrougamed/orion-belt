@@ -13,39 +13,80 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
+	"github.com/zrougamed/orion-belt/pkg/plugin"
 )
 
 // APIServer provides REST API endpoints
 type APIServer struct {
-	store       database.Store
-	authService *auth.AuthService
-	logger      *common.Logger
-	router      *gin.Engine
+	store         database.Store
+	authService   *auth.AuthService
+	jwt           *auth.JWTManager
+	pluginManager *plugin.Manager
+	logger        *common.Logger
+	router        *gin.Engine
+	rateLimiter   *rateLimiter
+	agentCommander AgentCommander
+}
+
+// AgentCommander sends control commands to connected agents.
+type AgentCommander interface {
+	SendAgentCommand(machineID, command string) ([]byte, error)
+	ListConnectedAgents() []string
+}
+
+// Options configures optional API server dependencies.
+type Options struct {
+	JWTSecret      string
+	JWTExpiryHours int
+	PluginManager  *plugin.Manager
+	AgentCommander AgentCommander
+	MetricsEnabled bool
 }
 
 // NewAPIServer creates a new API server
-func NewAPIServer(store database.Store, authService *auth.AuthService, logger *common.Logger) *APIServer {
+func NewAPIServer(store database.Store, authService *auth.AuthService, logger *common.Logger, opts ...Options) *APIServer {
 	gin.SetMode(gin.ReleaseMode)
 
+	var opt Options
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	ttl := time.Duration(opt.JWTExpiryHours) * time.Hour
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+
 	api := &APIServer{
-		store:       store,
-		authService: authService,
-		logger:      logger,
-		router:      gin.New(),
+		store:          store,
+		authService:    authService,
+		jwt:            auth.NewJWTManager(opt.JWTSecret, ttl),
+		pluginManager:  opt.PluginManager,
+		agentCommander: opt.AgentCommander,
+		logger:         logger,
+		router:         gin.New(),
+		rateLimiter:    newRateLimiter(60, time.Minute),
 	}
 
 	// Middleware
 	api.router.Use(gin.Recovery())
 	api.router.Use(api.loggingMiddleware())
+	api.router.Use(api.metricsMiddleware())
 
 	// Routes
-	api.setupRoutes()
+	api.setupRoutes(opt.MetricsEnabled)
 
 	return api
 }
 
+// SetAgentCommander wires remote agent control after the server is constructed.
+func (s *APIServer) SetAgentCommander(c AgentCommander) {
+	s.agentCommander = c
+}
+
 // setupRoutes configures all API routes
-func (s *APIServer) setupRoutes() {
+func (s *APIServer) setupRoutes(metricsEnabled bool) {
 	// Health check endpoint
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -53,6 +94,10 @@ func (s *APIServer) setupRoutes() {
 			"service": "orion-belt-api",
 		})
 	})
+
+	if metricsEnabled {
+		s.router.GET("/metrics", gin.WrapH(metrics.Default.Handler()))
+	}
 
 	v1 := s.router.Group("/api/v1")
 
@@ -63,12 +108,13 @@ func (s *APIServer) setupRoutes() {
 		public.POST("/register/client", s.registerClient)
 		public.POST("/login", s.login)
 		public.POST("/login/key", s.loginWithKey)
+		public.POST("/login/token", s.loginJWT)
 	}
 
 	// Protected endpoints
-	// TODO: implemet password auth with machine registration
 	protected := v1.Group("/")
 	protected.Use(s.authMiddleware())
+	protected.Use(s.rateLimitMiddleware())
 	{
 		// Authentication & current user
 		protected.POST("/logout", s.logout)
@@ -129,6 +175,10 @@ func (s *APIServer) setupRoutes() {
 		// Access request management
 		admin.POST("/access-requests/:id/approve", s.approveAccessRequest)
 		admin.POST("/access-requests/:id/reject", s.rejectAccessRequest)
+
+		// Agent remote management
+		admin.GET("/agents/connected", s.listConnectedAgents)
+		admin.POST("/agents/:machine_id/command", s.sendAgentCommand)
 	}
 }
 
@@ -357,6 +407,20 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 		return
 	}
 
+	metrics.Default.IncAccessRequest()
+
+	if s.pluginManager != nil {
+		_ = s.pluginManager.TriggerHook(ctx, plugin.HookAccessRequest, &plugin.HookContext{
+			UserID:    userID.(string),
+			MachineID: req.MachineID,
+			Data: map[string]interface{}{
+				"reason":     req.Reason,
+				"duration":   req.Duration,
+				"request_id": accessReq.ID,
+			},
+		})
+	}
+
 	s.logger.Info("Access request created: request_id=%s, user_id=%s, machine_id=%s",
 		accessReq.ID, userID, req.MachineID)
 
@@ -414,6 +478,18 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 	}
 
 	s.logger.Info("Access request approved: request_id=%s, reviewer_id=%s", requestID, req.ReviewerID)
+
+	if s.pluginManager != nil {
+		_ = s.pluginManager.TriggerHook(ctx, plugin.HookAccessGranted, &plugin.HookContext{
+			UserID:    accessReq.UserID,
+			MachineID: accessReq.MachineID,
+			Data: map[string]interface{}{
+				"request_id":  requestID,
+				"reviewer_id": req.ReviewerID,
+				"status":      "approved",
+			},
+		})
+	}
 
 	c.JSON(http.StatusOK, accessReq)
 }

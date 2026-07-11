@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
+	"golang.org/x/crypto/ssh"
 )
 
 // CreateAPIKeyRequest represents a request to create an API key
@@ -135,16 +137,16 @@ func (s *APIServer) deleteAPIKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "API key deleted successfully"})
 }
 
-// LoginRequest represents a login request
+// LoginRequest represents a login request (SSH public key required)
 type LoginRequest struct {
 	Username  string `json:"username" binding:"required"`
-	Password  string `json:"password"`   // TODO: implemet proper password auth
-	PublicKey string `json:"public_key"` // TODO: implemet proper key auth
+	PublicKey string `json:"public_key" binding:"required"`
 }
 
 // LoginResponse represents a login response
 type LoginResponse struct {
 	SessionToken string    `json:"session_token"`
+	AccessToken  string    `json:"access_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         struct {
 		ID       string `json:"id"`
@@ -154,7 +156,7 @@ type LoginResponse struct {
 	} `json:"user"`
 }
 
-// login handles user login and session creation
+// login handles user login via SSH public key verification, session + optional JWT
 func (s *APIServer) login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -164,15 +166,30 @@ func (s *APIServer) login(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// TODO: implemet auth checks and password checks
 	user, err := s.store.GetUserByUsername(ctx, req.Username)
 	if err != nil {
+		metrics.Default.IncAuthFailure()
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
-	// Create session TTL 60m for web clients
-	session, _, err := s.authService.CreateSession(
+	storedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(user.PublicKey))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+	presented, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public_key"})
+		return
+	}
+	if string(storedKey.Marshal()) != string(presented.Marshal()) {
+		metrics.Default.IncAuthFailure()
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	session, rawSession, err := s.authService.CreateSession(
 		ctx,
 		user.ID,
 		c.ClientIP(),
@@ -185,28 +202,21 @@ func (s *APIServer) login(c *gin.Context) {
 		return
 	}
 
-	// Create an API key for CLI tools TTL 24h
-	expiresAt := time.Now().Add(24 * time.Hour)
-	_, rawKey, err := s.authService.GenerateAPIKey(
-		ctx,
-		user.ID,
-		"CLI Authentication",
-		&expiresAt,
-	)
-	if err != nil {
-		s.logger.Error("Failed to create API key: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create API key"})
-		return
-	}
-
 	response := LoginResponse{
-		SessionToken: rawKey,
+		SessionToken: rawSession,
 		ExpiresAt:    session.ExpiresAt,
 	}
 	response.User.ID = user.ID
 	response.User.Username = user.Username
 	response.User.Email = user.Email
 	response.User.IsAdmin = user.IsAdmin
+
+	if s.jwt != nil && s.jwt.Enabled() {
+		if token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin); err == nil {
+			response.AccessToken = token
+			response.ExpiresAt = exp
+		}
+	}
 
 	c.JSON(http.StatusOK, response)
 }

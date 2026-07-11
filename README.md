@@ -6,7 +6,7 @@ It provides **reverse SSH tunneling**, **relationship-based access control (ReBA
 
 Think of it as a lightweight, self-hosted alternative to traditional bastion hosts or commercial access gateways — built with simplicity, auditability, and extensibility in mind.
 
-> Status: **Alpha / Early development** (APIs and internals may change)
+> Status: **Alpha v0.3+** — core PAM works; Phase 1 hardening (host keys, JWT, metrics, notifications) underway
 
 ![Orion-Belt banner](assets/banner.png)
 
@@ -34,12 +34,15 @@ Orion-Belt solves this by:
 ## Features
 
 - **Server Mode**: SSH/SCP tunneling server with session recording
-- **Client Mode**: CLI tools (osh, ocp) for connecting to machines through the server
+- **Client Mode**: CLI tools (`osh`, `ocp`, `oadmin`) for connecting and approvals
 - **Agent Mode**: Runs on target machines to receive connections
 - **ReBAC**: Relationship-based access control for authorized users
 - **Temporary Access**: Request-based temporary access with admin approval
 - **Session Recording**: Complete session recording and audit trails
-- **Plugin System**: Extensible plugin architecture
+- **Plugin System**: Dynamic plugins (Slack, email, webhooks, audit logger)
+- **Host Key Verification**: TOFU / known_hosts for clients and agents
+- **API Auth**: API keys, session tokens, and JWT bearer tokens
+- **Metrics**: Prometheus-format `/metrics` endpoint
 - **Database Agnostic**: Interface-based database layer for easy switching
 
 ## Architecture
@@ -57,17 +60,13 @@ Orion-Belt solves this by:
 
 ## Roadmap
 
-Orion Belt is under active development with core functionality working in production. We have an ambitious roadmap ahead covering security hardening, advanced features, and multi-protocol support.
+**Current Status:** Alpha **v0.3.0** tagged; Phase 1 hardening on master toward **v0.3.1**.
 
-**Current Status:** Alpha v0.1 — Core SSH proxy, session recording, and access control are operational.
+**Shipped:** SSH proxy, ReBAC, session recording, REST API + API keys, plugins, remote users, client list/request-access, `oadmin`, Docker Compose.
 
-**What's Next:**
-- Host key verification and API authentication (v0.2)
-- High availability and identity provider integrations (v0.3)
-- Risk-based access and command filtering (v0.4)
-- Multi-protocol support: RDP, VNC, K8s, databases (v1.0)
+**What's next (Phase 1 remainder / v0.4):** MFA, OpenFGA, web admin UI, recording encryption.
 
-See [ROADMAP.md](docs/ROADMAP.md) for the complete development plan, outstanding TODOs, and contribution opportunities.
+See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
 ## Components
 

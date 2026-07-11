@@ -227,6 +227,17 @@ func (p *MyPlugin) Shutdown(ctx context.Context) error {
 
 ## Plugin Examples
 
+### Shipped plugins
+
+| Plugin directory | Name (`Name()`) | Purpose |
+|------------------|-----------------|---------|
+| `plugins/notification` | `slack-notifications` | Slack Incoming Webhooks |
+| `plugins/email-notifications` | `email-notifications` | SMTP email alerts |
+| `plugins/webhook-notifications` | `webhook-notifications` | Generic JSON webhooks |
+| `plugins/audit-logger` | `audit-logger` | File-based audit trail |
+
+Build with `make plugins`. Configure under the `plugins:` map in server YAML using the plugin **name**.
+
 ### Example 1: Audit Logger Plugin
 
 Logs all events to a file:

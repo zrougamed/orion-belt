@@ -19,12 +19,13 @@ type Config struct {
 
 // ServerConfig contains server-specific configuration
 type ServerConfig struct {
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	APIPort     int    `yaml:"api_port,omitempty"`
-	SSHHostKey  string `yaml:"ssh_host_key,omitempty"`
-	APIEndpoint string `yaml:"api_endpoint,omitempty"`
-	PluginDir   string `yaml:"plugin_dir"`
+	Host           string `yaml:"host"`
+	Port           int    `yaml:"port"`
+	APIPort        int    `yaml:"api_port,omitempty"`
+	SSHHostKey     string `yaml:"ssh_host_key,omitempty"`
+	APIEndpoint    string `yaml:"api_endpoint,omitempty"`
+	PluginDir      string `yaml:"plugin_dir"`
+	MetricsEnabled bool   `yaml:"metrics_enabled,omitempty"`
 }
 
 // DatabaseConfig contains database configuration
@@ -35,10 +36,14 @@ type DatabaseConfig struct {
 
 // AuthConfig contains authentication configuration
 type AuthConfig struct {
-	KeyFile         string `yaml:"key_file,omitempty"`
-	User            string `yaml:"user,omitempty"`
-	ReBACEnabled    bool   `yaml:"rebac_enabled,omitempty"`
-	AllowTempAccess bool   `yaml:"allow_temp_access,omitempty"`
+	KeyFile               string `yaml:"key_file,omitempty"`
+	User                  string `yaml:"user,omitempty"`
+	ReBACEnabled          bool   `yaml:"rebac_enabled,omitempty"`
+	AllowTempAccess       bool   `yaml:"allow_temp_access,omitempty"`
+	KnownHosts            string `yaml:"known_hosts,omitempty"`
+	StrictHostKeyChecking string `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
+	JWTSecret             string `yaml:"jwt_secret,omitempty"`
+	JWTExpiryHours        int    `yaml:"jwt_expiry_hours,omitempty"`
 }
 
 // AgentConfig contains agent-specific configuration

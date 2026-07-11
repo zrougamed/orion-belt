@@ -5,6 +5,7 @@ server:
   ssh_host_key: "/etc/orion-belt/ssh_host_key"
   api_endpoint: "http://localhost:8080/api"
   plugin_dir: "/etc/orion-belt/plugins"
+  metrics_enabled: true
 
 database:
   driver: "postgres"
@@ -13,6 +14,8 @@ database:
 auth:
   rebac_enabled: true
   allow_temp_access: true
+  jwt_secret: "change-me-to-a-long-random-secret"
+  jwt_expiry_hours: 24
 
 recording:
   enabled: true
@@ -22,8 +25,22 @@ recording:
 plugins:
   audit-logger:
     log_path: "/var/log/orion-belt/audit.log"
-  
+
   slack-notifications:
     webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK"
     channel: "#security"
     enabled: true
+
+  email-notifications:
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    username: "orion"
+    password: "secret"
+    from: "orion-belt@example.com"
+    to:
+      - "admins@example.com"
+    enabled: false
+
+  webhook-notifications:
+    url: "https://hooks.example.com/orion-belt"
+    enabled: false

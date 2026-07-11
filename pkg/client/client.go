@@ -64,12 +64,20 @@ func (c *SSHClient) Connect(target string, username string) error {
 		}
 	}
 
+	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
+		KnownHosts:            c.config.Auth.KnownHosts,
+		StrictHostKeyChecking: c.config.Auth.StrictHostKeyChecking,
+	}, c.logger)
+	if err != nil {
+		return fmt.Errorf("host key verification setup: %w", err)
+	}
+
 	config := &ssh.ClientConfig{
 		User: targetUser,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: Implement proper host key verification
+		HostKeyCallback: hostKeyCallback,
 	}
 
 	c.logger.Info("Authenticating as user: %s", targetUser)
@@ -383,13 +391,20 @@ func (c *SCPClient) Copy(username, source, destination string, isUpload bool) er
 		return fmt.Errorf("failed to parse private key: %w", err)
 	}
 
-	// Configure SSH client
+	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
+		KnownHosts:            c.config.Auth.KnownHosts,
+		StrictHostKeyChecking: c.config.Auth.StrictHostKeyChecking,
+	}, c.logger)
+	if err != nil {
+		return fmt.Errorf("host key verification setup: %w", err)
+	}
+
 	config := &ssh.ClientConfig{
 		User: username,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 	}
 
 	// Connect to Orion-Belt server
