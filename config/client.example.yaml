@@ -5,3 +5,7 @@ server:
 
 auth:
   key_file: "~/.ssh/id_rsa"
+  # known_hosts defaults to ~/.ssh/orion_known_hosts
+  # strict_host_key_checking: ask (TOFU) | yes | no
+  known_hosts: "~/.ssh/orion_known_hosts"
+  strict_host_key_checking: "ask"

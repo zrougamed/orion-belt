@@ -7,7 +7,7 @@ BINARY_NAME=orion-belt
 BUILD_DIR=bin
 PLUGIN_DIR=plugins
 BUILD_DIR_PLUGINS=bin/plugins
-PLUGINS := audit-logger notification
+PLUGINS := audit-logger notification email-notifications webhook-notifications
 GO=go
 GOFLAGS=-v
 

@@ -11,3 +11,5 @@ agent:
 
 auth:
   key_file: "/etc/orion-belt/agent_key"
+  known_hosts: "/etc/orion-belt/known_hosts"
+  strict_host_key_checking: "ask"

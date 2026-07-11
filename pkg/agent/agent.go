@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,12 +78,20 @@ func (a *Agent) connectToServer() error {
 	a.logger.Info("Attempting to authenticate as user: %s", a.config.Agent.Name)
 	a.logger.Debug("Using key file: %s", a.config.Auth.KeyFile)
 
+	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
+		KnownHosts:            a.config.Auth.KnownHosts,
+		StrictHostKeyChecking: a.config.Auth.StrictHostKeyChecking,
+	}, a.logger)
+	if err != nil {
+		return fmt.Errorf("host key verification setup: %w", err)
+	}
+
 	config := &gossh.ClientConfig{
 		User: a.config.Agent.Name,
 		Auth: []gossh.AuthMethod{
 			gossh.PublicKeys(key),
 		},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(), // TODO: Implement proper host key verification
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
@@ -197,6 +208,12 @@ func (a *Agent) handleSession(newChannel gossh.NewChannel) {
 			execCommand = payload.Command
 			a.logger.Info("Exec requested: %s", execCommand)
 			req.Reply(true, nil)
+
+			// Server control commands (orion:*) — do not execute as shell
+			if strings.HasPrefix(execCommand, "orion:") {
+				a.handleControlCommand(channel, execCommand)
+				return
+			}
 
 			a.executeCommand(channel, execCommand)
 			return
@@ -387,6 +404,72 @@ func (a *Agent) sendExitStatus(channel gossh.Channel, status int) {
 	} else {
 		a.logger.Debug("Sent exit status: %d and received ACK", status)
 	}
+}
+
+// handleControlCommand processes server→agent management commands.
+// Supported: orion:status, orion:health, orion:info, orion:ping
+func (a *Agent) handleControlCommand(channel gossh.Channel, command string) {
+	defer channel.Close()
+
+	cmd := strings.TrimSpace(command)
+	var result map[string]interface{}
+	exitStatus := 0
+
+	switch cmd {
+	case "orion:ping":
+		result = map[string]interface{}{
+			"ok":   true,
+			"pong": true,
+		}
+	case "orion:health", "orion:status":
+		result = map[string]interface{}{
+			"ok":         true,
+			"status":     "healthy",
+			"agent":      a.config.Agent.Name,
+			"machine_id": a.machineID,
+			"connected":  a.sshConn != nil,
+			"hostname":   hostnameOrEmpty(),
+			"goos":       runtime.GOOS,
+			"goarch":     runtime.GOARCH,
+			"pid":        os.Getpid(),
+			"uptime_hint": "connected",
+		}
+	case "orion:info":
+		result = map[string]interface{}{
+			"ok":         true,
+			"agent":      a.config.Agent.Name,
+			"tags":       a.config.Agent.Tags,
+			"machine_id": a.machineID,
+			"version":    "0.3.1",
+			"goos":       runtime.GOOS,
+			"goarch":     runtime.GOARCH,
+			"num_cpu":    runtime.NumCPU(),
+			"hostname":   hostnameOrEmpty(),
+		}
+	default:
+		result = map[string]interface{}{
+			"ok":      false,
+			"error":   "unknown control command",
+			"command": cmd,
+			"supported": []string{
+				"orion:ping", "orion:health", "orion:status", "orion:info",
+			},
+		}
+		exitStatus = 1
+	}
+
+	data, _ := json.Marshal(result)
+	channel.Write(append(data, '\n'))
+	a.sendExitStatus(channel, exitStatus)
+	channel.CloseWrite()
+}
+
+func hostnameOrEmpty() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
 }
 
 func (a *Agent) sendHeartbeat() error {

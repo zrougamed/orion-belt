@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
 )
 
 // AuthContext holds the authenticated user context
@@ -79,6 +80,7 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 		}
 
 		// No valid authentication found
+		metrics.Default.IncAuthFailure()
 		s.logger.Warn("Authentication failed for %s %s from %s", c.Request.Method, c.Request.URL.Path, c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "authentication required",
@@ -91,7 +93,6 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 func (s *APIServer) adminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		isAdmin, exists := c.Get("is_admin")
-		// TODO: implemet auth checks
 		if !exists || !isAdmin.(bool) {
 			userID, _ := c.Get("user_id")
 			s.logger.Warn("Admin access denied for user: %v", userID)
@@ -173,8 +174,22 @@ func (s *APIServer) validateSession(ctx context.Context, sessionToken string) (*
 
 // validateBearerToken validates a JWT bearer token
 func (s *APIServer) validateBearerToken(ctx context.Context, token string) (*common.User, error) {
-	// TODO: implemet JWT
-	return nil, fmt.Errorf("JWT authentication not yet implemented")
+	if s.jwt == nil || !s.jwt.Enabled() {
+		return nil, fmt.Errorf("JWT authentication not configured")
+	}
+
+	claims, err := s.jwt.Validate(token)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.store.GetUser(ctx, claims.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found for token")
+	}
+
+	s.logger.Debug("JWT authenticated: user=%s", user.Username)
+	return user, nil
 }
 
 // hashAPIKey creates a SHA256 hash of an API key

@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Version:** Alpha v0.1
-**Status:** Early development — core functionality is working, production hardening underway
+**Version:** Alpha v0.3.1 (Phase 1 hardening in progress)
+**Status:** Core PAM features shipped through v0.3.0; production hardening items below are the active focus
 
 ## What Orion Belt Is
 
@@ -11,9 +11,9 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ---
 
-## Done (v0.1)
+## Done
 
-### Core System
+### v0.1 — Core System
 
 #### Gateway Server
 
@@ -25,7 +25,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] Full session lifecycle support
 
 * **REST API (Port 8080)**
-  - [x] ~40 endpoints for user/machine/permission management
+  - [x] Endpoints for user/machine/permission management
   - [x] Access request endpoints
   - [x] Session listing and audit log retrieval
   - [x] Agent registration
@@ -36,7 +36,6 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] Interface-based abstraction
   - [x] Connection pooling
   - [x] Transaction support
-  - [x] Robust scanning/CRUD support
 
 * **Session Recording**
   - [x] Captures all SSH I/O with timestamps
@@ -49,170 +48,103 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [x] Auto-reconnect functionality
 - [x] Machine registration/heartbeat
 - [x] Agent key authentication
-- [x] Integration with the local SSH daemon
 
 #### Client Tools
 
-* **osh (SSH Client)**
+* **osh / ocp**
   - [x] Authenticates with the gateway
-  - [x] Proxies to target machines
-  - [ ] Implement proper SSH host key verification (currently using InsecureIgnoreHostKey)
-  - [ ] Implement API call to request access
-  - [ ] Implement API call to list machines
+  - [x] Proxies to target machines / SCP via gateway
 
-* **ocp (SCP Client)**
-  - [x] Secure file transfers via the gateway
-  - [ ] Implement proper SSH host key verification (currently using InsecureIgnoreHostKey)
+### Security & Access Control (v0.1)
 
-### Security & Access Control
+- [x] SSH public key auth for users/agents
+- [x] Relationship-Based Access Control (ReBAC)
+- [x] Machine-specific grants, permission expiry, admin bypass
+- [x] Temporary access request/approve/reject workflow
+- [x] Audit logging via API
 
-* **Authentication**
-  - [x] SSH public key auth for users/agents
-  - [x] Validated against the database
+### v0.2 — API & Auth Foundations
 
-* **Authorization (ReBAC)**
-  - [x] Relationship-Based Access Control
-  - [x] Machine-specific grants
-  - [x] Permission expiry
-  - [x] Admin bypass
-  - [x] Pre-connection validation
+- [x] REST API surface expansion
+- [x] API key generation, hashing, validation, revoke/delete
+- [x] Session-token auth for HTTP clients
+- [x] `login/key` (SSH pubkey → API key) for CLI tools
 
-* **Temporary Access Workflow**
-  - [x] Request/approve/reject flow
-  - [x] Time-limited access grants
-  - [x] Status tracking
+### v0.3 — Client Workflows & Plugins
 
-* **Audit Logging**
-  - [x] Comprehensive logs for every action
-  - [x] IPs, metadata, and timestamps
-  - [x] Exposed via API
+- [x] Dynamic `.so` plugin loader with lifecycle hooks
+- [x] Slack notification plugin
+- [x] Audit-logger plugin
+- [x] Remote user specification (`user@machine`, `--user`, `remote_users`)
+- [x] Client machine listing (`osh --list`)
+- [x] Access request creation + polling from client
+- [x] Admin CLI (`oadmin`) for approve/reject
+- [x] Docker Compose local-dev stack (merged on master post-tag)
 
-### Plugin System
-
-- [x] Interface-based plugin architecture
-- [x] Lifecycle and hook integration
-- [x] Notification plugin scaffold
-- [ ] Implement email notifications (SMTP) for session events
-- [ ] Implement email notifications for access requests
-- [ ] Add Slack integration for admin notifications
-- [ ] Add admin notification system for access approvals
-- [ ] Add user notification system for approvals/denials
-
-### Deployment & Operations
-
-- [x] YAML configs with environment templates for server/agent/clients
-- [x] Docker multi-stage builds and Compose setups
-- [x] PostgreSQL init/migration/test data scripts
-
-### Testing & Tools
-
-- [x] End-to-end testing lab using QEMU VMs
-- [x] Connection flows verification
-- [x] Recording verification
-- [x] Diagnostic scripts for SSH and health checks
-
----
-
-## In Progress — Enhancements
-
-### Security Enhancements
-
-* **MFA**
-  - [x] TOTP framework in place
-  - [ ] Enrollment UI
-  - [ ] Backup codes
-  - [ ] Enforcement
-
-* **SSH Certificate Authority**
-  - [ ] CA key management
-  - [ ] Signing
-  - [ ] Revocation
-
-### API & Admin
-
-* **API Authentication**
-  - [ ] Implement JWT token-based authentication
-  - [ ] API key generation and management
-  - [ ] Database-backed API key validation
-  - [ ] Rate limiting per key/user
-
-* **Web Admin UI**
-  - [ ] Dashboard
-  - [ ] User/machine/permission management
-  - [ ] Access approvals interface
-  - [ ] Session playback
-  - [ ] Auditing interface
-
-### Notifications
-
-- [ ] SMTP integration with template system
-- [ ] Slack integration
-- [ ] Generic webhook support
-- [ ] User notification preferences
-
-### Agent Enhancements
-
-- [ ] Implement server command interface (currently TODO)
-- [ ] Remote agent management and control
-- [ ] Agent health monitoring and diagnostics
-
----
-
-## Roadmap — Planned Phases
-
-### Phase 1 — Production Hardening
-
-**Security**
+### Phase 1 Hardening (v0.3.1 — current)
 
 * **SSH Host Key Verification**
-  - [ ] Implement proper host key verification in client (replace InsecureIgnoreHostKey)
-  - [ ] Implement proper host key verification in agent (replace InsecureIgnoreHostKey)
-  - [ ] Add host key fingerprint validation
-  - [ ] TOFU (Trust On First Use) support
-  - [ ] Known hosts management for agents and clients
+  - [x] Replace `InsecureIgnoreHostKey` in client (`osh`/`ocp`)
+  - [x] Replace `InsecureIgnoreHostKey` in agent
+  - [x] TOFU (Trust On First Use) via `strict_host_key_checking: ask`
+  - [x] Strict mode (`yes`) and insecure opt-out (`no`)
+  - [x] Known hosts file management (`auth.known_hosts`)
 
 * **API Authentication & Authorization**
-  - [ ] Implement JWT token-based authentication for REST API
-  - [ ] Add API key generation, validation, and management
-  - [ ] Database-backed API key validation with scoping and expiration
-  - [ ] Rate limiting and throttling per key/user
-  - [ ] Complete authentication middleware implementation
+  - [x] JWT bearer tokens (`Authorization: Bearer`, `POST /api/v1/public/login/token`)
+  - [x] API key generation, validation, and management (from v0.2)
+  - [x] Database-backed API key validation
+  - [x] Rate limiting per user/IP on protected routes
+  - [x] Login requires SSH public key verification (no passwordless username login)
 
-* **Access Control Enhancements**
-  - [ ] OpenFGA integration for fine-grained policies
-  - [ ] Implement client-side API endpoints for access request workflows
-  - [ ] Implement client-side API endpoints for machine listing
-  - [ ] Enhanced MFA (WebAuthn/U2F, SMS, push)
-  - [ ] Certificate lifecycle automation
-  - [ ] HashiCorp Vault integration
-
-**Notifications & Integrations**
-
-* **Plugin System Completion**
-  - [ ] Implement email notifications (SMTP) for session events
-  - [ ] Implement email notifications for access requests
-  - [ ] Add Slack integration for admin notifications
-  - [ ] Add webhook support for custom integrations
+* **Notifications & Integrations**
+  - [x] Slack Incoming Webhook plugin
+  - [x] SMTP email notification plugin
+  - [x] Generic webhook notification plugin
+  - [x] Access-request / access-granted hooks fired from API
+  - [x] Post-auth hook fired after successful SSH auth
   - [ ] Template system for notification content
   - [ ] User notification preferences management
 
 * **Agent Command Interface**
-  - [ ] Implement server command handling in agent
-  - [ ] Remote agent management and control
-  - [ ] Agent health monitoring and diagnostics
+  - [x] Agent control commands: `orion:ping`, `orion:health`, `orion:status`, `orion:info`
+  - [x] Admin API: `GET /api/v1/admin/agents/connected`, `POST /api/v1/admin/agents/:machine_id/command`
+  - [ ] Richer remote management (reload config, drain, update)
 
-**Observability**
+* **Observability**
+  - [x] Prometheus-format metrics at `GET /metrics`
+  - [ ] OpenTelemetry tracing
+  - [ ] Alerting system
 
-- [ ] Prometheus metrics
-- [ ] OpenTelemetry tracing
-- [ ] Alerting system
+---
+
+## Remaining Phase 1
+
+**Access Control Enhancements**
+
+- [ ] OpenFGA integration for fine-grained policies
+- [ ] Enhanced MFA (TOTP enrollment UI, backup codes, WebAuthn)
+- [ ] Certificate lifecycle automation / SSH CA
+- [ ] HashiCorp Vault integration
 
 **Logging & Recordings**
 
 - [ ] Structured logs (Loki/ELK)
 - [ ] Session recording encryption
 - [ ] Session recording compression
-- [ ] Recording retention policies
+- [ ] Recording retention policy enforcement
+
+**Web Admin UI**
+
+- [ ] Dashboard
+- [ ] User/machine/permission management
+- [ ] Access approvals interface
+- [ ] Session playback
+- [ ] Auditing interface
+
+---
+
+## Roadmap — Later Phases
 
 ### Phase 2 — Advanced Features
 
@@ -236,12 +168,8 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ### Phase 4 — Advanced Capabilities
 
-- [ ] Support for RDP protocol
-- [ ] Support for VNC protocol
-- [ ] Support for Kubernetes API proxy
-- [ ] Support for database proxies (PostgreSQL, MySQL, etc.)
+- [ ] Support for RDP / VNC / Kubernetes API / database proxies
 - [ ] Workflow automation
-- [ ] API gateway enhancements
 - [ ] AI/ML-powered access analytics
 - [ ] CLI improvements
 - [ ] SDKs (Go, Python, TypeScript)
@@ -258,94 +186,52 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Performance benchmarks
 - [ ] Architecture Decision Records (ADRs)
 
-**Performance**
-
-- [ ] Connection pooling optimization
-- [ ] Database query optimization
-- [ ] Recording I/O optimization
-- [ ] Concurrency tuning
-
 **Refactoring**
 
 - [ ] Error handling standardization
 - [ ] Logging standardization
 - [ ] Config validation improvements
-- [ ] Dependency injection improvements
-- [ ] Remove insecure host key callbacks (replace with proper verification)
-- [ ] Complete TODO implementations across codebase
+- [ ] Complete remaining machine CRUD admin stubs
 
 **Documentation**
 
 - [ ] OpenAPI/Swagger specification
 - [ ] Deployment guides
 - [ ] Security hardening guides
-- [ ] Plugin development guides
-- [ ] Contributing guidelines
-- [ ] Architecture documentation
-
----
-
-## Outstanding TODOs by Component
-
-### Client (`pkg/client/client.go`)
-- [ ] Line 56: Implement proper SSH host key verification (replace InsecureIgnoreHostKey)
-- [ ] Line 118: Implement API call to request access
-- [ ] Line 131: Implement API call to list machines
-
-### Agent (`pkg/agent/agent.go`)
-- [ ] Line 82: Implement proper SSH host key verification (replace InsecureIgnoreHostKey)
-- [ ] Line 361: Implement server command interface and handlers
-
-### API (`pkg/api/`)
-- [ ] api.go Line 55: Implement JWT or API keys authentication
-- [ ] middleware.go Line 24: Implement proper authentication (JWT, API keys, etc.)
-- [ ] middleware.go Line 33: Validate API key against database
-
-### Plugins (`plugins/notification/notification.go`)
-- [ ] Line 70: Send actual email notification for session events
-- [ ] Line 78: Send actual email notification for access requests
-- [ ] Line 86: Send notification to admins (Slack/webhook)
-- [ ] Line 95: Send notification to users for approvals/denials
+- [x] Plugin development guides
+- [x] Contributing guidelines
+- [x] Architecture documentation
 
 ---
 
 ## Version Milestones
 
-* **v0.2:** Host key verification, API auth (JWT/API keys), notification plugins (email/Slack), MFA enrollment, OpenFGA integration, basic web UI, Prometheus metrics, improved audit logging
-* **v0.3:** HA clustering, LDAP/AD integration, SIEM integrations, advanced session management, agent command interface, live session monitoring
-* **v0.4:** Risk-based access, command filters, JIT access, anomaly detection, compliance reporting
-* **v1.0:** Multi-protocol support (RDP/VNC/K8s/DB), AI analytics, SDKs, SOC2 Type II certification-ready
+* **v0.1:** Core SSH proxy, recording, ReBAC
+* **v0.2:** REST API, API keys / session auth
+* **v0.3:** Plugins, remote users, client access workflow, oadmin
+* **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
+* **v0.4:** MFA, OpenFGA, web admin UI, recording encryption
+* **v0.5:** HA, IdP integrations, live session monitoring
+* **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
 
 ## Contribution
 
-Open source, community contributions welcome — focus areas include protocol support, integrations, plugins, docs, testing, and UI. See the contributing guide (TBD) for details.
+Open source — focus areas: MFA/OpenFGA, web UI, recording encryption, IdP integrations, docs, and tests.
 
-**High-priority contribution areas:**
-- Host key verification implementation
-- API authentication (JWT/API keys)
-- Notification plugin backends (SMTP, Slack, webhooks)
-- Agent command interface
-- Client API integration
-- Web admin UI development
+**High-priority contribution areas (next):**
+- MFA (TOTP enrollment + enforcement)
 - OpenFGA policy integration
-
----
-
-## Success Metrics
-
-* **Security:** Zero critical vulnerabilities, full audit trails, proper host key verification, comprehensive access controls
-* **Performance:** <100 ms auth latency, 1K+ concurrent sessions, optimized recording I/O
-* **Reliability:** 99.9% uptime, <30 s failover in HA mode
-* **Usability:** <5 min setup time, intuitive UX, comprehensive documentation
-* **Compliance:** SOC2/HIPAA/PCI-ready with audit reports
+- Web admin UI
+- Session recording encryption/compression
+- OpenAPI specification
 
 ---
 
 ## Notes
 
-This is a living roadmap and will evolve with user feedback, security needs, and industry changes. All TODO items from the codebase are tracked here and will be addressed in upcoming releases.
+This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) and merged PRs #1–#5 are the source of truth for shipped work; this document tracks remaining gaps.
 
-**Last Updated:** January 2026  
+**Last Updated:** July 2026  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

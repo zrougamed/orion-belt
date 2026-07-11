@@ -14,6 +14,7 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
 	"github.com/zrougamed/orion-belt/pkg/recording"
 	"golang.org/x/crypto/ssh"
@@ -102,7 +103,12 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	}
 
 	// Initialize API server
-	apiServer := api.NewAPIServer(store, authService, logger)
+	apiServer := api.NewAPIServer(store, authService, logger, api.Options{
+		JWTSecret:      config.Auth.JWTSecret,
+		JWTExpiryHours: config.Auth.JWTExpiryHours,
+		PluginManager:  pluginManager,
+		MetricsEnabled: true,
+	})
 
 	server := &Server{
 		config:        config,
@@ -115,6 +121,8 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		agents:        make(map[string]*AgentConnection),
 		shutdown:      make(chan struct{}),
 	}
+
+	apiServer.SetAgentCommander(server)
 
 	// Configure SSH server
 	if err := server.setupSSHConfig(); err != nil {
@@ -259,12 +267,12 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 		},
 	}
 
-	// Trigger pre-auth hook
+	// Trigger post-auth hook (auth already succeeded)
 	hookCtx := &plugin.HookContext{
 		UserID: user.ID,
 		Data:   make(map[string]interface{}),
 	}
-	s.pluginManager.TriggerHook(context.Background(), plugin.HookPreAuth, hookCtx)
+	s.pluginManager.TriggerHook(context.Background(), plugin.HookPostAuth, hookCtx)
 
 	return perms, nil
 }
@@ -284,7 +292,9 @@ func (s *Server) handleAgentConnection(sshConn *ssh.ServerConn, chans <-chan ssh
 
 	s.agentsMu.Lock()
 	s.agents[machine.ID] = agentConn
+	agentCount := len(s.agents)
 	s.agentsMu.Unlock()
+	metrics.Default.SetAgentsConnected(int64(agentCount))
 
 	// Update machine status
 	ctx := context.Background()
@@ -330,7 +340,9 @@ func (s *Server) handleAgentConnection(sshConn *ssh.ServerConn, chans <-chan ssh
 	// Unregister agent
 	s.agentsMu.Lock()
 	delete(s.agents, machine.ID)
+	agentCount = len(s.agents)
 	s.agentsMu.Unlock()
+	metrics.Default.SetAgentsConnected(int64(agentCount))
 
 	// Update machine status
 	machine.IsActive = false
@@ -539,6 +551,7 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 		Data:      make(map[string]interface{}),
 	}
 	s.pluginManager.TriggerHook(ctx, plugin.HookSessionStart, hookCtx)
+	metrics.Default.SessionStarted()
 
 	s.logger.Info("Opening session channel to agent")
 
@@ -568,6 +581,7 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 	s.recorder.StopRecording(session.ID)
 
 	s.pluginManager.TriggerHook(ctx, plugin.HookSessionEnd, hookCtx)
+	metrics.Default.SessionEnded()
 
 	s.logger.Info("Session ended for user: %s", username)
 }
@@ -751,6 +765,58 @@ func (s *Server) GetStore() database.Store {
 // GetAuthService returns the auth service
 func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
+}
+
+// ListConnectedAgents returns machine IDs of connected agents.
+func (s *Server) ListConnectedAgents() []string {
+	s.agentsMu.RLock()
+	defer s.agentsMu.RUnlock()
+	ids := make([]string, 0, len(s.agents))
+	for id := range s.agents {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// SendAgentCommand opens a session to a connected agent and runs a control/exec command.
+func (s *Server) SendAgentCommand(machineID, command string) ([]byte, error) {
+	s.agentsMu.RLock()
+	agentConn, exists := s.agents[machineID]
+	s.agentsMu.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("agent not connected: %s", machineID)
+	}
+
+	channel, reqs, err := agentConn.SSHConn.Conn.OpenChannel("session", nil)
+	if err != nil {
+		return nil, fmt.Errorf("open agent channel: %w", err)
+	}
+	defer channel.Close()
+
+	go ssh.DiscardRequests(reqs)
+
+	ok, err := channel.SendRequest("exec", true, ssh.Marshal(&struct{ Command string }{command}))
+	if err != nil {
+		return nil, fmt.Errorf("send command: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("command rejected by agent")
+	}
+
+	var buf strings.Builder
+	done := make(chan struct{})
+	go func() {
+		io.Copy(&buf, channel)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		return nil, fmt.Errorf("agent command timed out")
+	}
+
+	return []byte(buf.String()), nil
 }
 
 func resolveDirWithCreate(path, fallback string, logger *common.Logger) string {
