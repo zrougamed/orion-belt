@@ -1,0 +1,17 @@
+[Unit]
+Description=Orion Belt reverse SSH agent
+Documentation=https://github.com/zrougamed/orion-belt
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/orion-belt-agent -c /etc/orion-belt/agent.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+server:
+  host: "0.0.0.0"
+  port: 2222
+  api_port: 8080
+  ssh_host_key: "/etc/orion-belt/ssh_host_key"
+  api_endpoint: "http://localhost:8080/api"
+  plugin_dir: "/etc/orion-belt/plugins"
+  metrics_enabled: true
+
+database:
+  driver: "postgres"
+  connection_string: "postgres://orionbelt:password@postgres:5432/orionbelt?sslmode=disable"
+
+auth:
+  rebac_enabled: true
+  allow_temp_access: true
+  jwt_secret: "lab-only-change-me"
+  jwt_expiry_hours: 24
+  mfa_required: false
+  strict_host_key_checking: "no"
+
+recording:
+  enabled: true
+  storage_path: "/var/lib/orion-belt/recordings"
+  retention_days: 7
+  encryption_key: ""

@@ -58,10 +58,11 @@ Well-thought-out proposals have a much higher chance of being accepted.
 
 ### Requirements
 
-* Go (latest stable version recommended)
+* Go **1.26.5+** (pinned in `go.mod` / `toolchain`)
 * PostgreSQL (or another supported database)
 * Make
 * SSH client (for testing)
+* Optional: Docker (compose lab), QEMU + cloud-image-utils (QEMU lab), `nfpm` (local packages)
 
 ### Clone the Repository
 
@@ -80,7 +81,20 @@ make build
 
 ```bash
 make test
+make cve                    # 0-CVE gate (govulncheck)
+ORION_CVE_E2E=1 go test ./e2e/cve/ -v
 ```
+
+### Packages & labs
+
+```bash
+make packages               # deb/rpm/apk → dist/
+make lab-compose-up         # multi-distro Docker agents
+# or:
+ORION_REFRESH_IMAGES=1 make lab-qemu-images && make lab-qemu-up
+```
+
+See [lab/README.md](../lab/README.md) and [PACKAGING.md](PACKAGING.md).
 
 ---
 

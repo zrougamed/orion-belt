@@ -1,0 +1,124 @@
+# Multi-distro agent lab (Docker) — fast path without QEMU.
+# Server + Postgres on the shared network; agents on Ubuntu, Alpine, openSUSE, Debian, Rocky.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: orionbelt
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orionbelt
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orionbelt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [orion-lab]
+
+  server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "2222:2222"
+      - "8080:8080"
+    volumes:
+      - ./server.yaml:/config/config.yaml:ro
+      - lab_recordings:/var/lib/orion-belt/recordings
+      - lab_hostkey:/etc/orion-belt
+    environment:
+      ORION_DB_CONNECTION: postgres://orionbelt:password@postgres:5432/orionbelt?sslmode=disable
+    networks: [orion-lab]
+    restart: unless-stopped
+
+  agent-ubuntu:
+    build:
+      context: ../..
+      dockerfile: lab/compose/Dockerfile.agent
+      args:
+        BASE: ubuntu:25.04
+    depends_on: [server]
+    environment:
+      ORION_SERVER: server
+      ORION_PORT: "2222"
+      ORION_AGENT_NAME: ubuntu-lab
+    volumes:
+      - ./agent-keys:/keys:ro
+    networks: [orion-lab]
+    restart: unless-stopped
+
+  agent-alpine:
+    build:
+      context: ../..
+      dockerfile: lab/compose/Dockerfile.agent
+      args:
+        BASE: alpine:3.22
+    depends_on: [server]
+    environment:
+      ORION_SERVER: server
+      ORION_PORT: "2222"
+      ORION_AGENT_NAME: alpine-lab
+    volumes:
+      - ./agent-keys:/keys:ro
+    networks: [orion-lab]
+    restart: unless-stopped
+
+  agent-suse:
+    build:
+      context: ../..
+      dockerfile: lab/compose/Dockerfile.agent
+      args:
+        BASE: opensuse/leap:16.0
+    depends_on: [server]
+    environment:
+      ORION_SERVER: server
+      ORION_PORT: "2222"
+      ORION_AGENT_NAME: suse-lab
+    volumes:
+      - ./agent-keys:/keys:ro
+    networks: [orion-lab]
+    restart: unless-stopped
+
+  agent-debian:
+    build:
+      context: ../..
+      dockerfile: lab/compose/Dockerfile.agent
+      args:
+        BASE: debian:trixie-slim
+    depends_on: [server]
+    environment:
+      ORION_SERVER: server
+      ORION_PORT: "2222"
+      ORION_AGENT_NAME: debian-lab
+    volumes:
+      - ./agent-keys:/keys:ro
+    networks: [orion-lab]
+    restart: unless-stopped
+
+  agent-rocky:
+    build:
+      context: ../..
+      dockerfile: lab/compose/Dockerfile.agent
+      args:
+        BASE: rockylinux/rockylinux:10
+    depends_on: [server]
+    environment:
+      ORION_SERVER: server
+      ORION_PORT: "2222"
+      ORION_AGENT_NAME: rocky-lab
+    volumes:
+      - ./agent-keys:/keys:ro
+    networks: [orion-lab]
+    restart: unless-stopped
+
+volumes:
+  lab_recordings:
+  lab_hostkey:
+
+networks:
+  orion-lab:
+    driver: bridge

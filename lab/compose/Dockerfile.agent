@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+ARG BASE=ubuntu:24.04
+FROM golang:1.26.5-bookworm AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/orion-belt-agent ./cmd/agent
+
+FROM ${BASE}
+COPY --from=builder /out/orion-belt-agent /usr/bin/orion-belt-agent
+COPY lab/compose/agent-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh /usr/bin/orion-belt-agent
+ENTRYPOINT ["/entrypoint.sh"]

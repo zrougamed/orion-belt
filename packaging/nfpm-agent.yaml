@@ -1,0 +1,28 @@
+name: orion-belt-agent
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+description: Orion Belt reverse-SSH agent
+homepage: https://github.com/zrougamed/orion-belt
+license: Apache-2.0
+contents:
+  - src: dist/orion-belt-agent
+    dst: /usr/bin/orion-belt-agent
+    file_info:
+      mode: 0755
+  - src: packaging/systemd/orion-belt-agent.service
+    dst: /lib/systemd/system/orion-belt-agent.service
+    type: config
+  - src: config/agent.example.yaml
+    dst: /etc/orion-belt/agent.yaml
+    type: config|noreplace
+scripts:
+  postinstall: packaging/scripts/agent-postinstall.sh
+overrides:
+  deb:
+    depends: [systemd]
+  rpm:
+    depends: [systemd]

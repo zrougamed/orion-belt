@@ -3,7 +3,7 @@
 ## Current Status
 
 **Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
-**Status:** v0.3.1 on master; v0.4 work on `feature/v0.4-mfa-ui-openfga-recording`
+**Status:** v0.4 merged on `master`; packaging / CVE / multi-distro lab in progress
 
 ## What Orion Belt Is
 
@@ -156,6 +156,12 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Recording compression
 - [ ] Richer permission editor / machine CRUD in UI
 
+### Ops / release (in progress on this branch)
+
+- [x] Go 1.26.5 + dependency bump; `govulncheck` 0-CVE gate (`make cve`, CI)
+- [x] Native packages: deb / rpm / apk via GoReleaser + nFPM (`make packages`)
+- [x] Multi-distro lab: Docker Compose + QEMU cloud images (Ubuntu, Alpine, openSUSE, Debian, Rocky)
+
 ## Roadmap — Later Phases
 
 ### Phase 2 — Advanced Features
@@ -194,7 +200,8 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 - [ ] Hit ~80% unit test coverage
 - [ ] Integration test suites
-- [ ] End-to-end test suites
+- [x] End-to-end CVE gate (`e2e/cve`, `scripts/cve-check.sh`)
+- [x] Multi-distro e2e lab (compose + QEMU)
 - [ ] Performance benchmarks
 - [ ] Architecture Decision Records (ADRs)
 
@@ -223,7 +230,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
 * **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
-* **v0.5:** HA, IdP integrations, live session monitoring, SSH CA
+* **v0.5:** Native packages (deb/rpm/apk), 0-CVE CI gate, multi-distro QEMU/Compose lab; then HA, IdP integrations, live session monitoring, SSH CA
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
@@ -243,7 +250,7 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 
 ## Notes
 
-This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) plus merged PRs through Phase 1 hardening are the source of truth for shipped releases; this branch tracks v0.4 until tagged.
+This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.4** is on `master`; packaging/CVE/lab work targets the next cut.
 
 **Last Updated:** July 2026  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

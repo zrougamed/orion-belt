@@ -72,11 +72,17 @@ Orion-Belt solves this by:
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.4** on branch `feature/v0.4-mfa-ui-openfga-recording` (merge pending); master has **v0.3.1** hardening.
+**Current Status:** Alpha **v0.4** is on `master` (PR #7). Packaging / CVE gate / multi-distro lab work lands next.
 
 **Shipped (through v0.4):** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins, remote users, host-key verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console (terminal + files), optional OpenFGA.
 
-**Next:** HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
+**Next:** Native deb/rpm/apk packages, 0-CVE CI gate, multi-distro QEMU/Compose lab; then HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
+
+## Packaging & labs
+
+- **Native packages (deb/rpm/apk):** `make packages` — see [docs/PACKAGING.md](docs/PACKAGING.md)
+- **Zero-CVE gate:** `make cve` (Go 1.26.5 + govulncheck)
+- **Multi-distro lab:** Docker Compose or QEMU (Ubuntu, Alpine, openSUSE, Debian, Rocky) — see [lab/README.md](lab/README.md)
 
 See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
@@ -101,15 +107,32 @@ See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
 ## Installation
 
+### From source
+
 ```bash
-# Clone the repository
+# Requires Go 1.26.5+ (see go.mod toolchain)
 git clone https://github.com/zrougamed/orion-belt.git
 cd orion-belt
-
-# Build all components
 make build
+```
 
-# Or build individually
+### From packages (deb / rpm / apk)
+
+```bash
+make packages   # writes dist/*.deb *.rpm *.apk
+# Debian/Ubuntu:
+sudo apt install ./dist/orion-belt_*_amd64.deb ./dist/orion-belt-agent_*_amd64.deb
+# RHEL/Rocky/Fedora/openSUSE:
+sudo rpm -Uvh dist/orion-belt-*.rpm dist/orion-belt-agent-*.rpm
+# Alpine:
+sudo apk add --allow-untrusted ./dist/orion-belt_*.apk ./dist/orion-belt-agent_*.apk
+```
+
+See [docs/PACKAGING.md](docs/PACKAGING.md) for systemd units and release tagging.
+
+### Or build individually
+
+```bash
 make build-server
 make build-client
 make build-agent

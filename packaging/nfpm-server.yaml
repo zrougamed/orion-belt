@@ -1,0 +1,44 @@
+# nfpm config for local package builds (without GoReleaser).
+# Usage:
+#   GOOS=linux GOARCH=amd64 go build -o dist/orion-belt-server ./cmd/server
+#   nfpm package -f packaging/nfpm-server.yaml -p deb -t dist/
+#   nfpm package -f packaging/nfpm-server.yaml -p rpm -t dist/
+#   nfpm package -f packaging/nfpm-server.yaml -p apk -t dist/
+
+name: orion-belt
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+description: Orion Belt PAM gateway server
+homepage: https://github.com/zrougamed/orion-belt
+license: Apache-2.0
+contents:
+  - src: dist/orion-belt-server
+    dst: /usr/bin/orion-belt-server
+    file_info:
+      mode: 0755
+  - src: packaging/systemd/orion-belt-server.service
+    dst: /lib/systemd/system/orion-belt-server.service
+    type: config
+  - src: config/server.example.yaml
+    dst: /etc/orion-belt/server.yaml
+    type: config|noreplace
+  - dst: /var/lib/orion-belt/recordings
+    type: dir
+    file_info:
+      mode: 0750
+  - dst: /var/log/orion-belt
+    type: dir
+    file_info:
+      mode: 0750
+scripts:
+  postinstall: packaging/scripts/server-postinstall.sh
+  preremove: packaging/scripts/server-preremove.sh
+overrides:
+  deb:
+    depends: [systemd]
+  rpm:
+    depends: [systemd]

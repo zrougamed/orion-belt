@@ -1,6 +1,8 @@
 .PHONY: build build-server build-client build-agent test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
-        docker-push docker-up docker-down docker-logs
+        docker-push docker-up docker-down docker-logs \
+        cve packages lab-compose-up lab-compose-down \
+        lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-test
 
 # Build variables
 BINARY_NAME=orion-belt
@@ -135,3 +137,38 @@ docker-down:
 # Tail logs (optionally filter: make docker-logs SERVICE=server)
 docker-logs:
 	docker compose -f $(DOCKER_DIR)/docker-compose.yml logs -f $(SERVICE)
+
+# ────────────────────────────────────────────────────────────
+# Security / packaging / labs
+# ────────────────────────────────────────────────────────────
+
+# Fail CI if any CVE affects our code or release binaries (0CVE gate)
+cve:
+	bash scripts/cve-check.sh
+
+# Build deb/rpm/apk (+ binaries) into dist/
+packages:
+	bash scripts/package.sh
+
+lab-compose-up:
+	bash lab/compose/bootstrap-keys.sh
+	docker compose -f lab/compose/docker-compose.yml up -d --build
+	@echo "Lab up. SSH gateway :2222  API :8080"
+
+lab-compose-down:
+	docker compose -f lab/compose/docker-compose.yml down
+
+lab-qemu-images:
+	bash lab/qemu/download-images.sh
+
+lab-qemu-images-refresh:
+	ORION_REFRESH_IMAGES=1 bash lab/qemu/download-images.sh
+
+lab-qemu-up:
+	bash lab/qemu/up.sh
+
+lab-qemu-down:
+	bash lab/qemu/down.sh
+
+lab-qemu-test:
+	bash lab/qemu/test-e2e.sh
