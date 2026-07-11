@@ -201,25 +201,13 @@ ocp machine-name:/remote/file local-path
 ### Project Structure
 ```
 orion-belt/
-├── cmd/
-│   ├── server/          # Server entry point
-│   ├── client/          # Client (osh/ocp) entry point
-│   └── agent/           # Agent entry point
-├── pkg/
-│   ├── server/          # Server implementation
-│   ├── client/          # Client implementation
-│   ├── agent/           # Agent implementation
-│   ├── auth/            # ReBAC and authorization
-│   ├── recording/       # Session recording
-│   ├── database/        # Database interface and implementations
-│   ├── api/             # API server and client
-│   ├── plugin/          # Plugin system
-│   └── common/          # Shared utilities
-├── plugins/             # Plugin implementations
-├── go.mod
-├── go.sum
-├── Makefile
-└── README.md
+├── cmd/           # server, agent, osh, ocp, oadmin
+├── pkg/           # server, client, agent, api, auth, authz, recording, …
+├── web/           # embedded admin/ops console (/ui)
+├── plugins/       # Slack, email, webhook, audit-logger
+├── docs/          # architecture, roadmap, OpenSSH, OpenFGA, …
+├── config/        # example YAML
+└── docker/        # Compose + images
 ```
 
 ### Building from Source
@@ -234,9 +222,10 @@ For details see [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md).
 ## Security Considerations
 
 - All connections are encrypted using SSH protocol
-- Session recordings are encrypted at rest
-- ReBAC ensures fine-grained access control
-- Audit logs track all access and changes
+- Session recordings can be AES-GCM encrypted at rest (`recording.encryption_key`)
+- ReBAC (and optional OpenFGA) enforce fine-grained access control
+- MFA: TOTP and/or WebAuthn (YubiKey); SSH supports FIDO `sk-*` keys
+- Audit logs track access and changes
 - Temporary access automatically expires
 
 ## Database Support

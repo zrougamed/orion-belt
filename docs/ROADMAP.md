@@ -21,7 +21,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] Full SSH implementation using **golang.org/x/crypto/ssh**
   - [x] Public-key auth backed by PostgreSQL
   - [x] Concurrent multi-session handling
-  - [x] Direct-tcpip forwarding to machines
+  - [x] Session routing to agents (exec/shell; OpenSSH `user+machine` form)
   - [x] Full session lifecycle support
 
 * **REST API (Port 8080)**
@@ -243,7 +243,7 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 
 ## Notes
 
-This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) and merged PRs #1–#5 are the source of truth for shipped work; this document tracks remaining gaps.
+This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) plus merged PRs through Phase 1 hardening are the source of truth for shipped releases; this branch tracks v0.4 until tagged.
 
 **Last Updated:** July 2026  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))
