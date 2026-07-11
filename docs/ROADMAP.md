@@ -154,7 +154,12 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] OpenTelemetry tracing
 - [ ] Notification templates / user preferences
 - [ ] Recording compression
-- [ ] Richer permission editor / machine CRUD in UI
+- [ ] Richer permission editor in UI
+- [x] Machine CRUD in UI
+- [x] Session recording playback + audit trail + user management in `/ui`
+- [x] Web terminal sessions recorded with `source=web`
+- [x] Build version on binaries, `/health`, `/api/v1/version`, and UI
+- [x] GPG signing for release checksums + APT/RPM repos (`make packaging-key`, `make repos`)
 
 ### Ops / release (in progress on this branch)
 
@@ -216,9 +221,9 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 **Documentation**
 
-- [ ] OpenAPI/Swagger specification
-- [ ] Deployment guides
-- [ ] Security hardening guides
+- [x] OpenAPI/Swagger specification (`docs/openapi/openapi.yaml`, `GET /api/v1/openapi.yaml`)
+- [x] Web console SRS (`docs/SRS-UI.md`)
+- [ ] Deployment hardening guides
 - [x] Plugin development guides
 - [x] Contributing guidelines
 - [x] Architecture documentation
@@ -232,7 +237,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
 * **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
-* **v0.5:** Native packages (deb/rpm/apk), 0-CVE CI gate, multi-distro QEMU/Compose lab; then HA, IdP integrations, live session monitoring, SSH CA
+* **v0.5:** Native packages (deb/rpm/apk) + GPG-signed repos, 0-CVE CI gate, multi-distro QEMU/Compose lab, OpenAPI, UI sessions/audit/users + versioning; then HA, IdP integrations, live session monitoring, SSH CA
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
@@ -245,7 +250,7 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 - Identity provider integrations (OIDC/SAML)
 - Live session monitoring
 - SSH certificate authority
-- OpenAPI specification
+- Deployment / security hardening guides
 - Recording compression
 
 ---

@@ -121,6 +121,10 @@ That runs:
 Helpers:
 
 ```bash
+make lab-qemu-update                              # rebuild + push bins + reload server/agents
+make lab-qemu-update AGENTS="server"              # server VM only
+make lab-qemu-update AGENTS="alpine rocky"        # selected agents
+SKIP_BUILD=1 make lab-qemu-update                 # push existing dist/ without rebuilding
 make lab-qemu-restart                             # reboot all VMs, keep disks
 make lab-qemu-restart VMS="server"                # one instance
 make lab-qemu-restart VMS="alpine rocky"

@@ -1,10 +1,10 @@
 .PHONY: build build-server build-client build-agent test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
         docker-push docker-up docker-down docker-logs \
-        cve packages repos lab-compose-up lab-compose-down lab-bootstrap-admin \
+        cve packages repos packaging-key sign-artifacts lab-compose-up lab-compose-down lab-bootstrap-admin \
         lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-restart lab-qemu-test \
         lab-qemu-connect-agents lab-qemu-collect-keys lab-qemu-register-agents \
-        lab-qemu-clean lab-qemu-start
+        lab-qemu-clean lab-qemu-start lab-qemu-update
 
 # Build variables
 BINARY_NAME=orion-belt
@@ -14,6 +14,14 @@ BUILD_DIR_PLUGINS=bin/plugins
 PLUGINS := audit-logger notification email-notifications webhook-notifications
 GO=go
 GOFLAGS=-v
+
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS = -s -w \
+	-X github.com/zrougamed/orion-belt/pkg/version.Version=$(VERSION) \
+	-X github.com/zrougamed/orion-belt/pkg/version.Commit=$(COMMIT) \
+	-X github.com/zrougamed/orion-belt/pkg/version.Date=$(DATE)
 
 # Docker variables
 DOCKER_REGISTRY ?=
@@ -35,28 +43,28 @@ build: build-server build-client build-admin build-agent
 
 # Build server
 build-server:
-	@echo "Building server..."
+	@echo "Building server $(VERSION) ($(COMMIT))..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-server ./cmd/server
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-server ./cmd/server
 
 # Build client
 build-client:
-	@echo "Building client..."
+	@echo "Building client $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/osh ./cmd/osh
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/ocp ./cmd/ocp
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/osh ./cmd/osh
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/ocp ./cmd/ocp
 
 # Build admin
 build-admin:
-	@echo "Building admin..."
+	@echo "Building admin $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/oadmin ./cmd/oadmin
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/oadmin ./cmd/oadmin
 
 # Build agent
 build-agent:
-	@echo "Building agent..."
+	@echo "Building agent $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-agent ./cmd/agent
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-agent ./cmd/agent
 
 # Run tests
 test:
@@ -153,8 +161,17 @@ packages:
 	bash scripts/package.sh
 
 # Build static apt/rpm/apk repos under repos/ (after make packages)
+# Signed: ./scripts/gen-packaging-key.sh && ORION_REQUIRE_SIGN=1 make repos
 repos:
 	bash scripts/publish-repos.sh
+
+# Generate packaging GPG key → packaging/keys/ (private key is gitignored)
+packaging-key:
+	bash scripts/gen-packaging-key.sh
+
+# Detached GPG signatures + SHA256SUMS for dist/
+sign-artifacts:
+	bash scripts/sign-artifacts.sh
 
 lab-compose-up:
 	bash lab/compose/bootstrap-keys.sh
@@ -209,3 +226,8 @@ lab-qemu-clean:
 # Clean (default) + boot + admin + agents + RBAC users + SSH howto
 lab-qemu-start:
 	bash lab/qemu/start.sh
+
+# Rebuild binaries, scp into running VMs, reload server + agents
+# Optional: AGENTS="server" | AGENTS="alpine debian" | SKIP_BUILD=1
+lab-qemu-update:
+	bash lab/qemu/update-bins.sh $(AGENTS)

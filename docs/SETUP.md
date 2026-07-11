@@ -19,6 +19,15 @@ sudo systemctl enable --now orion-belt-server
 
 UI: `http://<host>:8080/ui`
 
+Confirm the running build (footer / workspace bar, or):
+
+```bash
+curl -s http://localhost:8080/api/v1/version
+orion-belt-server --version
+```
+
+OpenAPI: `http://<host>:8080/api/v1/openapi.yaml` — see [API/README.md](API/README.md).
+
 ## 2. Run the setup wizard
 
 ```bash
@@ -71,3 +80,5 @@ Direct SSH to an agent host **bypasses** Orion (no recording). Point users at th
 ## UI checklist
 
 Admins/operators see **Setup guide** in the nav and a dashboard banner until agents are connected.
+
+Web **Terminal** sessions are recorded (`source=web`) and show under **Sessions** with playback. Full UI requirements: [SRS-UI.md](SRS-UI.md).

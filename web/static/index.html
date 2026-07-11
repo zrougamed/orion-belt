@@ -106,10 +106,18 @@
       text-shadow: 0 0 40px var(--accent-glow);
     }
     .login-tag {
-      margin: 0 0 2rem;
+      margin: 0 0 0.65rem;
       color: var(--muted);
       font-size: 1.05rem;
       letter-spacing: 0.01em;
+    }
+    .login-version {
+      margin: 0 0 1.75rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      min-height: 1.1em;
+      opacity: 0.9;
     }
     .login-panel {
       text-align: left;
@@ -237,6 +245,26 @@
     main.workspace {
       padding: 1.75rem 2rem 2.5rem;
       min-width: 0;
+    }
+    .workspace-bar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 0 1rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .workspace-bar-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+    .workspace-version {
+      font-size: 0.78rem;
+      color: var(--accent);
+      opacity: 0.95;
     }
     .page-head {
       display: flex;
@@ -544,6 +572,7 @@
     <div class="login-compose">
       <h1 class="login-brand">Orion <em>Belt</em></h1>
       <p class="login-tag">Privileged access management for operators who ship.</p>
+      <p class="login-version mono" id="loginVersion" title="Server build"></p>
       <div class="login-panel">
         <label class="field" for="loginUser">Username</label>
         <input id="loginUser" autocomplete="username" spellcheck="false" />
@@ -562,6 +591,10 @@
   <div id="appView" class="shell hidden">
     <nav class="side" id="sideNav"></nav>
     <main class="workspace">
+      <div class="workspace-bar">
+        <span class="workspace-bar-label">Orion Belt</span>
+        <span class="mono workspace-version" id="appVersionBar" title="Server build">…</span>
+      </div>
       <div id="view"></div>
     </main>
   </div>
@@ -624,6 +657,7 @@
     jwt: localStorage.getItem("ob_jwt") || "",
     user: JSON.parse(localStorage.getItem("ob_user") || "null"),
     view: "dashboard",
+    version: null,
     term: { ws: null, xterm: null, fit: null, connected: false },
     files: { machine: "", user: "root", path: "/" },
     secTab: "mfa",
@@ -671,7 +705,7 @@
   function badge(status) {
     const s = String(status || "").toLowerCase();
     let cls = "warn";
-    if (["approved", "active", "completed", "healthy", "enabled", "online", "ok"].includes(s)) cls = "ok";
+    if (["approved", "active", "completed", "healthy", "enabled", "online", "ok", "web", "ssh"].includes(s)) cls = "ok";
     if (["rejected", "denied", "failed", "offline", "expired", "terminated"].includes(s)) cls = "danger";
     if (["off", "inactive", "-"].includes(s)) cls = "neutral";
     return `<span class="badge ${cls}">${esc(status || "—")}</span>`;
@@ -844,6 +878,7 @@
           <strong>${esc(state.user && state.user.username)}</strong>
           <span class="role-pill">${esc(role)}</span>
           <div class="muted" style="margin-top:.2rem;font-size:.75rem">${esc(state.user && state.user.email)}</div>
+          <div class="muted mono" id="appVersion" style="margin-top:.35rem;font-size:.7rem">…</div>
         </div>
         <button type="button" class="btn secondary sm" id="logoutBtn">Sign out</button>
       </div>`;
@@ -860,6 +895,30 @@
       clearAuth();
       showLogin();
     };
+    loadAppVersion();
+  }
+
+  async function loadAppVersion() {
+    const targets = ["loginVersion", "appVersion", "appVersionBar"]
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+    if (!targets.length) return;
+    try {
+      const res = await fetch("/api/v1/version");
+      const info = await res.json();
+      const label = info.display || info.version || "dev";
+      const tip = [info.version, info.commit, info.date].filter(Boolean).join(" · ");
+      targets.forEach((el) => {
+        el.textContent = label;
+        el.title = tip || label;
+      });
+      state.version = info;
+    } catch (_) {
+      targets.forEach((el) => {
+        if (el.id === "loginVersion") el.textContent = "";
+        else el.textContent = "version unknown";
+      });
+    }
   }
 
   /* ── Login handlers ── */
@@ -1047,12 +1106,13 @@
 
   function sessionMiniTable(rows) {
     if (!rows.length) return `<div class="empty">No active sessions.</div>`;
-    return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Status</th></tr></thead>
+    return `<table><thead><tr><th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Source</th><th>Status</th></tr></thead>
       <tbody>${rows.map((s) => `<tr>
         <td class="mono">${esc(shortId(s.id))}</td>
         <td class="mono">${esc(s.user_id)}</td>
         <td class="mono">${esc(s.machine_id)}</td>
         <td class="mono">${esc(s.remote_user || "—")}</td>
+        <td>${badge(s.source || "ssh")}</td>
         <td>${badge(s.status)}</td>
       </tr>`).join("")}</tbody></table>`;
   }
@@ -1661,12 +1721,13 @@
       </div>
       <div class="card">
         ${sessions.length ? `<table><thead><tr>
-          <th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Started</th><th>Ended</th><th>Status</th><th></th>
+          <th>ID</th><th>User</th><th>Machine</th><th>Remote</th><th>Source</th><th>Started</th><th>Ended</th><th>Status</th><th></th>
         </tr></thead><tbody>${sessions.map((s) => `<tr>
           <td class="mono">${esc(shortId(s.id))}</td>
           <td>${esc(userName(s.user_id))}</td>
           <td>${esc(machineName(s.machine_id))}</td>
           <td class="mono">${esc(s.remote_user || "—")}</td>
+          <td>${badge(s.source || "ssh")}</td>
           <td class="mono">${esc(fmtTime(s.start_time))}</td>
           <td class="mono">${esc(fmtTime(s.end_time))}</td>
           <td>${badge(s.status)}</td>
@@ -2117,6 +2178,7 @@
 
   /* ── Init ── */
   (async function init() {
+    loadAppVersion();
     if (state.token) setSessionCookie(state.token);
     if (!state.token) {
       showLogin();

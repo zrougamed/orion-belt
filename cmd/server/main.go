@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/server"
+	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
@@ -19,9 +20,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "orion-belt-server",
-	Short: "Orion-Belt SSH Tunneling Server",
-	Long:  `Orion-Belt is a secure SSH/SCP tunneling and session recording system with ReBAC and temporary access management.`,
+	Use:     "orion-belt-server",
+	Short:   "Orion-Belt SSH Tunneling Server",
+	Long:    `Orion-Belt is a secure SSH/SCP tunneling and session recording system with ReBAC and temporary access management.`,
+	Version: version.String(),
 }
 
 var startCmd = &cobra.Command{

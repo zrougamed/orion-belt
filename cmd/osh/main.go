@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/client"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
@@ -19,11 +20,12 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "osh [user@]machine",
-	Short: "Orion-Belt SSH Client",
-	Long:  `osh is the Orion-Belt SSH client for connecting to machines through the Orion-Belt server.`,
-	Args:  cobra.MaximumNArgs(1),
-	Run:   runSSH,
+	Use:     "osh [user@]machine",
+	Short:   "Orion-Belt SSH Client",
+	Long:    `osh is the Orion-Belt SSH client for connecting to machines through the Orion-Belt server.`,
+	Version: version.String(),
+	Args:    cobra.MaximumNArgs(1),
+	Run:     runSSH,
 }
 
 func init() {

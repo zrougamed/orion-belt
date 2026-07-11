@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/client"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/version"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -18,9 +19,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "oadmin",
-	Short: "Orion-Belt Admin CLI",
-	Long:  `oadmin is the Orion-Belt admin tool for managing access requests and system operations.`,
+	Use:     "oadmin",
+	Short:   "Orion-Belt Admin CLI",
+	Long:    `oadmin is the Orion-Belt admin tool for managing access requests and system operations.`,
+	Version: version.String(),
 }
 
 var requestsCmd = &cobra.Command{

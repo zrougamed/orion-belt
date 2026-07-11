@@ -10,12 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/zrougamed/orion-belt/docs/openapi"
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
 	"github.com/zrougamed/orion-belt/pkg/recording"
+	"github.com/zrougamed/orion-belt/pkg/version"
 	"github.com/zrougamed/orion-belt/web"
 )
 
@@ -117,6 +119,23 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		c.JSON(200, gin.H{
 			"status":  "healthy",
 			"service": "orion-belt-api",
+			"version": version.Info(),
+		})
+	})
+
+	s.router.GET("/api/v1/version", func(c *gin.Context) {
+		c.JSON(200, version.Info())
+	})
+
+	s.router.GET("/api/v1/openapi.yaml", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=300")
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openapi.Spec)
+	})
+	s.router.GET("/api/v1/openapi.json", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Use /api/v1/openapi.yaml for the full OpenAPI 3.0 specification",
+			"yaml":    "/api/v1/openapi.yaml",
+			"docs":    "https://github.com/zrougamed/orion-belt/blob/master/docs/openapi/openapi.yaml",
 		})
 	})
 

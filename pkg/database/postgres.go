@@ -80,6 +80,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id),
 			machine_id VARCHAR(36) NOT NULL REFERENCES machines(id),
 			remote_user VARCHAR(255) NOT NULL,
+			source VARCHAR(32) NOT NULL DEFAULT 'ssh',
 			start_time TIMESTAMP NOT NULL,
 			end_time TIMESTAMP,
 			recording_path TEXT NOT NULL,
@@ -158,6 +159,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes_hash TEXT DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_enabled BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'ssh'`,
 		`CREATE TABLE IF NOT EXISTS user_ssh_keys (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -477,11 +479,15 @@ func (s *PostgresStore) ListActiveMachines(ctx context.Context) ([]*common.Machi
 
 // CreateSession creates a new session
 func (s *PostgresStore) CreateSession(ctx context.Context, session *common.Session) error {
-	query := `INSERT INTO sessions (id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	source := session.Source
+	if source == "" {
+		source = "ssh"
+	}
+	query := `INSERT INTO sessions (id, user_id, machine_id, remote_user, source, start_time, end_time, recording_path, status, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
 	_, err := s.db.ExecContext(ctx, query,
-		session.ID, session.UserID, session.MachineID, session.RemoteUser,
+		session.ID, session.UserID, session.MachineID, session.RemoteUser, source,
 		session.StartTime, session.EndTime, session.RecordingPath,
 		session.Status, session.CreatedAt)
 
@@ -493,12 +499,12 @@ func (s *PostgresStore) CreateSession(ctx context.Context, session *common.Sessi
 
 // GetSession retrieves a session by ID
 func (s *PostgresStore) GetSession(ctx context.Context, id string) (*common.Session, error) {
-	query := `SELECT id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at
+	query := `SELECT id, user_id, machine_id, remote_user, COALESCE(source, 'ssh'), start_time, end_time, recording_path, status, created_at
 			  FROM sessions WHERE id = $1`
 
 	session := &common.Session{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,
+		&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser, &session.Source,
 		&session.StartTime, &session.EndTime, &session.RecordingPath,
 		&session.Status, &session.CreatedAt)
 
@@ -533,7 +539,7 @@ func (s *PostgresStore) ListSessions(ctx context.Context, limit, offset int) ([]
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at
+	query := `SELECT id, user_id, machine_id, remote_user, COALESCE(source, 'ssh'), start_time, end_time, recording_path, status, created_at
 			  FROM sessions ORDER BY start_time DESC LIMIT $1 OFFSET $2`
 
 	rows, err := s.db.QueryContext(ctx, query, limit, offset)
@@ -546,7 +552,7 @@ func (s *PostgresStore) ListSessions(ctx context.Context, limit, offset int) ([]
 	sessions = make([]*common.Session, 0)
 	for rows.Next() {
 		session := &common.Session{}
-		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,
+		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser, &session.Source,
 			&session.StartTime, &session.EndTime, &session.RecordingPath,
 			&session.Status, &session.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -558,7 +564,7 @@ func (s *PostgresStore) ListSessions(ctx context.Context, limit, offset int) ([]
 
 // ListActiveSessions lists all active sessions
 func (s *PostgresStore) ListActiveSessions(ctx context.Context) ([]*common.Session, error) {
-	query := `SELECT id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at
+	query := `SELECT id, user_id, machine_id, remote_user, COALESCE(source, 'ssh'), start_time, end_time, recording_path, status, created_at
 			  FROM sessions WHERE status = 'active' ORDER BY start_time DESC`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -570,7 +576,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context) ([]*common.Sessi
 	sessions := make([]*common.Session, 0)
 	for rows.Next() {
 		session := &common.Session{}
-		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,
+		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser, &session.Source,
 			&session.StartTime, &session.EndTime, &session.RecordingPath,
 			&session.Status, &session.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -583,7 +589,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context) ([]*common.Sessi
 
 // ListUserSessions lists sessions for a specific user
 func (s *PostgresStore) ListUserSessions(ctx context.Context, userID string, limit, offset int) ([]*common.Session, error) {
-	query := `SELECT id, user_id, machine_id, remote_user, start_time, end_time, recording_path, status, created_at
+	query := `SELECT id, user_id, machine_id, remote_user, COALESCE(source, 'ssh'), start_time, end_time, recording_path, status, created_at
 			  FROM sessions WHERE user_id = $1 ORDER BY start_time DESC LIMIT $2 OFFSET $3`
 
 	rows, err := s.db.QueryContext(ctx, query, userID, limit, offset)
@@ -595,7 +601,7 @@ func (s *PostgresStore) ListUserSessions(ctx context.Context, userID string, lim
 	var sessions []*common.Session
 	for rows.Next() {
 		session := &common.Session{}
-		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,
+		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser, &session.Source,
 			&session.StartTime, &session.EndTime, &session.RecordingPath,
 			&session.Status, &session.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)

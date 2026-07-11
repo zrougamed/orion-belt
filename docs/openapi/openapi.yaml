@@ -1,0 +1,1621 @@
+openapi: 3.0.3
+info:
+  title: Orion Belt API
+  description: |
+    REST and WebSocket API for the Orion Belt privileged access gateway.
+
+    **Base URL:** `/api/v1` (plus `/health` and optional `/metrics` outside the versioned prefix).
+
+    **Authentication** (protected routes — try in order):
+    1. `X-API-Key` header
+    2. `X-Session-Token` header, `session_token` cookie, or `token` / `access_token` query (WebSocket)
+    3. `Authorization: Bearer <JWT>`
+
+    **Admin routes** (`/api/v1/admin/*`) additionally require role `admin` or `operator` (or `is_admin`).
+
+    **Rate limit:** protected (non-admin) routes — default 600 req/min per user (`auth.rate_limit_per_minute`).
+  version: "0.5.0"
+  contact:
+    name: Orion Belt Maintainers
+    url: https://github.com/zrougamed/orion-belt
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local / lab default
+  - url: "{scheme}://{host}"
+    description: Deployed gateway
+    variables:
+      scheme:
+        default: https
+        enum: [http, https]
+      host:
+        default: orion-belt.example.com
+
+tags:
+  - name: System
+  - name: Auth
+  - name: API Keys
+  - name: MFA
+  - name: WebAuthn
+  - name: Users
+  - name: Machines
+  - name: Permissions
+  - name: Access Requests
+  - name: Sessions
+  - name: Audit
+  - name: Setup
+  - name: Agents
+  - name: Terminal
+  - name: Files
+  - name: SSH Keys
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/version:
+    get:
+      tags: [System]
+      summary: Build version
+      security: []
+      responses:
+        "200":
+          description: Build identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [System]
+      summary: OpenAPI specification
+      security: []
+      responses:
+        "200":
+          description: OpenAPI 3.0 YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/v1/public/login:
+    post:
+      tags: [Auth]
+      summary: Login with SSH public key (session + optional JWT)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: MFA enrollment required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAEnrollmentError"
+
+  /api/v1/public/login/key:
+    post:
+      tags: [Auth]
+      summary: Login exchanging pubkey for short-lived API key
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: API key issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginWithKeyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/public/login/token:
+    post:
+      tags: [Auth]
+      summary: Login exchanging pubkey for JWT only
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWTLoginResponse"
+        "503":
+          description: JWT not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/public/register/agent:
+    post:
+      tags: [Auth]
+      summary: Register an agent / machine
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterAgentRequest"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterAgentResponse"
+        "409":
+          description: Already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/public/register/client:
+    post:
+      tags: [Auth]
+      summary: Register a client user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterClientRequest"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: string }
+                  message: { type: string }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/public/webauthn/login/begin:
+    post:
+      tags: [WebAuthn]
+      summary: Begin WebAuthn login ceremony
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+      responses:
+        "200":
+          description: Credential assertion options (WebAuthn JSON)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/public/webauthn/login/finish:
+    post:
+      tags: [WebAuthn]
+      summary: Finish WebAuthn login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+                response:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Session established
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+
+  /api/v1/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate HTTP session
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/api-keys:
+    get:
+      tags: [API Keys]
+      summary: List API keys for current user
+      responses:
+        "200":
+          description: Keys (hash omitted)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIKey"
+    post:
+      tags: [API Keys]
+      summary: Create API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+      responses:
+        "201":
+          description: Key created (raw key shown once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAPIKeyResponse"
+
+  /api/v1/api-keys/{id}/revoke:
+    post:
+      tags: [API Keys]
+      summary: Revoke API key
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/api-keys/{id}:
+    delete:
+      tags: [API Keys]
+      summary: Delete API key
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/mfa/enroll:
+    post:
+      tags: [MFA]
+      summary: Start TOTP enrollment
+      responses:
+        "200":
+          description: Secret and backup codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAEnrollResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/mfa/confirm:
+    post:
+      tags: [MFA]
+      summary: Confirm TOTP enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  mfa_enabled: { type: boolean }
+
+  /api/v1/mfa/disable:
+    post:
+      tags: [MFA]
+      summary: Disable MFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: TOTP or backup code }
+      responses:
+        "200":
+          description: MFA disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  mfa_enabled: { type: boolean }
+
+  /api/v1/mfa/status:
+    get:
+      tags: [MFA]
+      summary: MFA status for current user
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mfa_enabled: { type: boolean }
+                  mfa_required: { type: boolean }
+
+  /api/v1/webauthn/register/begin:
+    post:
+      tags: [WebAuthn]
+      summary: Begin WebAuthn registration
+      responses:
+        "200":
+          description: Creation options
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/webauthn/register/finish:
+    post:
+      tags: [WebAuthn]
+      summary: Finish WebAuthn registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  id: { type: string }
+
+  /api/v1/webauthn/credentials:
+    get:
+      tags: [WebAuthn]
+      summary: List WebAuthn credentials
+      responses:
+        "200":
+          description: Credentials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebAuthnCredentialSummary"
+
+  /api/v1/webauthn/credentials/{id}:
+    delete:
+      tags: [WebAuthn]
+      summary: Delete WebAuthn credential
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/users:
+    post:
+      tags: [Users]
+      summary: Create user
+      security:
+        - ApiKeyAuth: []
+        - SessionHeader: []
+        - BearerJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /api/v1/admin/users/{id}:
+    put:
+      tags: [Users]
+      summary: Update user
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      tags: [Users]
+      summary: Delete user
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/machines:
+    get:
+      tags: [Machines]
+      summary: List machines
+      responses:
+        "200":
+          description: Machines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Machine"
+
+  /api/v1/machines/{id}:
+    get:
+      tags: [Machines]
+      summary: Get machine
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Machine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Machine"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/machines:
+    post:
+      tags: [Machines]
+      summary: Create machine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMachineRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Machine"
+
+  /api/v1/admin/machines/{id}:
+    put:
+      tags: [Machines]
+      summary: Update machine
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMachineRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Machine"
+    delete:
+      tags: [Machines]
+      summary: Delete or archive machine
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - name: archive
+          in: query
+          schema: { type: boolean }
+          description: Soft-deactivate when true (also accepts soft=true)
+        - name: soft
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Deleted or archived
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/permissions/user/{id}:
+    get:
+      tags: [Permissions]
+      summary: Permissions for a user
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
+
+  /api/v1/permissions/machine/{id}:
+    get:
+      tags: [Permissions]
+      summary: Permissions on a machine
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
+
+  /api/v1/admin/permissions:
+    post:
+      tags: [Permissions]
+      summary: Grant permission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantPermissionRequest"
+      responses:
+        "201":
+          description: Granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Permission"
+
+  /api/v1/admin/permissions/{id}:
+    delete:
+      tags: [Permissions]
+      summary: Revoke permission
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/access-requests:
+    get:
+      tags: [Access Requests]
+      summary: List access requests (pending set)
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccessRequest"
+    post:
+      tags: [Access Requests]
+      summary: Create access request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccessRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessRequest"
+
+  /api/v1/access-requests/pending:
+    get:
+      tags: [Access Requests]
+      summary: List pending access requests
+      responses:
+        "200":
+          description: Pending requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccessRequest"
+
+  /api/v1/access-requests/{id}:
+    get:
+      tags: [Access Requests]
+      summary: Get access request
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessRequest"
+
+  /api/v1/admin/access-requests/{id}/approve:
+    post:
+      tags: [Access Requests]
+      summary: Approve access request
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewer_id: { type: string }
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessRequest"
+
+  /api/v1/admin/access-requests/{id}/reject:
+    post:
+      tags: [Access Requests]
+      summary: Reject access request
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewer_id: { type: string }
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessRequest"
+
+  /api/v1/sessions:
+    get:
+      tags: [Sessions]
+      summary: List sessions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, terminated]
+          description: Filter by status (active uses active listing)
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /api/v1/sessions/active:
+    get:
+      tags: [Sessions]
+      summary: List active sessions
+      responses:
+        "200":
+          description: Active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /api/v1/sessions/{id}:
+    get:
+      tags: [Sessions]
+      summary: Get session metadata
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /api/v1/sessions/{id}/content:
+    get:
+      tags: [Sessions]
+      summary: Download / view session recording
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Recording body (text/plain)
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/audit-logs:
+    get:
+      tags: [Audit]
+      summary: List audit logs
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        "200":
+          description: Audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
+  /api/v1/setup/status:
+    get:
+      tags: [Setup]
+      summary: First-run setup status
+      responses:
+        "200":
+          description: Setup posture
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+
+  /api/v1/admin/agents/connected:
+    get:
+      tags: [Agents]
+      summary: List connected agent machine IDs
+      responses:
+        "200":
+          description: Connected agents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items: { type: string }
+
+  /api/v1/admin/agents/{machine_id}/command:
+    post:
+      tags: [Agents]
+      summary: Send control command to agent
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [command]
+              properties:
+                command:
+                  type: string
+                  example: orion:info
+      responses:
+        "200":
+          description: Command result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  machine_id: { type: string }
+                  command: { type: string }
+                  output: { type: string }
+        "503":
+          description: Agent commander unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/terminal/ws:
+    get:
+      tags: [Terminal]
+      summary: Web terminal WebSocket
+      description: |
+        Upgrade to WebSocket after auth + ReBAC check.
+        Creates an audited session with `source=web` and records I/O.
+
+        **Client → server:** binary/text PTY input; JSON resize `{"type":"resize","cols":N,"rows":N}`
+        **Server → client:** binary PTY output; text `error: …` on failure
+      parameters:
+        - name: machine
+          in: query
+          required: true
+          schema: { type: string }
+          description: Machine name
+        - name: user
+          in: query
+          schema: { type: string, default: root }
+          description: Remote OS user
+        - name: token
+          in: query
+          schema: { type: string }
+          description: Session token (alternative to cookie/header)
+        - name: access_token
+          in: query
+          schema: { type: string }
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket)
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Terminal or recorder unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/files/list:
+    get:
+      tags: [Files]
+      summary: List remote directory
+      parameters:
+        - $ref: "#/components/parameters/MachineQuery"
+        - name: path
+          in: query
+          schema: { type: string, default: / }
+        - $ref: "#/components/parameters/RemoteUserQuery"
+      responses:
+        "200":
+          description: Directory listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileListResponse"
+
+  /api/v1/files/download:
+    get:
+      tags: [Files]
+      summary: Download remote file
+      parameters:
+        - $ref: "#/components/parameters/MachineQuery"
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/RemoteUserQuery"
+      responses:
+        "200":
+          description: File bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/files/upload:
+    post:
+      tags: [Files]
+      summary: Upload file to remote path
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [machine, path, file]
+              properties:
+                machine: { type: string }
+                path: { type: string }
+                user: { type: string, default: root }
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  path: { type: string }
+                  size: { type: integer }
+
+  /api/v1/files/mkdir:
+    post:
+      tags: [Files]
+      summary: Create remote directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [machine, path]
+              properties:
+                machine: { type: string }
+                path: { type: string }
+                user: { type: string }
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/files:
+    delete:
+      tags: [Files]
+      summary: Delete remote path
+      parameters:
+        - $ref: "#/components/parameters/MachineQuery"
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/RemoteUserQuery"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/ssh-keys:
+    get:
+      tags: [SSH Keys]
+      summary: List current user SSH public keys
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SSHKey"
+    post:
+      tags: [SSH Keys]
+      summary: Add SSH public key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, public_key]
+              properties:
+                name: { type: string }
+                public_key: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHKey"
+
+  /api/v1/ssh-keys/{id}:
+    delete:
+      tags: [SSH Keys]
+      summary: Delete SSH key
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    SessionHeader:
+      type: apiKey
+      in: header
+      name: X-Session-Token
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: session_token
+    SessionQuery:
+      type: apiKey
+      in: query
+      name: token
+    BearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MachineQuery:
+      name: machine
+      in: query
+      required: true
+      schema: { type: string }
+      description: Machine name
+    RemoteUserQuery:
+      name: user
+      in: query
+      schema: { type: string, default: root }
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Permission denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              hint: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+    MFAEnrollmentError:
+      type: object
+      properties:
+        error: { type: string }
+        mfa_enrollment_required: { type: boolean }
+    VersionInfo:
+      type: object
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        date: { type: string }
+        display: { type: string }
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: healthy }
+        service: { type: string, example: orion-belt-api }
+        version:
+          $ref: "#/components/schemas/VersionInfo"
+    LoginRequest:
+      type: object
+      required: [username, public_key]
+      properties:
+        username: { type: string }
+        public_key: { type: string }
+        totp_code: { type: string, description: Required when MFA enrolled }
+    LoginResponse:
+      type: object
+      properties:
+        session_token: { type: string }
+        access_token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user:
+          $ref: "#/components/schemas/User"
+    LoginWithKeyResponse:
+      type: object
+      properties:
+        api_key: { type: string }
+        expires_at: { type: string, format: date-time }
+        user:
+          $ref: "#/components/schemas/User"
+    JWTLoginResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_at: { type: string, format: date-time }
+        user:
+          $ref: "#/components/schemas/User"
+    RegisterAgentRequest:
+      type: object
+      required: [name, hostname, port, public_key]
+      properties:
+        name: { type: string }
+        hostname: { type: string }
+        port: { type: integer }
+        public_key: { type: string }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+    RegisterAgentResponse:
+      type: object
+      properties:
+        user_id: { type: string }
+        machine_id: { type: string }
+        message: { type: string }
+    RegisterClientRequest:
+      type: object
+      required: [username, email, public_key]
+      properties:
+        username: { type: string }
+        email: { type: string }
+        public_key: { type: string }
+        is_admin: { type: boolean }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        email: { type: string }
+        public_key: { type: string }
+        is_admin: { type: boolean }
+        role:
+          type: string
+          enum: [admin, operator, auditor, user]
+        mfa_enabled: { type: boolean }
+        webauthn_enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateUserRequest:
+      type: object
+      required: [username, email]
+      properties:
+        username: { type: string }
+        email: { type: string }
+        public_key: { type: string }
+        role:
+          type: string
+          enum: [admin, operator, auditor, user]
+        is_admin: { type: boolean }
+    UpdateUserRequest:
+      type: object
+      properties:
+        email: { type: string }
+        public_key: { type: string }
+        is_admin: { type: boolean }
+        role:
+          type: string
+          enum: [admin, operator, auditor, user]
+    Machine:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostname: { type: string }
+        port: { type: integer }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        agent_id: { type: string }
+        is_active: { type: boolean }
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateMachineRequest:
+      type: object
+      required: [name, hostname]
+      properties:
+        name: { type: string }
+        hostname: { type: string }
+        port: { type: integer, default: 22 }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        agent_id: { type: string }
+        is_active: { type: boolean }
+    UpdateMachineRequest:
+      type: object
+      properties:
+        name: { type: string }
+        hostname: { type: string }
+        port: { type: integer }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        agent_id: { type: string }
+        is_active: { type: boolean }
+    Permission:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        machine_id: { type: string }
+        access_type:
+          type: string
+          enum: [ssh, scp, both]
+        remote_users:
+          type: array
+          items: { type: string }
+        granted_by: { type: string }
+        granted_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    GrantPermissionRequest:
+      type: object
+      required: [user_id, machine_id, access_type]
+      properties:
+        user_id: { type: string }
+        machine_id: { type: string }
+        access_type:
+          type: string
+          enum: [ssh, scp, both]
+        remote_users:
+          type: array
+          items: { type: string }
+        expires_at: { type: string, format: date-time }
+        duration_seconds: { type: integer }
+    AccessRequest:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        machine_id: { type: string }
+        remote_users:
+          type: array
+          items: { type: string }
+        reason: { type: string }
+        duration: { type: integer, description: Seconds }
+        status:
+          type: string
+          enum: [pending, approved, rejected, expired]
+        requested_at: { type: string, format: date-time }
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        reviewed_by:
+          type: string
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    CreateAccessRequest:
+      type: object
+      required: [machine_id, remote_users, reason, duration]
+      properties:
+        machine_id: { type: string }
+        remote_users:
+          type: array
+          items: { type: string }
+        reason: { type: string }
+        duration: { type: integer, description: Duration in seconds }
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        machine_id: { type: string }
+        remote_user: { type: string }
+        source:
+          type: string
+          enum: [ssh, web]
+          description: Connection origin
+        start_time: { type: string, format: date-time }
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+        recording_path: { type: string }
+        status:
+          type: string
+          enum: [active, completed, terminated]
+        created_at: { type: string, format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        action: { type: string }
+        resource: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+        ip_address: { type: string }
+        timestamp: { type: string, format: date-time }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        key_prefix: { type: string }
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: { type: string, format: date-time }
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+    CreateAPIKeyRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        expires_in: { type: integer, description: Expiry in days }
+    CreateAPIKeyResponse:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        api_key: { type: string }
+        key_prefix: { type: string }
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: { type: string, format: date-time }
+    MFAEnrollResponse:
+      type: object
+      properties:
+        secret: { type: string }
+        otpauth_url: { type: string }
+        backup_codes:
+          type: array
+          items: { type: string }
+        message: { type: string }
+    WebAuthnCredentialSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        cred_id: { type: string }
+    SSHKey:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        public_key: { type: string }
+        key_type: { type: string }
+        created_at: { type: string, format: date-time }
+    FileListResponse:
+      type: object
+      properties:
+        path: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              path: { type: string }
+              is_dir: { type: boolean }
+              size: { type: integer }
+              mtime: { type: integer }
+        raw: { type: string, description: Fallback listing text }
+        error: { type: string }
+    SetupStatus:
+      type: object
+      properties:
+        complete: { type: boolean }
+        steps:
+          type: object
+          additionalProperties: { type: boolean }
+        counts:
+          type: object
+          additionalProperties: { type: integer }
+        next: { type: string }
+
+security:
+  - ApiKeyAuth: []
+  - SessionHeader: []
+  - SessionCookie: []
+  - BearerJWT: []

@@ -17,9 +17,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
   - id: agent
     main: ./cmd/agent
@@ -30,7 +30,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
   - id: osh
     main: ./cmd/osh
@@ -41,6 +43,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
   - id: ocp
     main: ./cmd/ocp
@@ -51,6 +56,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
   - id: oadmin
     main: ./cmd/oadmin
@@ -61,6 +69,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
+      - -X github.com/zrougamed/orion-belt/pkg/version.Version={{.Version}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Commit={{.Commit}}
+      - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
 archives:
   - id: tarballs
@@ -157,6 +168,37 @@ nfpms:
 
 checksum:
   name_template: checksums.txt
+  algorithm: sha256
+
+signs:
+  - id: checksums
+    artifacts: checksum
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - -u
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    stdin: "{{ .Env.GPG_PASSWORD }}"
+
+  - id: packages
+    artifacts: package
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - -u
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --armor
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    stdin: "{{ .Env.GPG_PASSWORD }}"
 
 changelog:
   sort: asc

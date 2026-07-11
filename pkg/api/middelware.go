@@ -52,12 +52,18 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Try Session Token authentication
+		// Try Session Token authentication (header, cookie, or query for WebSocket)
 		sessionToken := c.GetHeader("X-Session-Token")
 		if sessionToken == "" {
 			if cookie, err := c.Cookie("session_token"); err == nil {
 				sessionToken = cookie
 			}
+		}
+		if sessionToken == "" {
+			sessionToken = c.Query("token")
+		}
+		if sessionToken == "" {
+			sessionToken = c.Query("access_token")
 		}
 		if sessionToken != "" {
 			if user, err := s.validateSession(ctx, sessionToken); err == nil {

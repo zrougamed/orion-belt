@@ -145,6 +145,9 @@ Pull requests may be reviewed for:
 * Architectural consistency
 * Documentation impact
 
+When changing the HTTP API, update **`docs/openapi/openapi.yaml`** (served at `/api/v1/openapi.yaml`).  
+When changing `/ui` behavior, update **`docs/SRS-UI.md`** so the SRS stays the acceptance baseline.
+
 Please be patient — reviews may take time.
 
 ---

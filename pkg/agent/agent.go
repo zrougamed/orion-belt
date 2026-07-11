@@ -15,6 +15,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/version"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -440,7 +441,7 @@ func (a *Agent) handleControlCommand(channel gossh.Channel, command string) {
 			"agent":      a.config.Agent.Name,
 			"tags":       a.config.Agent.Tags,
 			"machine_id": a.machineID,
-			"version":    "0.3.1",
+			"version":    version.String(),
 			"goos":       runtime.GOOS,
 			"goarch":     runtime.GOARCH,
 			"num_cpu":    runtime.NumCPU(),

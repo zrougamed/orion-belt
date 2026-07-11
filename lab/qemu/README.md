@@ -21,6 +21,7 @@ Or one shot: `make -C ../.. lab-qemu-start` (cleans first unless `SKIP_CLEAN=1`)
 | `start.sh` | Full pipeline (clean → up → admin → agents → seed users → SSH howto) |
 | `up.sh` / `down.sh` | Boot / stop VMs only |
 | `restart.sh` | Restart VMs in place (reuse disks; optional names) |
+| `update-bins.sh` | Rebuild binaries, push to VMs, reload server/agents |
 | `bootstrap-admin` (../) | Create admin + print UI login |
 | `connect-agents.sh` | Collect keys, register, restart agents |
 | `seed-users.sh` | operator / auditor / alice / bob + grants |
@@ -49,3 +50,5 @@ Keys: `lab/credentials/*_ed25519` (+ `.pub`). Summary: `lab/credentials/USERS.tx
 | `ORION_API` | `http://127.0.0.1:8080` | API base |
 | `ORION_WAIT_SECS` | `600` (start) | API wait budget |
 | `VMS` | _(all with disks)_ | `lab-qemu-restart` subset, e.g. `server alpine` |
+| `AGENTS` | _(all)_ | `lab-qemu-update` / `lab-qemu-connect-agents` subset |
+| `SKIP_BUILD` | `0` | `1` = reuse `dist/` binaries on `lab-qemu-update` |
