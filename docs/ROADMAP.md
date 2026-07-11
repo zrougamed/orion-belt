@@ -161,6 +161,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [x] Go 1.26.5 + dependency bump; `govulncheck` 0-CVE gate (`make cve`, CI)
 - [x] Native packages: deb / rpm / apk via GoReleaser + nFPM (`make packages`)
 - [x] Multi-distro lab: Docker Compose + QEMU cloud images (Ubuntu, Alpine, openSUSE, Debian, Rocky)
+- [x] QEMU lab clean/start pipeline + formal E2E QA plan (`docs/E2E_TEST_PLAN.md`)
 
 ## Roadmap — Later Phases
 
@@ -201,7 +202,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Hit ~80% unit test coverage
 - [ ] Integration test suites
 - [x] End-to-end CVE gate (`e2e/cve`, `scripts/cve-check.sh`)
-- [x] Multi-distro e2e lab (compose + QEMU)
+- [x] Multi-distro e2e lab (compose + QEMU) + [E2E test plan](E2E_TEST_PLAN.md)
 - [ ] Performance benchmarks
 - [ ] Architecture Decision Records (ADRs)
 
@@ -210,7 +211,8 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [ ] Error handling standardization
 - [ ] Logging standardization
 - [ ] Config validation improvements
-- [ ] Complete remaining machine CRUD admin stubs
+- [x] Complete remaining machine CRUD admin stubs
+- [x] Session recording playback + audit trail + user management in `/ui`
 
 **Documentation**
 

@@ -17,6 +17,7 @@ auth:
   jwt_secret: "lab-only-change-me"
   jwt_expiry_hours: 24
   mfa_required: false
+  rate_limit_per_minute: 600
   strict_host_key_checking: "no"
 
 recording:

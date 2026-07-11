@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -296,29 +297,46 @@ func (a *AuthService) GetPendingRequests(ctx context.Context) ([]*common.AccessR
 	return a.store.ListPendingAccessRequests(ctx)
 }
 
-// GenerateSSHKeyPair generates a new SSH key pair
+// GenerateSSHKeyPair generates a new SSH key pair (Ed25519 by default).
 func GenerateSSHKeyPair() (privateKey, publicKey string, err error) {
-	// Generate RSA key pair
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate key pair: %w", err)
-	}
+	return GenerateSSHKeyPairAlgo("ed25519")
+}
 
-	// TODO: implement support for ECDSA, Ed25519, Ed448, FIDO
-	privateKeyPEM := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
+// GenerateSSHKeyPairAlgo generates an SSH key pair for algo: ed25519 (default) or rsa.
+func GenerateSSHKeyPairAlgo(algo string) (privateKey, publicKey string, err error) {
+	switch strings.ToLower(strings.TrimSpace(algo)) {
+	case "", "ed25519":
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate ed25519 key: %w", err)
+		}
+		privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to marshal private key: %w", err)
+		}
+		privateKeyBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+		sshPub, err := ssh.NewPublicKey(pub)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate SSH public key: %w", err)
+		}
+		return string(privateKeyBytes), string(ssh.MarshalAuthorizedKey(sshPub)), nil
+	case "rsa":
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate rsa key pair: %w", err)
+		}
+		privateKeyBytes := pem.EncodeToMemory(&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(key),
+		})
+		sshPub, err := ssh.NewPublicKey(&key.PublicKey)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate SSH public key: %w", err)
+		}
+		return string(privateKeyBytes), string(ssh.MarshalAuthorizedKey(sshPub)), nil
+	default:
+		return "", "", fmt.Errorf("unsupported key algorithm %q (use ed25519 or rsa)", algo)
 	}
-	privateKeyBytes := pem.EncodeToMemory(privateKeyPEM)
-
-	// Generate public key in SSH format
-	sshPublicKey, err := ssh.NewPublicKey(&key.PublicKey)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate SSH public key: %w", err)
-	}
-	publicKeyBytes := ssh.MarshalAuthorizedKey(sshPublicKey)
-
-	return string(privateKeyBytes), string(publicKeyBytes), nil
 }
 
 // keyEquals compares two SSH public keys

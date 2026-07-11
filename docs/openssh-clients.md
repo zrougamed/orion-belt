@@ -63,3 +63,7 @@ Then: `ssh web-01.orion`
 - Agents still run on target hosts (reverse tunnel). “Agentless” refers to **clients**, not removing machine agents.
 - ProxyJump / `direct-tcpip` is not used; Orion opens a session on the agent instead.
 - SCP: prefer `ocp`, or `ssh alice@gw 'alice@web-01 scp -t /path'` style exec (same as `ocp`).
+
+## Lab verification
+
+To exercise these flows on a local QEMU gateway, follow [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md) cases **TC-QEMU-007** … **TC-QEMU-010** (`make lab-qemu-start`).

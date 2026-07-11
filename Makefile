@@ -1,8 +1,10 @@
 .PHONY: build build-server build-client build-agent test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
         docker-push docker-up docker-down docker-logs \
-        cve packages lab-compose-up lab-compose-down \
-        lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-test
+        cve packages lab-compose-up lab-compose-down lab-bootstrap-admin \
+        lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-restart lab-qemu-test \
+        lab-qemu-connect-agents lab-qemu-collect-keys lab-qemu-register-agents \
+        lab-qemu-clean lab-qemu-start
 
 # Build variables
 BINARY_NAME=orion-belt
@@ -153,10 +155,16 @@ packages:
 lab-compose-up:
 	bash lab/compose/bootstrap-keys.sh
 	docker compose -f lab/compose/docker-compose.yml up -d --build
-	@echo "Lab up. SSH gateway :2222  API :8080"
+	@echo "Waiting for API, then bootstrapping admin…"
+	bash lab/bootstrap-admin.sh
+	@echo "Lab up. SSH gateway :2222  API :8080  UI :8080/ui"
 
 lab-compose-down:
 	docker compose -f lab/compose/docker-compose.yml down
+
+# Create/reuse lab admin SSH key and register is_admin user for /ui login
+lab-bootstrap-admin:
+	bash lab/bootstrap-admin.sh
 
 lab-qemu-images:
 	bash lab/qemu/download-images.sh
@@ -170,5 +178,30 @@ lab-qemu-up:
 lab-qemu-down:
 	bash lab/qemu/down.sh
 
+# Restart QEMU VMs in place (keep disks). Optional: VMS="server alpine"
+lab-qemu-restart:
+	bash lab/qemu/restart.sh $(VMS)
+
 lab-qemu-test:
 	bash lab/qemu/test-e2e.sh
+
+
+# Collect keys → register on server → restart agents (optional: AGENTS="alpine debian")
+lab-qemu-connect-agents:
+	bash lab/qemu/connect-agents.sh $(AGENTS)
+
+lab-qemu-collect-keys:
+	bash lab/qemu/collect-agent-keys.sh
+
+lab-qemu-register-agents:
+	bash lab/qemu/register-agents.sh
+	bash lab/qemu/restart-agents.sh
+
+
+# Full wipe (VMs + images + credentials). Opt-out: KEEP_IMAGES=1 KEEP_CREDS=1
+lab-qemu-clean:
+	bash lab/qemu/clean.sh
+
+# Clean (default) + boot + admin + agents + RBAC users + SSH howto
+lab-qemu-start:
+	bash lab/qemu/start.sh

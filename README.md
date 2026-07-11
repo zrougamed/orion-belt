@@ -82,7 +82,12 @@ Orion-Belt solves this by:
 
 - **Native packages (deb/rpm/apk):** `make packages` — see [docs/PACKAGING.md](docs/PACKAGING.md)
 - **Zero-CVE gate:** `make cve` (Go 1.26.5 + govulncheck)
-- **Multi-distro lab:** Docker Compose or QEMU (Ubuntu, Alpine, openSUSE, Debian, Rocky) — see [lab/README.md](lab/README.md)
+- **Multi-distro lab:** Docker Compose or QEMU — see [lab/README.md](lab/README.md)
+- **E2E / QA plan (QEMU):** [docs/E2E_TEST_PLAN.md](docs/E2E_TEST_PLAN.md) — steps, expected results, pass/fail criteria
+
+```bash
+make lab-qemu-start    # clean → boot → admin → agents → RBAC users → SSH howto
+```
 
 See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 

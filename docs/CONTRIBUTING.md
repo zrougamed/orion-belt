@@ -90,11 +90,10 @@ ORION_CVE_E2E=1 go test ./e2e/cve/ -v
 ```bash
 make packages               # deb/rpm/apk → dist/
 make lab-compose-up         # multi-distro Docker agents
-# or:
-ORION_REFRESH_IMAGES=1 make lab-qemu-images && make lab-qemu-up
+make lab-qemu-start         # full QEMU E2E bring-up (cleans by default)
 ```
 
-See [lab/README.md](../lab/README.md) and [PACKAGING.md](PACKAGING.md).
+See [lab/README.md](../lab/README.md), [PACKAGING.md](PACKAGING.md), and the QA plan [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md).
 
 ---
 

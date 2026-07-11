@@ -17,6 +17,8 @@ auth:
   jwt_secret: "change-me-to-a-long-random-secret"
   jwt_expiry_hours: 24
   mfa_required: false
+  # API requests per authenticated user (or IP) per minute. Default 600.
+  rate_limit_per_minute: 600
   webauthn:
     enabled: true
     rp_display_name: "Orion Belt"

@@ -62,5 +62,16 @@ runcmd:
       ssh-keygen -t ed25519 -f /etc/orion-belt/agent_key -N ""
     fi
   - |
-    nohup /usr/bin/orion-belt-agent -c /etc/orion-belt/agent.yaml >/var/log/orion-agent.log 2>&1 &
-    echo "orion-belt agent started on {{HOSTNAME}}"
+    # Retry loop: server VM may still be finishing cloud-init when agents boot.
+    (
+      i=0
+      while [ "$i" -lt 60 ]; do
+        i=$((i + 1))
+        if /usr/bin/orion-belt-agent -c /etc/orion-belt/agent.yaml >>/var/log/orion-agent.log 2>&1; then
+          break
+        fi
+        echo "agent connect attempt $i failed; retrying in 10s" >>/var/log/orion-agent.log
+        sleep 10
+      done
+    ) &
+    echo "orion-belt agent launcher started on {{HOSTNAME}}"

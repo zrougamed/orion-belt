@@ -67,14 +67,17 @@ collect_key 2202 opensuse agent-opensuse
 collect_key 2203 debian agent-debian
 collect_key 2204 rocky agent-rocky
 
+echo "==> Bootstrapping lab admin for /ui"
+bash "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bootstrap-admin.sh"
+
+echo "==> Connecting QEMU agents to the server"
+bash "$LAB/connect-agents.sh"
+
 cat <<EOF
 
-E2E smoke checks passed for gateway reachability.
-Register agent keys with the server (once DB/API auth is configured), e.g.:
-
-  orion-belt-server agent register --name alpine-lab --public-key \$(cat $LAB/run/agent-alpine.pub)
-
-Then confirm connected agents:
-
-  curl -H "Authorization: Bearer \$TOKEN" $API/api/v1/admin/agents/connected
+Lab ready.
+  UI:     http://127.0.0.1:8080/ui
+  Admin:  make lab-bootstrap-admin / lab/credentials/admin_ed25519.pub
+  Agents: make lab-qemu-connect-agents
+  SSH:    ./lab/qemu/ssh.sh alpine
 EOF

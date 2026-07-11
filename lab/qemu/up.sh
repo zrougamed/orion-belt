@@ -110,7 +110,12 @@ boot_vm() {
     return
   fi
 
-  qemu-img create -f qcow2 -F qcow2 -b "$image" "$disk" 8G >/dev/null
+  # Reuse existing overlay ("as is"); only create on first boot
+  if [[ ! -f "$disk" ]]; then
+    qemu-img create -f qcow2 -F qcow2 -b "$image" "$disk" 8G >/dev/null
+  else
+    echo "Reusing existing disk $disk"
+  fi
 
   # shellcheck disable=SC2086
   qemu-system-x86_64 \

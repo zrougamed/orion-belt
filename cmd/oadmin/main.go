@@ -174,14 +174,8 @@ func runApprove(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Get current user ID (reviewer)
-	// For now, we'll use the username as reviewer ID
-	// In production, you'd want to get the actual user ID from the API
-	reviewerID := username
-	if reviewerID == "" {
-		reviewerID = os.Getenv("USER")
-	}
-
+	// Authenticated admin identity is preferred by the API when reviewer_id is empty.
+	reviewerID := ""
 	if err := apiClient.ApproveAccessRequest(requestID, reviewerID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error approving request: %v\n", err)
 		os.Exit(1)
@@ -199,12 +193,7 @@ func runReject(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Get current user ID (reviewer)
-	reviewerID := username
-	if reviewerID == "" {
-		reviewerID = os.Getenv("USER")
-	}
-
+	reviewerID := ""
 	if err := apiClient.RejectAccessRequest(requestID, reviewerID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error rejecting request: %v\n", err)
 		os.Exit(1)

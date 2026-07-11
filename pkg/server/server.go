@@ -147,13 +147,14 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 
 	// Initialize API server
 	apiServer := api.NewAPIServer(store, authService, logger, api.Options{
-		JWTSecret:      config.Auth.JWTSecret,
-		JWTExpiryHours: config.Auth.JWTExpiryHours,
-		PluginManager:  pluginManager,
-		MetricsEnabled: true,
-		MFARequired:    config.Auth.MFARequired,
-		RecordingCrypt: recCrypto,
-		WebAuthn:       wa,
+		JWTSecret:          config.Auth.JWTSecret,
+		JWTExpiryHours:     config.Auth.JWTExpiryHours,
+		PluginManager:      pluginManager,
+		MetricsEnabled:     true,
+		MFARequired:        config.Auth.MFARequired,
+		RecordingCrypt:     recCrypto,
+		WebAuthn:           wa,
+		RateLimitPerMinute: config.Auth.RateLimitPerMinute,
 	})
 
 	server := &Server{

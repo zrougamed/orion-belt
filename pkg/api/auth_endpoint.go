@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"golang.org/x/crypto/ssh"
 )
@@ -83,14 +84,12 @@ func (s *APIServer) revokeAPIKey(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 
-	// TODO: implemet auth checks
 	key, err := s.store.GetAPIKey(ctx, keyID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found"})
 		return
 	}
 
-	// TODO: implemet auth checks
 	isAdmin, _ := c.Get("is_admin")
 	if key.UserID != userID.(string) && !isAdmin.(bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
@@ -113,14 +112,12 @@ func (s *APIServer) deleteAPIKey(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 
-	// TODO: implemet auth checks
 	key, err := s.store.GetAPIKey(ctx, keyID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found"})
 		return
 	}
 
-	// TODO: implemet auth checks
 	isAdmin, _ := c.Get("is_admin")
 	if key.UserID != userID.(string) && !isAdmin.(bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
@@ -225,6 +222,10 @@ func (s *APIServer) login(c *gin.Context) {
 		}
 	}
 
+	_ = s.store.CreateAuditLog(ctx, common.NewAuditLog(user.ID, "auth.login", "user:"+user.ID, c.ClientIP(), map[string]interface{}{
+		"username": user.Username,
+	}))
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -261,7 +262,6 @@ func (s *APIServer) logout(c *gin.Context) {
 
 // getCurrentUser returns the currently authenticated user
 func (s *APIServer) getCurrentUser(c *gin.Context) {
-	// TODO: implemet auth checks
 	userID, _ := c.Get("user_id")
 	ctx := c.Request.Context()
 

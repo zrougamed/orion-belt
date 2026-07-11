@@ -1,18 +1,51 @@
 # QEMU multi-distro lab
 
-See [../README.md](../README.md) for the full lab overview and current image pins.
+See [../README.md](../README.md) for image pins and overview.
+
+## Recommended
 
 ```bash
-ORION_REFRESH_IMAGES=1 ./download-images.sh   # force newest images
-./up.sh
-./test-e2e.sh
-./down.sh
+make -C ../.. lab-qemu-clean    # wipe VMs + images + credentials (default)
+make -C ../.. lab-qemu-start    # clean + boot + admin + agents + users + SSH howto
 ```
+
+Or one shot: `make -C ../.. lab-qemu-start` (cleans first unless `SKIP_CLEAN=1`).
+
+**E2E QA test plan (steps + expected results):** [../docs/E2E_TEST_PLAN.md](../docs/E2E_TEST_PLAN.md)
+
+## Scripts
+
+| Script | Role |
+|--------|------|
+| `clean.sh` | Stop VMs; delete `run/`, `images/`, `credentials/` (opt-out: `KEEP_IMAGES`, `KEEP_CREDS`) |
+| `start.sh` | Full pipeline (clean → up → admin → agents → seed users → SSH howto) |
+| `up.sh` / `down.sh` | Boot / stop VMs only |
+| `restart.sh` | Restart VMs in place (reuse disks; optional names) |
+| `bootstrap-admin` (../) | Create admin + print UI login |
+| `connect-agents.sh` | Collect keys, register, restart agents |
+| `seed-users.sh` | operator / auditor / alice / bob + grants |
+| `print-ssh-howto.sh` | OpenSSH examples from this host |
+| `ssh.sh` | SSH into server/agent VMs |
+
+## Demo RBAC
+
+| User | Role | Access |
+|------|------|--------|
+| `admin` | admin | all |
+| `operator` | operator | all agents |
+| `auditor` | auditor | no machine grants |
+| `alice` | user | `agent-alpine` only |
+| `bob` | user | `agent-debian` (ssh) only |
+
+Keys: `lab/credentials/*_ed25519` (+ `.pub`). Summary: `lab/credentials/USERS.txt`.
+
+## Env
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `ORION_PKG_PORT` | `8765` | Host HTTP port serving `dist/` |
-| `ORION_VERSION` | `0.0.0-dev` | Package version string in cloud-init URLs |
-| `ORION_LAB_SSH_KEY` | `run/lab_id_ed25519` | SSH key injected via cloud-init |
-| `ORION_API` | `http://127.0.0.1:8080` | API base for `test-e2e.sh` |
-| `ORION_REFRESH_IMAGES` | `0` | Set `1` to re-download cloud images |
+| `SKIP_CLEAN` | `0` | `1` = start without wiping |
+| `KEEP_IMAGES` | `0` | `1` = keep downloaded qcow2 on clean |
+| `KEEP_CREDS` | `0` | `1` = keep `lab/credentials` on clean |
+| `ORION_API` | `http://127.0.0.1:8080` | API base |
+| `ORION_WAIT_SECS` | `600` (start) | API wait budget |
+| `VMS` | _(all with disks)_ | `lab-qemu-restart` subset, e.g. `server alpine` |
