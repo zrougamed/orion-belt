@@ -543,6 +543,7 @@ func (s *PostgresStore) ListSessions(ctx context.Context, limit, offset int) ([]
 	defer rows.Close()
 
 	var sessions []*common.Session
+	sessions = make([]*common.Session, 0)
 	for rows.Next() {
 		session := &common.Session{}
 		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,
@@ -566,7 +567,7 @@ func (s *PostgresStore) ListActiveSessions(ctx context.Context) ([]*common.Sessi
 	}
 	defer rows.Close()
 
-	var sessions []*common.Session
+	sessions := make([]*common.Session, 0)
 	for rows.Next() {
 		session := &common.Session{}
 		if err := rows.Scan(&session.ID, &session.UserID, &session.MachineID, &session.RemoteUser,

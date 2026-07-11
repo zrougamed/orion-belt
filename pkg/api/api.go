@@ -31,6 +31,7 @@ type APIServer struct {
 	agentCommander  AgentCommander
 	mfaRequired    bool
 	recordingCrypt *recording.Crypto
+	recorder       *recording.Recorder
 	webAuthn       *webauthn.WebAuthn
 	terminalBridge TerminalBridge
 }
@@ -50,6 +51,7 @@ type Options struct {
 	MetricsEnabled     bool
 	MFARequired        bool
 	RecordingCrypt     *recording.Crypto
+	Recorder           *recording.Recorder
 	WebAuthn           *webauthn.WebAuthn
 	TerminalBridge     TerminalBridge
 	RateLimitPerMinute int
@@ -85,6 +87,7 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		rateLimiter:    newRateLimiter(rateLimit, time.Minute),
 		mfaRequired:    opt.MFARequired,
 		recordingCrypt: opt.RecordingCrypt,
+		recorder:       opt.Recorder,
 		webAuthn:       opt.WebAuthn,
 		terminalBridge: opt.TerminalBridge,
 	}
@@ -176,6 +179,9 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
+
+		// First-run / operator setup checklist
+		protected.GET("/setup/status", s.setupStatus)
 
 		// MFA
 		s.registerMFARoutes(protected)
@@ -1018,6 +1024,9 @@ func (s *APIServer) listSessions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if sessions == nil {
+		sessions = []*common.Session{}
+	}
 	c.JSON(http.StatusOK, sessions)
 }
 
@@ -1027,6 +1036,9 @@ func (s *APIServer) listActiveSessions(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if sessions == nil {
+		sessions = []*common.Session{}
 	}
 	c.JSON(http.StatusOK, sessions)
 }

@@ -1,7 +1,7 @@
 .PHONY: build build-server build-client build-agent test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
         docker-push docker-up docker-down docker-logs \
-        cve packages lab-compose-up lab-compose-down lab-bootstrap-admin \
+        cve packages repos lab-compose-up lab-compose-down lab-bootstrap-admin \
         lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-restart lab-qemu-test \
         lab-qemu-connect-agents lab-qemu-collect-keys lab-qemu-register-agents \
         lab-qemu-clean lab-qemu-start
@@ -151,6 +151,10 @@ cve:
 # Build deb/rpm/apk (+ binaries) into dist/
 packages:
 	bash scripts/package.sh
+
+# Build static apt/rpm/apk repos under repos/ (after make packages)
+repos:
+	bash scripts/publish-repos.sh
 
 lab-compose-up:
 	bash lab/compose/bootstrap-keys.sh

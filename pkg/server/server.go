@@ -153,6 +153,7 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		MetricsEnabled:     true,
 		MFARequired:        config.Auth.MFARequired,
 		RecordingCrypt:     recCrypto,
+		Recorder:           recorder,
 		WebAuthn:           wa,
 		RateLimitPerMinute: config.Auth.RateLimitPerMinute,
 	})

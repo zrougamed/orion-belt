@@ -23,5 +23,25 @@ fi
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
-  echo "Enable with: systemctl enable --now orion-belt-server"
 fi
+
+cat <<'EOF'
+
+Orion Belt server installed.
+────────────────────────────────────────
+Next steps (setup wizard):
+
+  1. Edit /etc/orion-belt/server.yaml
+     - database.connection_string
+     - auth.jwt_secret
+
+  2. systemctl enable --now orion-belt-server
+
+  3. orion-belt-server setup
+     Creates the first admin and prints how to add agents / users.
+
+  4. Open http://<host>:8080/ui  → Setup guide
+
+Docs: https://github.com/zrougamed/orion-belt/blob/master/docs/SETUP.md
+
+EOF

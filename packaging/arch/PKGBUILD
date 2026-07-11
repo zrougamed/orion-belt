@@ -1,0 +1,71 @@
+# Maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
+# Binary packages from GitHub release tarballs (easy path vs building from source).
+#
+#   cd packaging/arch
+#   # set pkgver to a released tag without leading v, then:
+#   makepkg -si
+
+pkgbase=orion-belt
+pkgname=(orion-belt orion-belt-agent orion-belt-tools)
+pkgver=0.5.0
+pkgrel=1
+pkgdesc='Orion Belt privileged access gateway'
+arch=(x86_64 aarch64)
+url='https://github.com/zrougamed/orion-belt'
+license=(Apache-2.0)
+options=(!strip)
+source_x86_64=("$url/releases/download/v${pkgver}/orion-belt_${pkgver}_linux_amd64.tar.gz")
+source_aarch64=("$url/releases/download/v${pkgver}/orion-belt_${pkgver}_linux_arm64.tar.gz")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+_find() {
+  find "$srcdir" -type f -name "$1" -print -quit
+}
+
+package_orion-belt() {
+  pkgdesc='Orion Belt PAM gateway server'
+  backup=('etc/orion-belt/server.yaml')
+
+  install -Dm755 "$(_find orion-belt-server)" "$pkgdir/usr/bin/orion-belt-server"
+
+  unit="$(_find orion-belt-server.service || true)"
+  if [[ -n "$unit" ]]; then
+    install -Dm644 "$unit" "$pkgdir/usr/lib/systemd/system/orion-belt-server.service"
+  fi
+
+  cfg="$(_find server.example.yaml || true)"
+  if [[ -n "$cfg" ]]; then
+    install -Dm644 "$cfg" "$pkgdir/etc/orion-belt/server.yaml"
+  else
+    install -dm755 "$pkgdir/etc/orion-belt"
+  fi
+
+  install -dm750 "$pkgdir/var/lib/orion-belt/recordings" "$pkgdir/var/log/orion-belt"
+}
+
+package_orion-belt-agent() {
+  pkgdesc='Orion Belt reverse SSH agent'
+  backup=('etc/orion-belt/agent.yaml')
+
+  install -Dm755 "$(_find orion-belt-agent)" "$pkgdir/usr/bin/orion-belt-agent"
+
+  unit="$(_find orion-belt-agent.service || true)"
+  if [[ -n "$unit" ]]; then
+    install -Dm644 "$unit" "$pkgdir/usr/lib/systemd/system/orion-belt-agent.service"
+  fi
+
+  cfg="$(_find agent.example.yaml || true)"
+  if [[ -n "$cfg" ]]; then
+    install -Dm644 "$cfg" "$pkgdir/etc/orion-belt/agent.yaml"
+  else
+    install -dm755 "$pkgdir/etc/orion-belt"
+  fi
+}
+
+package_orion-belt-tools() {
+  pkgdesc='Orion Belt CLI tools (osh, ocp, oadmin)'
+  install -Dm755 "$(_find osh)" "$pkgdir/usr/bin/osh"
+  install -Dm755 "$(_find ocp)" "$pkgdir/usr/bin/ocp"
+  install -Dm755 "$(_find oadmin)" "$pkgdir/usr/bin/oadmin"
+}

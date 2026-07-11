@@ -46,6 +46,7 @@ recordings/
 
 # Release / packaging output
 dist/
+repos/
 
 # QEMU / compose lab state
 lab/qemu/images/

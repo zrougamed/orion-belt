@@ -174,17 +174,25 @@ func (rw *RecordingWriter) Write(p []byte) (n int, err error) {
 
 // RecordingReader wraps an io.Reader to record data
 type RecordingReader struct {
-	reader io.Reader
+	reader   io.Reader
+	recorder *SessionRecorder
 }
 
 // NewRecordingReader creates a new recording reader
 func NewRecordingReader(reader io.Reader, recorder *SessionRecorder) *RecordingReader {
 	return &RecordingReader{
-		reader: reader,
+		reader:   reader,
+		recorder: recorder,
 	}
 }
 
 // Read reads data and records it
 func (rr *RecordingReader) Read(p []byte) (n int, err error) {
-	return rr.reader.Read(p)
+	n, err = rr.reader.Read(p)
+	if n > 0 && rr.recorder != nil {
+		if werr := rr.recorder.Write(p[:n]); werr != nil {
+			fmt.Fprintf(os.Stderr, "Recording error: %v\n", werr)
+		}
+	}
+	return n, err
 }

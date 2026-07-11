@@ -575,6 +575,7 @@
   const NAV = {
     admin: [
       { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "setup", label: "Setup guide", ico: "?" },
       { id: "requests", label: "Access requests", ico: "◇" },
       { id: "machines", label: "Machines", ico: "▣" },
       { id: "terminal", label: "Terminal", ico: "▸" },
@@ -587,6 +588,7 @@
     ],
     operator: [
       { id: "dashboard", label: "Dashboard", ico: "◆" },
+      { id: "setup", label: "Setup guide", ico: "?" },
       { id: "requests", label: "Access requests", ico: "◇" },
       { id: "machines", label: "Machines", ico: "▣" },
       { id: "terminal", label: "Terminal", ico: "▸" },
@@ -920,6 +922,7 @@
     try {
       const map = {
         dashboard: renderDashboard,
+        setup: renderSetup,
         requests: renderRequests,
         machines: renderMachines,
         terminal: renderTerminal,
@@ -949,10 +952,20 @@
   /* ── Dashboard ── */
   async function renderDashboard(root) {
     const role = roleOf(state.user);
-    let machines = [], sessions = [], pending = [];
+    let machines = [], sessions = [], pending = [], setup = null;
     try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
     try { sessions = (await api("/sessions/active")) || []; } catch (_) { sessions = []; }
     try { pending = (await api("/access-requests/pending")) || []; } catch (_) { pending = []; }
+    if (role === "admin" || role === "operator") {
+      try { setup = await api("/setup/status"); } catch (_) { setup = null; }
+    }
+
+    const setupBanner = setup && !setup.complete ? `
+      <div class="card" style="border-color: var(--accent); background: var(--accent-soft)">
+        <h3>Finish setup</h3>
+        <p class="muted" style="margin:0 0 0.75rem">${esc(setup.next || "")}</p>
+        <button type="button" class="btn primary" data-goto-setup>Open setup guide</button>
+      </div>` : "";
 
     root.innerHTML = `
       <div class="page-head">
@@ -961,6 +974,7 @@
           <p>Live posture across machines, sessions, and access.</p>
         </div>
       </div>
+      ${setupBanner}
       <div class="grid">
         <div class="card"><div class="stat-label">Machines</div><div class="stat">${machines.length}</div></div>
         <div class="card"><div class="stat-label">Active sessions</div><div class="stat">${sessions.length}</div></div>
@@ -976,7 +990,60 @@
         ${sessionMiniTable(sessions)}
       </div>`;
     bindRequestActions(root);
+    const go = root.querySelector("[data-goto-setup]");
+    if (go) go.onclick = () => { state.view = "setup"; buildNav(); render(); };
   }
+
+  /* ── Setup guide ── */
+  async function renderSetup(root) {
+    let setup = { steps: {}, counts: {}, next: "", complete: false };
+    try { setup = await api("/setup/status"); } catch (e) {
+      root.innerHTML = `<div class="card"><div class="err">${esc(e.message)}</div></div>`;
+      return;
+    }
+    const s = setup.steps || {};
+    const c = setup.counts || {};
+    const row = (ok, title, detail) => `
+      <div style="display:flex;gap:0.75rem;align-items:flex-start;padding:0.65rem 0;border-bottom:1px solid var(--line-soft)">
+        <span style="color:${ok ? "var(--ok)" : "var(--warn)"};font-weight:600">${ok ? "✓" : "○"}</span>
+        <div><strong>${esc(title)}</strong><div class="muted" style="margin-top:0.2rem">${detail}</div></div>
+      </div>`;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Setup guide</h1>
+          <p>Checklist to get agents, users, and access working.</p>
+        </div>
+      </div>
+      <div class="card">
+        <p style="margin-top:0">${setup.complete
+          ? `<span class="okmsg">Core setup looks complete.</span>`
+          : `<span class="muted">Next:</span> <strong>${esc(setup.next || "")}</strong>`}</p>
+        ${row(!!s.admin_exists, "Admin account", `${c.admins || 0} admin(s)`)}
+        ${row(!!s.has_machines, "Machines registered", `${c.machines || 0} machine(s)`)}
+        ${row(!!s.has_connected_agents, "Agents connected", `${c.connected_agents || 0} online`)}
+        ${row(!!s.has_users, "Non-admin users", `${c.users || 0} user(s)`)}
+        ${row(!!s.has_permissions, "Machine grants", `${c.permissions || 0} permission(s)`)}
+      </div>
+      <div class="card">
+        <h3>1. Admin</h3>
+        <p class="muted">CLI: <code class="mono">orion-belt-server setup</code> or
+        <code class="mono">orion-belt-server user create --admin …</code></p>
+        <h3>2. Agents</h3>
+        <p class="muted">Install <code class="mono">orion-belt-agent</code> on targets, point
+        <code class="mono">agent.yaml</code> at this gateway (:2222), enable the service, then register
+        (Agents page or public register API).</p>
+        <h3>3. Users &amp; grants</h3>
+        <p class="muted">Create users under Users, then grant machine access with allowed
+        <code class="mono">remote_users</code> (e.g. root). Sessions (SSH gateway + web terminal) are recorded automatically.</p>
+        <h3>4. Connect</h3>
+        <p class="muted mono">ssh -i key -p 2222 user+machine@gateway</p>
+        <p class="muted">Or use Terminal in this UI — those sessions appear under Sessions too.</p>
+      </div>`;
+  }
+
+  /* ── Machines ── */
 
   function sessionMiniTable(rows) {
     if (!rows.length) return `<div class="empty">No active sessions.</div>`;

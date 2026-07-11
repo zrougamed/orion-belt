@@ -3,5 +3,14 @@ set -e
 mkdir -p /etc/orion-belt
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
-  echo "Configure /etc/orion-belt/agent.yaml then: systemctl enable --now orion-belt-agent"
 fi
+
+cat <<'EOF'
+
+Orion Belt agent installed.
+────────────────────────────────────────
+  1. Edit /etc/orion-belt/agent.yaml (gateway host, port 2222)
+  2. systemctl enable --now orion-belt-agent
+  3. Register this host with the server (UI Setup guide / Agents)
+
+EOF

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/metrics"
+	"github.com/zrougamed/orion-belt/pkg/recording"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -56,12 +59,13 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("user_id")
+	uid, _ := userID.(string)
 	m, err := s.terminalBridge.ResolveMachine(machine)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "machine not found"})
 		return
 	}
-	if err := s.authService.CheckPermissionWithRemoteUser(c.Request.Context(), userID.(string), m.ID, "ssh", remoteUser); err != nil {
+	if err := s.authService.CheckPermissionWithRemoteUser(c.Request.Context(), uid, m.ID, "ssh", remoteUser); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
 		return
 	}
@@ -71,6 +75,41 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+
+	ctx := c.Request.Context()
+	var session *common.Session
+	var sessionRecorder *recording.SessionRecorder
+	if s.recorder != nil {
+		storagePath := s.recorder.GetRecordingStoragePath()
+		session = common.NewSession(uid, m.ID, remoteUser, storagePath)
+		if err := s.store.CreateSession(ctx, session); err != nil {
+			s.logger.Error("Failed to create web terminal session: %v", err)
+		} else {
+			s.recordAudit(c, "session.web_terminal.start", "session:"+session.ID, map[string]interface{}{
+				"machine_id":  m.ID,
+				"machine":     m.Name,
+				"remote_user": remoteUser,
+			})
+			metrics.Default.SessionStarted()
+			var recErr error
+			sessionRecorder, recErr = s.recorder.StartRecording(session.ID)
+			if recErr != nil {
+				s.logger.Error("Failed to start web terminal recording: %v", recErr)
+			}
+			defer func() {
+				endTime := time.Now()
+				bg := context.Background()
+				_ = s.store.EndSession(bg, session.ID, endTime)
+				_ = s.recorder.StopRecording(session.ID)
+				metrics.Default.SessionEnded()
+				entry := common.NewAuditLog(uid, "session.web_terminal.end", "session:"+session.ID, c.ClientIP(), map[string]interface{}{
+					"machine_id": m.ID,
+					"machine":    m.Name,
+				})
+				_ = s.store.CreateAuditLog(bg, entry)
+			}()
+		}
+	}
 
 	channel, reqs, err := s.terminalBridge.OpenAgentSession(m.ID, remoteUser)
 	if err != nil {
@@ -98,6 +137,9 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 		for {
 			n, err := channel.Read(buf)
 			if n > 0 {
+				if sessionRecorder != nil {
+					_ = sessionRecorder.Write(buf[:n])
+				}
 				_ = conn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			}
 			if err != nil {
@@ -122,6 +164,9 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 				}{r.Cols, r.Rows, 0, 0}))
 			}
 			continue
+		}
+		if sessionRecorder != nil {
+			_ = sessionRecorder.Write(data)
 		}
 		if _, err := channel.Write(data); err != nil {
 			break

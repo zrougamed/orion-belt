@@ -69,12 +69,51 @@ git tag v0.5.0
 git push origin v0.5.0
 ```
 
-## APT/YUM repos (optional follow-up)
+## APT / YUM / APK repositories
 
-For production, mirror `dist/` into:
+Build packages, then publish static repo trees:
 
-- an APT repo (`reprepro` / `aptly`)
-- an RPM repo (`createrepo_c`)
-- an Alpine repo (`abuild`)
+```bash
+make packages
+./scripts/publish-repos.sh
+# → repos/apt  repos/rpm  repos/apk
+```
 
-Point hosts at those repos so `apt install orion-belt` / `dnf install orion-belt` work without downloading packages by hand.
+Serve `repos/` over HTTPS (nginx, CDN, GitHub Pages, S3). Client snippets:
+
+| Format | Snippet |
+|--------|---------|
+| APT | `packaging/repos/apt.sources.example` |
+| RPM/DNF/Zypper | `packaging/repos/rpm.repo.example` |
+| Alpine | `packaging/repos/apk.repositories.example` |
+
+Signing (recommended for production):
+
+```bash
+ORION_GPG_KEY=YOURKEYID ./scripts/publish-repos.sh
+ORION_APK_PRIVKEY=~/.abuild/orion-belt.rsa ./scripts/publish-repos.sh
+```
+
+Wire the script into release CI after GoReleaser to refresh the hosted repo.
+
+### Arch Linux
+
+Binary packages via `packaging/arch/PKGBUILD` (reads GitHub release tarballs):
+
+```bash
+cd packaging/arch
+# bump pkgver to match a released tag (without leading v)
+makepkg -si
+```
+
+That installs `orion-belt`, `orion-belt-agent`, and `orion-belt-tools`. Publishing to the AUR is a follow-up once a stable version is tagged.
+
+## First-run setup
+
+See [SETUP.md](SETUP.md). After install:
+
+```bash
+sudoedit /etc/orion-belt/server.yaml
+sudo systemctl enable --now orion-belt-server
+orion-belt-server setup
+```
