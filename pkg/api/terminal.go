@@ -91,7 +91,8 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 	})
 	metrics.Default.SessionStarted()
 
-	sessionRecorder, recErr := s.recorder.StartRecording(session.ID)
+	title := fmt.Sprintf("%s as %s (web)", m.Name, remoteUser)
+	sessionRecorder, recErr := s.recorder.StartRecordingSized(session.ID, 120, 40, title)
 	if recErr != nil {
 		s.logger.Error("Failed to start web terminal recording: %v", recErr)
 		_ = s.store.EndSession(context.Background(), session.ID, time.Now())
@@ -99,7 +100,6 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start session recording"})
 		return
 	}
-	_ = sessionRecorder.Write([]byte("# Source: web-terminal\n# Machine: " + m.Name + "\n# Remote user: " + remoteUser + "\n\n"))
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -176,12 +176,13 @@ func (s *APIServer) terminalWS(c *gin.Context) {
 				_, _ = channel.SendRequest("window-change", false, ssh.Marshal(&struct {
 					Columns, Rows, Width, Height uint32
 				}{r.Cols, r.Rows, 0, 0}))
+				if sessionRecorder != nil {
+					_ = sessionRecorder.RecordResize(r.Cols, r.Rows)
+				}
 			}
 			continue
 		}
-		if sessionRecorder != nil {
-			_ = sessionRecorder.Write(data)
-		}
+		// Output-only cast: do not record keystrokes (PTY echo would duplicate them).
 		if _, err := channel.Write(data); err != nil {
 			break
 		}

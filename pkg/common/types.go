@@ -206,7 +206,7 @@ func NewSession(userID, machineID, remoteUser, storagePath string) *Session {
 // NewSessionWithSource creates a session tagged with a source (ssh|web).
 func NewSessionWithSource(userID, machineID, remoteUser, storagePath, source string) *Session {
 	sessionID := uuid.New().String()
-	recordingPath := filepath.Join(storagePath, fmt.Sprintf("%s.txt", sessionID))
+	recordingPath := filepath.Join(storagePath, fmt.Sprintf("%s.cast", sessionID))
 	if source == "" {
 		source = "ssh"
 	}

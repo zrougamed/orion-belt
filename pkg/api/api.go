@@ -1094,6 +1094,11 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 		"user_id":    session.UserID,
 	})
 
+	contentType := "text/plain; charset=utf-8"
+	if strings.HasSuffix(session.RecordingPath, ".cast") {
+		contentType = "application/x-asciicast"
+	}
+
 	if s.recordingCrypt != nil && s.recordingCrypt.Enabled() {
 		plain, err := s.recordingCrypt.DecryptFile(session.RecordingPath)
 		if err != nil {
@@ -1101,10 +1106,11 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt recording"})
 			return
 		}
-		c.Data(http.StatusOK, "text/plain; charset=utf-8", plain)
+		c.Data(http.StatusOK, contentType, plain)
 		return
 	}
 
+	c.Header("Content-Type", contentType)
 	c.File(session.RecordingPath)
 }
 

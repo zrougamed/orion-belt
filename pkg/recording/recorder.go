@@ -2,19 +2,26 @@ package recording
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sync"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
 )
 
-// ANSI regex to strip terminal colors and cursor movements
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+// Cast v2 header written as the first line of each recording file.
+type castHeader struct {
+	Version   int               `json:"version"`
+	Width     int               `json:"width"`
+	Height    int               `json:"height"`
+	Timestamp int64             `json:"timestamp"`
+	Title     string            `json:"title,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+}
 
 type Recorder struct {
 	storagePath string
@@ -24,17 +31,19 @@ type Recorder struct {
 	sessions    map[string]*SessionRecorder
 }
 
-// SessionRecorder records a single SSH session
+// SessionRecorder records PTY output as a timed cast (version 2).
 type SessionRecorder struct {
 	sessionID string
 	buf       *bytes.Buffer
 	filePath  string
 	crypto    *Crypto
 	startTime time.Time
+	width     int
+	height    int
 	mu        sync.Mutex
 }
 
-// NewRecorder creates a new session recorder
+// NewRecorder creates a new session recorder.
 func NewRecorder(storagePath string, logger *common.Logger) (*Recorder, error) {
 	if err := os.MkdirAll(storagePath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
@@ -52,27 +61,51 @@ func (r *Recorder) SetCrypto(c *Crypto) {
 	r.crypto = c
 }
 
-// StartRecording starts recording a new session
+// StartRecording starts a timed cast recording (default 120×40).
 func (r *Recorder) StartRecording(sessionID string) (*SessionRecorder, error) {
+	return r.StartRecordingSized(sessionID, 120, 40, "")
+}
+
+// StartRecordingSized starts a timed cast with an initial terminal size and optional title.
+func (r *Recorder) StartRecordingSized(sessionID string, width, height int, title string) (*SessionRecorder, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, exists := r.sessions[sessionID]; exists {
 		return nil, fmt.Errorf("session already being recorded: %s", sessionID)
 	}
+	if width <= 0 {
+		width = 120
+	}
+	if height <= 0 {
+		height = 40
+	}
 
 	filename := r.GetRecordingPath(sessionID)
+	start := time.Now()
 	recorder := &SessionRecorder{
 		sessionID: sessionID,
 		buf:       &bytes.Buffer{},
 		filePath:  filename,
 		crypto:    r.crypto,
-		startTime: time.Now(),
+		startTime: start,
+		width:     width,
+		height:    height,
 	}
 
-	header := fmt.Sprintf("# Orion-Belt Session Recording\n# Session ID: %s\n# Start Time: %s\n\n",
-		sessionID, recorder.startTime.Format(time.RFC3339))
-	recorder.buf.WriteString(header)
+	hdr, err := json.Marshal(castHeader{
+		Version:   2,
+		Width:     width,
+		Height:    height,
+		Timestamp: start.Unix(),
+		Title:     title,
+		Env:       map[string]string{"TERM": "xterm-256color"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cast header: %w", err)
+	}
+	recorder.buf.Write(hdr)
+	recorder.buf.WriteByte('\n')
 
 	r.sessions[sessionID] = recorder
 	r.logger.Info("Started recording session: %s", sessionID)
@@ -80,7 +113,7 @@ func (r *Recorder) StartRecording(sessionID string) (*SessionRecorder, error) {
 	return recorder, nil
 }
 
-// StopRecording stops recording a session and flushes (optionally encrypted) to disk
+// StopRecording stops recording a session and flushes (optionally encrypted) to disk.
 func (r *Recorder) StopRecording(sessionID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -90,11 +123,7 @@ func (r *Recorder) StopRecording(sessionID string) error {
 		return fmt.Errorf("session not being recorded: %s", sessionID)
 	}
 
-	footer := fmt.Sprintf("\n# End Time: %s\n# Duration: %s\n",
-		time.Now().Format(time.RFC3339),
-		time.Since(recorder.startTime))
 	recorder.mu.Lock()
-	recorder.buf.WriteString(footer)
 	plain := append([]byte(nil), recorder.buf.Bytes()...)
 	recorder.mu.Unlock()
 
@@ -114,7 +143,7 @@ func (r *Recorder) StopRecording(sessionID string) error {
 	return err
 }
 
-// GetRecorder returns a session recorder
+// GetRecorder returns a session recorder.
 func (r *Recorder) GetRecorder(sessionID string) (*SessionRecorder, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -127,36 +156,63 @@ func (r *Recorder) GetRecorder(sessionID string) (*SessionRecorder, error) {
 	return recorder, nil
 }
 
-// GetRecordingStoragePath returns the path to the recorder storage path
+// GetRecordingStoragePath returns the recorder storage directory.
 func (r *Recorder) GetRecordingStoragePath() string {
 	return r.storagePath
 }
 
-// GetRecordingPath returns the path to a session recording
+// GetRecordingPath returns the on-disk path for a session cast.
 func (r *Recorder) GetRecordingPath(sessionID string) string {
-	return filepath.Join(r.storagePath, fmt.Sprintf("%s.txt", sessionID))
+	return filepath.Join(r.storagePath, fmt.Sprintf("%s.cast", sessionID))
 }
 
-// Write writes data to the session recording buffer
+// Write records PTY output as a timed cast event. Raw bytes are kept so the
+// player can reconstruct the terminal (do not strip control sequences).
 func (s *SessionRecorder) Write(data []byte) error {
+	return s.writeEvent("o", string(data))
+}
+
+// RecordResize records a terminal size change for playback.
+func (s *SessionRecorder) RecordResize(cols, rows uint32) error {
+	if cols == 0 || rows == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	s.width = int(cols)
+	s.height = int(rows)
+	s.mu.Unlock()
+	return s.writeEvent("r", fmt.Sprintf("%dx%d", cols, rows))
+}
+
+func (s *SessionRecorder) writeEvent(kind, data string) error {
+	if data == "" {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cleanData := ansiRegex.ReplaceAll(data, []byte(""))
-	_, err := s.buf.Write(cleanData)
+	elapsed := time.Since(s.startTime).Seconds()
+	line, err := json.Marshal([]interface{}{elapsed, kind, data})
 	if err != nil {
+		return fmt.Errorf("cast event: %w", err)
+	}
+	if _, err := s.buf.Write(line); err != nil {
+		return fmt.Errorf("failed to write to recording: %w", err)
+	}
+	if err := s.buf.WriteByte('\n'); err != nil {
 		return fmt.Errorf("failed to write to recording: %w", err)
 	}
 	return nil
 }
 
-// RecordingWriter wraps an io.Writer to record data
+// RecordingWriter wraps an io.Writer and records bytes written to the client
+// (agent → client PTY output).
 type RecordingWriter struct {
 	writer   io.Writer
 	recorder *SessionRecorder
 }
 
-// NewRecordingWriter creates a new recording writer
+// NewRecordingWriter creates a new recording writer.
 func NewRecordingWriter(writer io.Writer, recorder *SessionRecorder) *RecordingWriter {
 	return &RecordingWriter{
 		writer:   writer,
@@ -164,35 +220,26 @@ func NewRecordingWriter(writer io.Writer, recorder *SessionRecorder) *RecordingW
 	}
 }
 
-// Write writes data and records it
 func (rw *RecordingWriter) Write(p []byte) (n int, err error) {
-	if err := rw.recorder.Write(p); err != nil {
-		fmt.Fprintf(os.Stderr, "Recording error: %v\n", err)
+	if rw.recorder != nil {
+		if err := rw.recorder.Write(p); err != nil {
+			fmt.Fprintf(os.Stderr, "Recording error: %v\n", err)
+		}
 	}
 	return rw.writer.Write(p)
 }
 
-// RecordingReader wraps an io.Reader to record data
+// RecordingReader wraps an io.Reader. It intentionally does not record:
+// session casts are output-only so keystrokes are not duplicated with echo.
 type RecordingReader struct {
-	reader   io.Reader
-	recorder *SessionRecorder
+	reader io.Reader
 }
 
-// NewRecordingReader creates a new recording reader
-func NewRecordingReader(reader io.Reader, recorder *SessionRecorder) *RecordingReader {
-	return &RecordingReader{
-		reader:   reader,
-		recorder: recorder,
-	}
+// NewRecordingReader creates a passthrough reader (no recording).
+func NewRecordingReader(reader io.Reader, _ *SessionRecorder) *RecordingReader {
+	return &RecordingReader{reader: reader}
 }
 
-// Read reads data and records it
 func (rr *RecordingReader) Read(p []byte) (n int, err error) {
-	n, err = rr.reader.Read(p)
-	if n > 0 && rr.recorder != nil {
-		if werr := rr.recorder.Write(p[:n]); werr != nil {
-			fmt.Fprintf(os.Stderr, "Recording error: %v\n", werr)
-		}
-	}
-	return n, err
+	return rr.reader.Read(p)
 }

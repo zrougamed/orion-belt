@@ -434,6 +434,44 @@
       padding-top: 1rem;
       border-top: 1px solid var(--line-soft);
     }
+    .cast-player {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin-top: 0.75rem;
+    }
+    #castHost {
+      height: 360px;
+      padding: 0.35rem;
+      background: #070d0f;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+    }
+    .cast-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+    }
+    .cast-controls input[type="range"] {
+      flex: 1;
+      min-width: 120px;
+      accent-color: var(--accent);
+    }
+    .cast-time {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-width: 7.5rem;
+    }
+    .cast-speed {
+      font-size: 0.8rem;
+      padding: 0.25rem 0.45rem;
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+    }
     .form-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -659,6 +697,7 @@
     view: "dashboard",
     version: null,
     term: { ws: null, xterm: null, fit: null, connected: false },
+    cast: { timer: null, xterm: null, fit: null, playing: false },
     files: { machine: "", user: "root", path: "/" },
     secTab: "mfa",
     sessionFilter: "all",
@@ -885,6 +924,7 @@
     nav.querySelectorAll("button.nav-item").forEach((btn) => {
       btn.onclick = () => {
         if (state.view === "terminal" && btn.dataset.view !== "terminal") disconnectTerminal();
+        if (state.view === "sessions" && btn.dataset.view !== "sessions") stopCastPlayer();
         state.view = btn.dataset.view;
         buildNav();
         render();
@@ -1339,6 +1379,221 @@
     state.term.connected = false;
   }
 
+  function stopCastPlayer() {
+    if (state.cast.timer) {
+      clearTimeout(state.cast.timer);
+      state.cast.timer = null;
+    }
+    state.cast.playing = false;
+    if (state.cast._onResize) {
+      window.removeEventListener("resize", state.cast._onResize);
+      state.cast._onResize = null;
+    }
+    if (state.cast.xterm) {
+      try { state.cast.xterm.dispose(); } catch (_) { /* ignore */ }
+      state.cast.xterm = null;
+      state.cast.fit = null;
+    }
+  }
+
+  function parseCast(text) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
+    if (!lines.length) throw new Error("empty recording");
+    const header = JSON.parse(lines[0]);
+    if (!header || header.version !== 2) {
+      return null; // legacy plain-text recording
+    }
+    const events = [];
+    for (let i = 1; i < lines.length; i++) {
+      const ev = JSON.parse(lines[i]);
+      if (!Array.isArray(ev) || ev.length < 3) continue;
+      events.push({ t: Number(ev[0]) || 0, type: String(ev[1]), data: String(ev[2]) });
+    }
+    return { header, events };
+  }
+
+  function fmtCastTime(sec) {
+    const s = Math.max(0, sec || 0);
+    const m = Math.floor(s / 60);
+    const r = s - m * 60;
+    return m + ":" + r.toFixed(1).padStart(4, "0");
+  }
+
+  function mountCastPlayer(box, sessionId, castText, downloadName) {
+    stopCastPlayer();
+    const cast = parseCast(castText);
+    if (!cast) {
+      box.innerHTML = `
+        <div class="row" style="justify-content:space-between">
+          <h3 style="margin:0">Recording ${esc(shortId(sessionId))}</h3>
+          <button type="button" class="btn secondary sm" id="dlRec">Download</button>
+        </div>
+        <pre class="session"></pre>`;
+      box.querySelector("pre").textContent = castText;
+      document.getElementById("dlRec").onclick = () => {
+        const blob = new Blob([castText], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = downloadName;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      return;
+    }
+
+    const duration = cast.events.length ? cast.events[cast.events.length - 1].t : 0;
+    const cols = cast.header.width || 120;
+    const rows = cast.header.height || 40;
+
+    box.innerHTML = `
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Recording ${esc(shortId(sessionId))}</h3>
+        <button type="button" class="btn secondary sm" id="dlRec">Download</button>
+      </div>
+      <div class="cast-player">
+        <div id="castHost"></div>
+        <div class="cast-controls">
+          <button type="button" class="btn sm" id="castPlay">Play</button>
+          <button type="button" class="btn secondary sm" id="castRestart">Restart</button>
+          <input type="range" id="castSeek" min="0" max="${Math.max(duration, 0.1)}" step="0.05" value="0" />
+          <span class="cast-time" id="castTime">0:00.0 / ${esc(fmtCastTime(duration))}</span>
+          <select class="cast-speed" id="castSpeed" title="Playback speed">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
+      </div>`;
+
+    document.getElementById("dlRec").onclick = () => {
+      const blob = new Blob([castText], { type: "application/x-asciicast" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = downloadName.replace(/\.txt$/, ".cast");
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+
+    const host = document.getElementById("castHost");
+    const term = new Terminal({
+      cursorBlink: false,
+      disableStdin: true,
+      convertEol: true,
+      fontFamily: "JetBrains Mono, ui-monospace, monospace",
+      fontSize: 13,
+      theme: {
+        background: "#070d0f",
+        foreground: "#e8f0f2",
+        cursor: "#e8a54b",
+        selectionBackground: "rgba(232,165,75,0.35)",
+      },
+      cols,
+      rows,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(host);
+    try { fit.fit(); } catch (_) { /* ignore */ }
+    state.cast.xterm = term;
+    state.cast.fit = fit;
+    state.cast._onResize = () => { try { fit.fit(); } catch (_) { /* ignore */ } };
+    window.addEventListener("resize", state.cast._onResize);
+
+    let idx = 0;
+    let clock = 0;
+    let speed = 1;
+
+    const seekEl = document.getElementById("castSeek");
+    const timeEl = document.getElementById("castTime");
+    const playBtn = document.getElementById("castPlay");
+
+    function applyEvent(ev) {
+      if (ev.type === "o") term.write(ev.data);
+      else if (ev.type === "r") {
+        const m = /^(\d+)x(\d+)$/.exec(ev.data);
+        if (m) {
+          try { term.resize(Number(m[1]), Number(m[2])); } catch (_) { /* ignore */ }
+        }
+      }
+    }
+
+    function renderTo(t) {
+      term.reset();
+      idx = 0;
+      while (idx < cast.events.length && cast.events[idx].t <= t + 1e-9) {
+        applyEvent(cast.events[idx]);
+        idx++;
+      }
+      clock = t;
+      seekEl.value = String(t);
+      timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+    }
+
+    function stopTimer() {
+      if (state.cast.timer) {
+        clearTimeout(state.cast.timer);
+        state.cast.timer = null;
+      }
+      state.cast.playing = false;
+      playBtn.textContent = "Play";
+    }
+
+    function schedule() {
+      if (!state.cast.playing) return;
+      if (idx >= cast.events.length) {
+        stopTimer();
+        clock = duration;
+        seekEl.value = String(duration);
+        timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+        return;
+      }
+      const next = cast.events[idx];
+      const delayMs = Math.max(0, ((next.t - clock) * 1000) / speed);
+      state.cast.timer = setTimeout(() => {
+        applyEvent(next);
+        idx++;
+        clock = next.t;
+        seekEl.value = String(clock);
+        timeEl.textContent = fmtCastTime(clock) + " / " + fmtCastTime(duration);
+        schedule();
+      }, delayMs);
+    }
+
+    function play() {
+      if (state.cast.playing) {
+        stopTimer();
+        return;
+      }
+      if (clock >= duration - 1e-6) renderTo(0);
+      state.cast.playing = true;
+      playBtn.textContent = "Pause";
+      schedule();
+    }
+
+    playBtn.onclick = play;
+    document.getElementById("castRestart").onclick = () => {
+      stopTimer();
+      renderTo(0);
+      play();
+    };
+    document.getElementById("castSpeed").onchange = (e) => {
+      speed = Number(e.target.value) || 1;
+      if (state.cast.playing) {
+        if (state.cast.timer) clearTimeout(state.cast.timer);
+        schedule();
+      }
+    };
+    seekEl.oninput = () => {
+      const was = state.cast.playing;
+      stopTimer();
+      renderTo(Number(seekEl.value) || 0);
+      if (was) play();
+    };
+
+    renderTo(0);
+  }
+
   async function renderTerminal(root) {
     let machines = [];
     try { machines = (await api("/machines")) || []; } catch (_) { machines = []; }
@@ -1744,6 +1999,7 @@
     root.querySelectorAll("[data-play]").forEach((btn) => {
       btn.onclick = async () => {
         const box = document.getElementById("playback");
+        stopCastPlayer();
         box.innerHTML = `<p class="muted">Loading recording…</p>`;
         try {
           const res = await apiRaw("/sessions/" + encodeURIComponent(btn.dataset.play) + "/content");
@@ -1753,22 +2009,8 @@
             try { msg = JSON.parse(text).error || text; } catch (_) { /* ignore */ }
             throw new Error(msg || "failed to load recording");
           }
-          box.innerHTML = `
-            <div class="row" style="justify-content:space-between">
-              <h3 style="margin:0">Recording ${esc(shortId(btn.dataset.play))}</h3>
-              <button type="button" class="btn secondary sm" id="dlRec">Download</button>
-            </div>
-            <pre class="session"></pre>`;
-          const pre = box.querySelector("pre");
-          pre.textContent = text;
-          document.getElementById("dlRec").onclick = () => {
-            const blob = new Blob([text], { type: "text/plain" });
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "session-" + btn.dataset.play.slice(0, 8) + ".txt";
-            a.click();
-            URL.revokeObjectURL(a.href);
-          };
+          const dlName = "session-" + btn.dataset.play.slice(0, 8) + ".cast";
+          mountCastPlayer(box, btn.dataset.play, text, dlName);
         } catch (e) {
           box.innerHTML = `<div class="err">${esc(e.message)}</div>`;
         }

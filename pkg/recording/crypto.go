@@ -136,7 +136,7 @@ func EnforceRetention(storagePath string, retentionDays int, logger *common.Logg
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".rec") {
+		if !strings.HasSuffix(name, ".txt") && !strings.HasSuffix(name, ".rec") && !strings.HasSuffix(name, ".cast") {
 			continue
 		}
 		info, err := e.Info()
