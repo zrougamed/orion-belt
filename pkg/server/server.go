@@ -12,11 +12,13 @@ import (
 
 	"github.com/zrougamed/orion-belt/pkg/api"
 	"github.com/zrougamed/orion-belt/pkg/auth"
+	"github.com/zrougamed/orion-belt/pkg/authz"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
 	"github.com/zrougamed/orion-belt/pkg/recording"
+	webauthnlib "github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -67,6 +69,13 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	// Initialize services
 	authService := auth.NewAuthService(store, logger)
 
+	if fga, err := authz.NewOpenFGA(config.Auth.OpenFGA, logger); err != nil {
+		return nil, fmt.Errorf("openfga config: %w", err)
+	} else if fga != nil {
+		authService.SetAuthorizer(fga)
+		logger.Info("OpenFGA authorizer enabled (%s)", config.Auth.OpenFGA.APIURL)
+	}
+
 	// Initialize recorder
 	storagePath := resolveDirWithCreate(
 		config.Recording.StoragePath,
@@ -76,6 +85,40 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	recorder, err := recording.NewRecorder(storagePath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recorder: %w", err)
+	}
+
+	recCrypto, err := recording.NewCrypto(config.Recording.EncryptionKey, logger)
+	if err != nil {
+		return nil, fmt.Errorf("recording encryption: %w", err)
+	}
+	recorder.SetCrypto(recCrypto)
+	if recCrypto.Enabled() {
+		logger.Info("Session recording encryption enabled")
+	}
+
+	var wa *webauthnlib.WebAuthn
+	if config.Auth.WebAuthn.Enabled {
+		display := config.Auth.WebAuthn.RPDisplay
+		if display == "" {
+			display = "Orion Belt"
+		}
+		rpid := config.Auth.WebAuthn.RPID
+		if rpid == "" {
+			rpid = "localhost"
+		}
+		origins := config.Auth.WebAuthn.Origins
+		if len(origins) == 0 {
+			origins = []string{"http://localhost:8080", "https://localhost:8080"}
+		}
+		wa, err = webauthnlib.New(&webauthnlib.Config{
+			RPDisplayName: display,
+			RPID:          rpid,
+			RPOrigins:     origins,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("webauthn: %w", err)
+		}
+		logger.Info("WebAuthn/FIDO2 enabled (rp_id=%s)", rpid)
 	}
 
 	// Initialize plugin manager
@@ -108,6 +151,9 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		JWTExpiryHours: config.Auth.JWTExpiryHours,
 		PluginManager:  pluginManager,
 		MetricsEnabled: true,
+		MFARequired:    config.Auth.MFARequired,
+		RecordingCrypt: recCrypto,
+		WebAuthn:       wa,
 	})
 
 	server := &Server{
@@ -123,6 +169,7 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 	}
 
 	apiServer.SetAgentCommander(server)
+	apiServer.SetTerminalBridge(server)
 
 	// Configure SSH server
 	if err := server.setupSSHConfig(); err != nil {
@@ -186,6 +233,11 @@ func (s *Server) Start() error {
 
 	s.logger.Info("Starting Orion-Belt SSH server on %s", addr)
 
+	// Periodic recording retention cleanup
+	if s.config.Recording.RetentionDays > 0 {
+		go s.runRetentionLoop()
+	}
+
 	for {
 		select {
 		case <-s.shutdown:
@@ -243,7 +295,11 @@ func (s *Server) handleConnection(tcpConn net.Conn) {
 	s.logger.Info("Treating connection as client connection for user: %s", user)
 
 	// This is a client connection
-	s.handleClientConnection(sshConn, chans, reqs, userID, user)
+	sshUser := sshConn.Permissions.Extensions["ssh_user"]
+	if sshUser == "" {
+		sshUser = user
+	}
+	s.handleClientConnection(sshConn, chans, reqs, userID, user, sshUser)
 }
 
 // handlePublicKeyAuth handles SSH public key authentication
@@ -259,11 +315,17 @@ func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (
 		return nil, fmt.Errorf("authentication failed")
 	}
 
+	if s.config.Auth.MFARequired && !user.MFAEnabled {
+		s.logger.Warn("SSH denied for %s: MFA enrollment required", username)
+		return nil, fmt.Errorf("mfa enrollment required")
+	}
+
 	// Store user info in permissions
 	perms := &ssh.Permissions{
 		Extensions: map[string]string{
-			"user":    user.Username,
-			"user_id": user.ID,
+			"user":     user.Username,
+			"user_id":  user.ID,
+			"ssh_user": conn.User(), // may include +machine for OpenSSH agentless
 		},
 	}
 
@@ -398,7 +460,7 @@ func (s *Server) handleAgentSession(channel ssh.Channel, requests <-chan *ssh.Re
 }
 
 // handleClientConnection handles a client SSH connection
-func (s *Server) handleClientConnection(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, userID, username string) {
+func (s *Server) handleClientConnection(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, userID, username, sshUser string) {
 	defer sshConn.Close()
 
 	// Discard global requests
@@ -417,22 +479,28 @@ func (s *Server) handleClientConnection(sshConn *ssh.ServerConn, chans <-chan ss
 			continue
 		}
 
-		go s.handleClientSession(channel, requests, userID, username)
+		go s.handleClientSession(channel, requests, userID, username, sshUser)
 	}
 }
 
-// handleClientSession handles a client session
-func (s *Server) handleClientSession(channel ssh.Channel, requests <-chan *ssh.Request, userID, username string) {
+// handleClientSession handles a client session (osh or vanilla OpenSSH).
+func (s *Server) handleClientSession(channel ssh.Channel, requests <-chan *ssh.Request, userID, username, sshUser string) {
 	defer channel.Close()
 
-	var machineName string
-	var shell bool
+	var (
+		ptyReq    *ptyRequest
+		wantShell bool
+		target    string
+	)
 
-	// Handle session setup requests
+	_, remoteUser, machineFromUser := common.ParseGatewaySSHUser(sshUser)
+	if machineFromUser != "" {
+		target = common.FormatTarget(remoteUser, machineFromUser)
+	}
+
 	for req := range requests {
 		switch req.Type {
 		case "exec":
-			// Parse the target machine from exec command
 			var payload struct {
 				Command string
 			}
@@ -440,21 +508,33 @@ func (s *Server) handleClientSession(channel ssh.Channel, requests <-chan *ssh.R
 				req.Reply(false, nil)
 				return
 			}
-
 			s.logger.Info("Client exec command: '%s'", payload.Command)
-			machineName = payload.Command
 			req.Reply(true, nil)
-
-			// Execute the proxying
-			s.proxyToMachine(channel, machineName, userID, username)
+			s.proxyToMachine(channel, payload.Command, userID, username, ptyReq, nil)
 			return
 
 		case "shell":
-			shell = true
+			wantShell = true
 			req.Reply(true, nil)
 
 		case "pty-req":
+			ptyReq = &ptyRequest{}
+			_ = ssh.Unmarshal(req.Payload, ptyReq)
 			req.Reply(true, nil)
+
+		case "env":
+			req.Reply(true, nil)
+
+		case "subsystem":
+			var payload struct{ Name string }
+			if err := ssh.Unmarshal(req.Payload, &payload); err == nil && payload.Name == "sftp" {
+				req.Reply(false, nil)
+				channel.Write([]byte("SFTP subsystem not available; use ocp or the web file browser.\n"))
+				return
+			}
+			if req.WantReply {
+				req.Reply(false, nil)
+			}
 
 		default:
 			if req.WantReply {
@@ -462,15 +542,35 @@ func (s *Server) handleClientSession(channel ssh.Channel, requests <-chan *ssh.R
 			}
 		}
 
-		if shell {
-			channel.Write([]byte("Orion-Belt Gateway\nUsage: ssh user@server machine-name\n"))
+		if wantShell {
+			if target == "" {
+				msg := "Orion-Belt Gateway (OpenSSH compatible)\n\n" +
+					"Usage:\n" +
+					"  ssh alice+web-01@gateway              # interactive shell as root@web-01\n" +
+					"  ssh alice+bob%web-01@gateway          # interactive shell as bob@web-01\n" +
+					"  ssh alice@gateway 'bob@web-01'        # exec form (also works)\n" +
+					"  ssh alice@gateway 'bob@web-01 uptime' # remote command\n\n" +
+					"See docs/openssh-clients.md for ssh_config snippets.\n"
+				channel.Write([]byte(msg))
+				return
+			}
+			s.proxyToMachine(channel, target, userID, username, ptyReq, requests)
 			return
 		}
 	}
 }
 
+type ptyRequest struct {
+	Term     string
+	Columns  uint32
+	Rows     uint32
+	Width    uint32
+	Height   uint32
+	Modelist string
+}
+
 // proxyToMachine proxies a client session to a target machine through an agent
-func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, username string) {
+func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, username string, ptyReq *ptyRequest, remainingReqs <-chan *ssh.Request) {
 	ctx := context.Background()
 
 	s.logger.Info("proxyToMachine called: commandLine='%s', user='%s', userID='%s'", commandLine, username, userID)
@@ -503,7 +603,6 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 
 	s.logger.Info("Machine found: %s (ID: %s, active: %v)", machine.Name, machine.ID, machine.IsActive)
 
-	// Check permissions with remote user
 	if err := s.authService.CheckPermissionWithRemoteUser(ctx, userID, machine.ID, "ssh", remoteUser); err != nil {
 		s.logger.Warn("Permission denied: %s cannot access %s@%s", username, remoteUser, machineName)
 
@@ -564,6 +663,33 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 	}
 
 	s.logger.Info("Successfully opened session channel to agent")
+
+	// Forward PTY request to agent when present (OpenSSH interactive)
+	if ptyReq != nil && remoteCommand == "" {
+		ok, err := agentChannel.SendRequest("pty-req", true, ssh.Marshal(ptyReq))
+		if err != nil || !ok {
+			s.logger.Warn("Failed to forward pty-req to agent: ok=%v err=%v", ok, err)
+		}
+	}
+
+	// Forward window-change from client while session is live
+	if remainingReqs != nil {
+		go func() {
+			for req := range remainingReqs {
+				switch req.Type {
+				case "window-change":
+					agentChannel.SendRequest("window-change", false, req.Payload)
+					if req.WantReply {
+						req.Reply(true, nil)
+					}
+				default:
+					if req.WantReply {
+						req.Reply(false, nil)
+					}
+				}
+			}
+		}()
+	}
 
 	if remoteCommand != "" {
 		s.logger.Info("Executing command on agent: %s", remoteCommand)
@@ -765,6 +891,43 @@ func (s *Server) GetStore() database.Store {
 // GetAuthService returns the auth service
 func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
+}
+
+// runRetentionLoop periodically deletes expired recordings.
+func (s *Server) runRetentionLoop() {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	path := s.recorder.GetRecordingStoragePath()
+	days := s.config.Recording.RetentionDays
+	if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
+		s.logger.Warn("retention cleanup: %v", err)
+	}
+	for {
+		select {
+		case <-s.shutdown:
+			return
+		case <-ticker.C:
+			if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
+				s.logger.Warn("retention cleanup: %v", err)
+			}
+		}
+	}
+}
+
+// ResolveMachine looks up a machine by name for the web terminal bridge.
+func (s *Server) ResolveMachine(name string) (*common.Machine, error) {
+	return s.store.GetMachineByName(context.Background(), name)
+}
+
+// OpenAgentSession opens a session channel to a connected agent.
+func (s *Server) OpenAgentSession(machineID, remoteUser string) (ssh.Channel, <-chan *ssh.Request, error) {
+	s.agentsMu.RLock()
+	agentConn, exists := s.agents[machineID]
+	s.agentsMu.RUnlock()
+	if !exists {
+		return nil, nil, fmt.Errorf("agent not connected")
+	}
+	return agentConn.SSHConn.Conn.OpenChannel("session", nil)
 }
 
 // ListConnectedAgents returns machine IDs of connected agents.

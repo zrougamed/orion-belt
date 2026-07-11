@@ -42,8 +42,29 @@ type AuthConfig struct {
 	AllowTempAccess       bool   `yaml:"allow_temp_access,omitempty"`
 	KnownHosts            string `yaml:"known_hosts,omitempty"`
 	StrictHostKeyChecking string `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
-	JWTSecret             string `yaml:"jwt_secret,omitempty"`
-	JWTExpiryHours        int    `yaml:"jwt_expiry_hours,omitempty"`
+	JWTSecret             string        `yaml:"jwt_secret,omitempty"`
+	JWTExpiryHours        int           `yaml:"jwt_expiry_hours,omitempty"`
+	MFARequired           bool          `yaml:"mfa_required,omitempty"`
+	OpenFGA               OpenFGAConfig `yaml:"openfga,omitempty"`
+	WebAuthn              WebAuthnConfig `yaml:"webauthn,omitempty"`
+}
+
+// WebAuthnConfig configures FIDO2/WebAuthn (YubiKey, etc.).
+type WebAuthnConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	RPDisplay  string   `yaml:"rp_display_name"` // e.g. Orion Belt
+	RPID       string   `yaml:"rp_id"`           // e.g. orion.example.com
+	Origins    []string `yaml:"origins"`         // e.g. https://orion.example.com
+}
+
+// OpenFGAConfig configures optional OpenFGA authorization.
+type OpenFGAConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	APIURL   string `yaml:"api_url"`
+	StoreID  string `yaml:"store_id"`
+	ModelID  string `yaml:"model_id,omitempty"`
+	APIToken string `yaml:"api_token,omitempty"`
+	Relation string `yaml:"relation,omitempty"` // default: can_access
 }
 
 // AgentConfig contains agent-specific configuration
@@ -57,6 +78,7 @@ type RecordingConfig struct {
 	Enabled       bool   `yaml:"enabled"`
 	StoragePath   string `yaml:"storage_path"`
 	RetentionDays int    `yaml:"retention_days,omitempty"`
+	EncryptionKey string `yaml:"encryption_key,omitempty"` // 32-byte key, base64 or raw 32 chars
 }
 
 // LoadConfig loads configuration from a YAML file

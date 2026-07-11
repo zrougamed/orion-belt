@@ -71,6 +71,18 @@ type Store interface {
 	DeleteHTTPSession(ctx context.Context, id string) error
 	DeleteExpiredHTTPSessions(ctx context.Context) error
 
+	// SSH keys (including FIDO/sk-*)
+	CreateSSHKey(ctx context.Context, key *common.SSHKey) error
+	ListUserSSHKeys(ctx context.Context, userID string) ([]*common.SSHKey, error)
+	DeleteSSHKey(ctx context.Context, id string) error
+
+	// WebAuthn / FIDO2
+	CreateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error
+	ListWebAuthnCredentials(ctx context.Context, userID string) ([]*common.WebAuthnCredential, error)
+	GetWebAuthnCredentialByCredID(ctx context.Context, credID []byte) (*common.WebAuthnCredential, error)
+	UpdateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error
+	DeleteWebAuthnCredential(ctx context.Context, id string) error
+
 	// Lifecycle
 	Connect(ctx context.Context) error
 	Close() error

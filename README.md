@@ -6,7 +6,7 @@ It provides **reverse SSH tunneling**, **relationship-based access control (ReBA
 
 Think of it as a lightweight, self-hosted alternative to traditional bastion hosts or commercial access gateways — built with simplicity, auditability, and extensibility in mind.
 
-> Status: **Alpha v0.3+** — core PAM works; Phase 1 hardening (host keys, JWT, metrics, notifications) underway
+> Status: **Alpha v0.4** — MFA/WebAuthn, OpenSSH clients, role-aware web console, OpenFGA, recording encryption
 
 ![Orion-Belt banner](assets/banner.png)
 
@@ -35,36 +35,48 @@ Orion-Belt solves this by:
 
 - **Server Mode**: SSH/SCP tunneling server with session recording
 - **Client Mode**: CLI tools (`osh`, `ocp`, `oadmin`) for connecting and approvals
+- **OpenSSH clients**: Vanilla `ssh` via `user+machine@gateway` (no `osh` required) — see [openssh-clients.md](docs/openssh-clients.md)
 - **Agent Mode**: Runs on target machines to receive connections
 - **ReBAC**: Relationship-based access control for authorized users
 - **Temporary Access**: Request-based temporary access with admin approval
-- **Session Recording**: Complete session recording and audit trails
+- **Session Recording**: Complete session recording and audit trails (optional AES-at-rest + retention)
 - **Plugin System**: Dynamic plugins (Slack, email, webhooks, audit logger)
 - **Host Key Verification**: TOFU / known_hosts for clients and agents
 - **API Auth**: API keys, session tokens, and JWT bearer tokens
+- **MFA**: TOTP + YubiKey/FIDO2 (WebAuthn) for the web console; FIDO SSH keys (`sk-*`)
+- **Web console**: Role-aware `/ui` with live terminal and file browser
+- **OpenFGA**: Optional external authorization with ReBAC fallback
 - **Metrics**: Prometheus-format `/metrics` endpoint
 - **Database Agnostic**: Interface-based database layer for easy switching
 
 ## Architecture
 
 ```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   Client    │────────>│    Server    │────────>│   Machine   │
-│  (osh/ocp)  │         │  (tunneling) │         │   (agent)   │
-└─────────────┘         └──────────────┘         └─────────────┘
-                              │
-                              ├─> Session Recording
-                              ├─> ReBAC Authorization
-                              └─> Access Request Management
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  osh / ocp   │  │ OpenSSH ssh  │  │  Web /ui     │
+│  oadmin CLI  │  │ user+host@gw │  │  terminal    │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                  │
+       └────────────┬────┴──────────────────┘
+                    │ SSH :2222  /  HTTP :8080
+                    ▼
+             ┌──────────────┐
+             │    Gateway   │──► Session recording, ReBAC/OpenFGA, MFA
+             └──────┬───────┘
+                    │ reverse SSH (agents)
+                    ▼
+             ┌──────────────┐
+             │ Target agent │
+             └──────────────┘
 ```
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.3.0** tagged; Phase 1 hardening on master toward **v0.3.1**.
+**Current Status:** Alpha **v0.4** on branch `feature/v0.4-mfa-ui-openfga-recording` (merge pending); master has **v0.3.1** hardening.
 
-**Shipped:** SSH proxy, ReBAC, session recording, REST API + API keys, plugins, remote users, client list/request-access, `oadmin`, Docker Compose.
+**Shipped (through v0.4):** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins, remote users, host-key verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console (terminal + files), optional OpenFGA.
 
-**What's next (Phase 1 remainder / v0.4):** MFA, OpenFGA, web admin UI, recording encryption.
+**Next:** HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
 
 See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
@@ -189,25 +201,13 @@ ocp machine-name:/remote/file local-path
 ### Project Structure
 ```
 orion-belt/
-├── cmd/
-│   ├── server/          # Server entry point
-│   ├── client/          # Client (osh/ocp) entry point
-│   └── agent/           # Agent entry point
-├── pkg/
-│   ├── server/          # Server implementation
-│   ├── client/          # Client implementation
-│   ├── agent/           # Agent implementation
-│   ├── auth/            # ReBAC and authorization
-│   ├── recording/       # Session recording
-│   ├── database/        # Database interface and implementations
-│   ├── api/             # API server and client
-│   ├── plugin/          # Plugin system
-│   └── common/          # Shared utilities
-├── plugins/             # Plugin implementations
-├── go.mod
-├── go.sum
-├── Makefile
-└── README.md
+├── cmd/           # server, agent, osh, ocp, oadmin
+├── pkg/           # server, client, agent, api, auth, authz, recording, …
+├── web/           # embedded admin/ops console (/ui)
+├── plugins/       # Slack, email, webhook, audit-logger
+├── docs/          # architecture, roadmap, OpenSSH, OpenFGA, …
+├── config/        # example YAML
+└── docker/        # Compose + images
 ```
 
 ### Building from Source
@@ -222,9 +222,10 @@ For details see [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md).
 ## Security Considerations
 
 - All connections are encrypted using SSH protocol
-- Session recordings are encrypted at rest
-- ReBAC ensures fine-grained access control
-- Audit logs track all access and changes
+- Session recordings can be AES-GCM encrypted at rest (`recording.encryption_key`)
+- ReBAC (and optional OpenFGA) enforce fine-grained access control
+- MFA: TOTP and/or WebAuthn (YubiKey); SSH supports FIDO `sk-*` keys
+- Audit logs track access and changes
 - Temporary access automatically expires
 
 ## Database Support

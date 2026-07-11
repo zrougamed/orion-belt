@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Version:** Alpha v0.3.1 (Phase 1 hardening in progress)
-**Status:** Core PAM features shipped through v0.3.0; production hardening items below are the active focus
+**Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
+**Status:** v0.3.1 on master; v0.4 work on `feature/v0.4-mfa-ui-openfga-recording`
 
 ## What Orion Belt Is
 
@@ -21,7 +21,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] Full SSH implementation using **golang.org/x/crypto/ssh**
   - [x] Public-key auth backed by PostgreSQL
   - [x] Concurrent multi-session handling
-  - [x] Direct-tcpip forwarding to machines
+  - [x] Session routing to agents (exec/shell; OpenSSH `user+machine` form)
   - [x] Full session lifecycle support
 
 * **REST API (Port 8080)**
@@ -118,31 +118,43 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ---
 
-## Remaining Phase 1
+### v0.4 — MFA, Admin UI, OpenFGA, Recording Hardening
 
-**Access Control Enhancements**
+* **MFA (TOTP)**
+  - [x] TOTP enrollment (`POST /mfa/enroll`, `/mfa/confirm`)
+  - [x] Backup codes (hashed, single-use)
+  - [x] Disable with MFA proof
+  - [x] Enforcement on API login paths (`totp_code`)
+  - [x] `auth.mfa_required` blocks SSH until enrolled
+  - [x] WebAuthn / hardware keys (YubiKey FIDO2)
+  - [x] FIDO SSH public keys (`sk-ssh-ed25519@openssh.com`, etc.)
+  - [x] OpenSSH agentless clients (`user+machine@gateway`)
+  - [x] High-fidelity web console with roles, web terminal, file browser
+  - [ ] Certificate lifecycle / SSH CA
 
-- [ ] OpenFGA integration for fine-grained policies
-- [ ] Enhanced MFA (TOTP enrollment UI, backup codes, WebAuthn)
-- [ ] Certificate lifecycle automation / SSH CA
-- [ ] HashiCorp Vault integration
+* **OpenFGA**
+  - [x] Optional OpenFGA HTTP client (`auth.openfga`)
+  - [x] Check on permission paths with ReBAC fallback
+  - [x] Write/delete tuples on grant/revoke
+  - [x] Example model in `docs/openfga-model.fga`
 
-**Logging & Recordings**
-
-- [ ] Structured logs (Loki/ELK)
-- [ ] Session recording encryption
-- [ ] Session recording compression
-- [ ] Recording retention policy enforcement
-
-**Web Admin UI**
-
-- [ ] Dashboard
-- [ ] User/machine/permission management
-- [ ] Access approvals interface
-- [ ] Session playback
-- [ ] Auditing interface
+* **Recording encryption & retention**
+  - [x] AES-256-GCM at-rest encryption (`recording.encryption_key`)
+  - [x] Decrypt on playback API
+  - [x] Retention enforcement loop (`recording.retention_days`)
+  - [ ] Compression
 
 ---
+
+## Still open (post-v0.4)
+
+- [ ] Certificate lifecycle / SSH CA
+- [ ] HashiCorp Vault integration
+- [ ] Structured logs (Loki/ELK)
+- [ ] OpenTelemetry tracing
+- [ ] Notification templates / user preferences
+- [ ] Recording compression
+- [ ] Richer permission editor / machine CRUD in UI
 
 ## Roadmap — Later Phases
 
@@ -210,28 +222,28 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.2:** REST API, API keys / session auth
 * **v0.3:** Plugins, remote users, client access workflow, oadmin
 * **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
-* **v0.4:** MFA, OpenFGA, web admin UI, recording encryption
-* **v0.5:** HA, IdP integrations, live session monitoring
+* **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
+* **v0.5:** HA, IdP integrations, live session monitoring, SSH CA
 * **v1.0:** Multi-protocol support, SDKs, compliance-ready
 
 ---
 
 ## Contribution
 
-Open source — focus areas: MFA/OpenFGA, web UI, recording encryption, IdP integrations, docs, and tests.
+Open source — focus areas: IdP integrations, recording compression, HA, SSH CA, docs, and tests.
 
 **High-priority contribution areas (next):**
-- MFA (TOTP enrollment + enforcement)
-- OpenFGA policy integration
-- Web admin UI
-- Session recording encryption/compression
+- Identity provider integrations (OIDC/SAML)
+- Live session monitoring
+- SSH certificate authority
 - OpenAPI specification
+- Recording compression
 
 ---
 
 ## Notes
 
-This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) and merged PRs #1–#5 are the source of truth for shipped work; this document tracks remaining gaps.
+This is a living roadmap. Git tags (`v0.1.0`–`v0.3.0`) plus merged PRs through Phase 1 hardening are the source of truth for shipped releases; this branch tracks v0.4 until tagged.
 
 **Last Updated:** July 2026  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

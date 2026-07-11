@@ -10,13 +10,67 @@ import (
 
 // User represents a system user
 type User struct {
+	ID              string    `json:"id"`
+	Username        string    `json:"username"`
+	Email           string    `json:"email"`
+	PublicKey       string    `json:"public_key"`
+	IsAdmin         bool      `json:"is_admin"`
+	Role            string    `json:"role"` // admin | operator | auditor | user
+	MFAEnabled      bool      `json:"mfa_enabled"`
+	WebAuthnEnabled bool      `json:"webauthn_enabled"`
+	TOTPSecret      string    `json:"-"`
+	BackupCodesHash string    `json:"-"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// Role constants
+const (
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleAuditor  = "auditor"
+	RoleUser     = "user"
+)
+
+// EffectiveRole returns the user's role, mapping legacy is_admin to admin.
+func (u *User) EffectiveRole() string {
+	if u.Role != "" {
+		return u.Role
+	}
+	if u.IsAdmin {
+		return RoleAdmin
+	}
+	return RoleUser
+}
+
+// HasRole reports whether the user has at least the given privilege level.
+func (u *User) HasRole(min string) bool {
+	order := map[string]int{RoleUser: 1, RoleAuditor: 2, RoleOperator: 3, RoleAdmin: 4}
+	return order[u.EffectiveRole()] >= order[min]
+}
+
+// SSHKey is an authorized public key (including FIDO/sk-* keys).
+type SSHKey struct {
 	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
+	UserID    string    `json:"user_id"`
+	Name      string    `json:"name"`
 	PublicKey string    `json:"public_key"`
-	IsAdmin   bool      `json:"is_admin"`
+	KeyType   string    `json:"key_type"` // ssh-ed25519, sk-ssh-ed25519@openssh.com, etc.
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// WebAuthnCredential stores a FIDO2/WebAuthn authenticator credential.
+type WebAuthnCredential struct {
+	ID              string    `json:"id"`
+	UserID          string    `json:"user_id"`
+	Name            string    `json:"name"`
+	CredentialID    []byte    `json:"-"`
+	PublicKey       []byte    `json:"-"`
+	AttestationType string    `json:"attestation_type"`
+	AAGUID          []byte    `json:"-"`
+	SignCount       uint32    `json:"sign_count"`
+	CloneWarning    bool      `json:"clone_warning"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // Machine represents a target machine
@@ -112,12 +166,17 @@ type HTTPSession struct {
 // NewUser creates a new user
 func NewUser(username, email, publicKey string, isAdmin bool) *User {
 	now := time.Now()
+	role := RoleUser
+	if isAdmin {
+		role = RoleAdmin
+	}
 	return &User{
 		ID:        uuid.New().String(),
 		Username:  username,
 		Email:     email,
 		PublicKey: publicKey,
 		IsAdmin:   isAdmin,
+		Role:      role,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

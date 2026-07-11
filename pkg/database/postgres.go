@@ -55,6 +55,11 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			email VARCHAR(255) NOT NULL,
 			public_key TEXT NOT NULL,
 			is_admin BOOLEAN DEFAULT FALSE,
+			role VARCHAR(50) DEFAULT 'user',
+			mfa_enabled BOOLEAN DEFAULT FALSE,
+			webauthn_enabled BOOLEAN DEFAULT FALSE,
+			totp_secret TEXT DEFAULT '',
+			backup_codes_hash TEXT DEFAULT '',
 			created_at TIMESTAMP NOT NULL,
 			updated_at TIMESTAMP NOT NULL
 		)`,
@@ -147,6 +152,34 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_http_sessions_user_id ON http_sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_http_sessions_token_hash ON http_sessions(token_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_http_sessions_expires_at ON http_sessions(expires_at)`,
+		// MFA columns (idempotent for existing installs)
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes_hash TEXT DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_enabled BOOLEAN DEFAULT FALSE`,
+		`CREATE TABLE IF NOT EXISTS user_ssh_keys (
+			id VARCHAR(36) PRIMARY KEY,
+			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			public_key TEXT NOT NULL,
+			key_type VARCHAR(100) NOT NULL,
+			created_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS webauthn_credentials (
+			id VARCHAR(36) PRIMARY KEY,
+			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			credential_id BYTEA NOT NULL UNIQUE,
+			public_key BYTEA NOT NULL,
+			attestation_type VARCHAR(100) NOT NULL DEFAULT '',
+			aaguid BYTEA,
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			clone_warning BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_ssh_keys_user_id ON user_ssh_keys(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id)`,
 	}
 
 	for _, migration := range migrations {
@@ -175,13 +208,18 @@ func (s *PostgresStore) CreateUser(ctx context.Context, user *common.User) error
 
 // GetUser retrieves a user by ID
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (*common.User, error) {
-	query := `SELECT id, username, email, public_key, is_admin, created_at, updated_at
+	query := `SELECT id, username, email, public_key, is_admin,
+			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
+			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
 			  FROM users WHERE id = $1`
 
 	user := &common.User{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PublicKey,
-		&user.IsAdmin, &user.CreatedAt, &user.UpdatedAt)
+		&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
+		&user.TOTPSecret, &user.BackupCodesHash,
+		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -194,13 +232,18 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*common.User, e
 
 // GetUserByUsername retrieves a user by username
 func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) (*common.User, error) {
-	query := `SELECT id, username, email, public_key, is_admin, created_at, updated_at
+	query := `SELECT id, username, email, public_key, is_admin,
+			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
+			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
 			  FROM users WHERE username = $1`
 
 	user := &common.User{}
 	err := s.db.QueryRowContext(ctx, query, username).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PublicKey,
-		&user.IsAdmin, &user.CreatedAt, &user.UpdatedAt)
+		&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
+		&user.TOTPSecret, &user.BackupCodesHash,
+		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -213,11 +256,14 @@ func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) 
 
 // UpdateUser updates an existing user
 func (s *PostgresStore) UpdateUser(ctx context.Context, user *common.User) error {
-	query := `UPDATE users SET email = $1, public_key = $2, is_admin = $3, updated_at = $4
-			  WHERE id = $5`
+	query := `UPDATE users SET email = $1, public_key = $2, is_admin = $3, role = $4,
+			  mfa_enabled = $5, webauthn_enabled = $6, totp_secret = $7, backup_codes_hash = $8, updated_at = $9
+			  WHERE id = $10`
 
 	result, err := s.db.ExecContext(ctx, query,
-		user.Email, user.PublicKey, user.IsAdmin, time.Now(), user.ID)
+		user.Email, user.PublicKey, user.IsAdmin, user.Role,
+		user.MFAEnabled, user.WebAuthnEnabled, user.TOTPSecret, user.BackupCodesHash,
+		time.Now(), user.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -248,7 +294,10 @@ func (s *PostgresStore) DeleteUser(ctx context.Context, id string) error {
 
 // ListUsers lists users with pagination
 func (s *PostgresStore) ListUsers(ctx context.Context, limit, offset int) ([]*common.User, error) {
-	query := `SELECT id, username, email, public_key, is_admin, created_at, updated_at
+	query := `SELECT id, username, email, public_key, is_admin,
+			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
+			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
 			  FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 
 	rows, err := s.db.QueryContext(ctx, query, limit, offset)
@@ -261,7 +310,9 @@ func (s *PostgresStore) ListUsers(ctx context.Context, limit, offset int) ([]*co
 	for rows.Next() {
 		user := &common.User{}
 		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.PublicKey,
-			&user.IsAdmin, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
+			&user.TOTPSecret, &user.BackupCodesHash,
+			&user.CreatedAt, &user.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
 		users = append(users, user)
@@ -1095,6 +1146,105 @@ func (s *PostgresStore) DeleteExpiredHTTPSessions(ctx context.Context) error {
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		fmt.Printf("Cleaned up %d expired sessions\n", rowsAffected)
+	}
+	return nil
+}
+
+func (s *PostgresStore) CreateSSHKey(ctx context.Context, key *common.SSHKey) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO user_ssh_keys (id, user_id, name, public_key, key_type, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+		key.ID, key.UserID, key.Name, key.PublicKey, key.KeyType, key.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) ListUserSSHKeys(ctx context.Context, userID string) ([]*common.SSHKey, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, name, public_key, key_type, created_at FROM user_ssh_keys WHERE user_id=$1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []*common.SSHKey
+	for rows.Next() {
+		k := &common.SSHKey{}
+		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.PublicKey, &k.KeyType, &k.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+func (s *PostgresStore) DeleteSSHKey(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM user_ssh_keys WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) CreateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO webauthn_credentials
+		(id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		cred.ID, cred.UserID, cred.Name, cred.CredentialID, cred.PublicKey,
+		cred.AttestationType, cred.AAGUID, cred.SignCount, cred.CloneWarning, cred.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]*common.WebAuthnCredential, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at
+		FROM webauthn_credentials WHERE user_id=$1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*common.WebAuthnCredential
+	for rows.Next() {
+		c := &common.WebAuthnCredential{}
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.CredentialID, &c.PublicKey,
+			&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func (s *PostgresStore) GetWebAuthnCredentialByCredID(ctx context.Context, credID []byte) (*common.WebAuthnCredential, error) {
+	c := &common.WebAuthnCredential{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at
+		FROM webauthn_credentials WHERE credential_id=$1`, credID).Scan(
+		&c.ID, &c.UserID, &c.Name, &c.CredentialID, &c.PublicKey,
+		&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	return c, err
+}
+
+func (s *PostgresStore) UpdateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE webauthn_credentials SET sign_count=$1, clone_warning=$2 WHERE id=$3`,
+		cred.SignCount, cred.CloneWarning, cred.ID)
+	return err
+}
+
+func (s *PostgresStore) DeleteWebAuthnCredential(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webauthn_credentials WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

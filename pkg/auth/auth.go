@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
@@ -19,8 +20,13 @@ import (
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	store  database.Store
-	logger *common.Logger
+	store      database.Store
+	logger     *common.Logger
+	authorizer interface {
+		Check(ctx context.Context, userID, machineID, accessType string) (bool, error)
+		WriteGrant(ctx context.Context, userID, machineID, accessType string) error
+		DeleteGrant(ctx context.Context, userID, machineID, accessType string) error
+	}
 }
 
 // NewAuthService creates a new authentication service
@@ -31,29 +37,54 @@ func NewAuthService(store database.Store, logger *common.Logger) *AuthService {
 	}
 }
 
-// AuthenticateUser authenticates a user with public key
+// SetAuthorizer sets an optional external authorizer (e.g. OpenFGA).
+func (a *AuthService) SetAuthorizer(authz interface {
+	Check(ctx context.Context, userID, machineID, accessType string) (bool, error)
+	WriteGrant(ctx context.Context, userID, machineID, accessType string) error
+	DeleteGrant(ctx context.Context, userID, machineID, accessType string) error
+}) {
+	a.authorizer = authz
+}
+
+// AuthenticateUser authenticates a user with public key (RSA/Ed25519/ECDSA/FIDO sk-*).
 func (a *AuthService) AuthenticateUser(ctx context.Context, username string, publicKey ssh.PublicKey) (*common.User, error) {
-	user, err := a.store.GetUserByUsername(ctx, username)
+	// OpenSSH agentless: username may be "alice+web-01" or "alice+root%web-01"
+	authUser := username
+	if i := strings.IndexByte(username, '+'); i > 0 {
+		authUser = username[:i]
+	}
+
+	user, err := a.store.GetUserByUsername(ctx, authUser)
 	if err != nil {
-		a.logger.Warn("User not found: %s", username)
+		a.logger.Warn("User not found: %s", authUser)
 		return nil, fmt.Errorf("authentication failed")
 	}
 
-	// Parse stored public key
-	storedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(user.PublicKey))
+	if matchSSHKey(publicKey, user.PublicKey) {
+		a.logger.Info("User authenticated: %s (primary key, type=%s)", authUser, publicKey.Type())
+		return user, nil
+	}
+
+	keys, err := a.store.ListUserSSHKeys(ctx, user.ID)
+	if err == nil {
+		for _, k := range keys {
+			if matchSSHKey(publicKey, k.PublicKey) {
+				a.logger.Info("User authenticated: %s (key=%s type=%s)", authUser, k.Name, publicKey.Type())
+				return user, nil
+			}
+		}
+	}
+
+	a.logger.Warn("Public key mismatch for user: %s (presented type=%s)", authUser, publicKey.Type())
+	return nil, fmt.Errorf("authentication failed")
+}
+
+func matchSSHKey(presented ssh.PublicKey, authorizedLine string) bool {
+	storedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedLine))
 	if err != nil {
-		a.logger.Error("Failed to parse stored public key for user %s: %v", username, err)
-		return nil, fmt.Errorf("authentication failed")
+		return false
 	}
-
-	// Compare keys
-	if !keyEquals(publicKey, storedKey) {
-		a.logger.Warn("Public key mismatch for user: %s", username)
-		return nil, fmt.Errorf("authentication failed")
-	}
-
-	a.logger.Info("User authenticated: %s", username)
-	return user, nil
+	return keyEquals(presented, storedKey)
 }
 
 // CheckPermission checks if a user has permission to access a machine
@@ -67,6 +98,18 @@ func (a *AuthService) CheckPermission(ctx context.Context, userID, machineID, ac
 	if user.IsAdmin {
 		a.logger.Debug("Admin access granted for user %s", userID)
 		return nil
+	}
+
+	if a.authorizer != nil {
+		allowed, err := a.authorizer.Check(ctx, userID, machineID, accessType)
+		if err != nil {
+			a.logger.Warn("OpenFGA check failed, falling back to ReBAC: %v", err)
+		} else if allowed {
+			return nil
+		} else {
+			a.logger.Warn("Permission denied (OpenFGA) for user %s on machine %s", userID, machineID)
+			return database.ErrPermissionDenied
+		}
 	}
 
 	// Check ReBAC permissions
@@ -95,6 +138,27 @@ func (a *AuthService) CheckPermissionWithRemoteUser(ctx context.Context, userID,
 	if user.IsAdmin {
 		a.logger.Debug("Admin access granted for user %s", userID)
 		return nil
+	}
+
+	if a.authorizer != nil {
+		allowed, err := a.authorizer.Check(ctx, userID, machineID, accessType)
+		if err != nil {
+			a.logger.Warn("OpenFGA check failed, falling back to ReBAC: %v", err)
+		} else if allowed {
+			// Still enforce remote_users via local ReBAC when available
+			hasLocal, localErr := a.store.HasPermissionWithRemoteUser(ctx, userID, machineID, accessType, remoteUser)
+			if localErr == nil && hasLocal {
+				return nil
+			}
+			if localErr == nil && !hasLocal {
+				// OpenFGA allowed machine access; remote user restriction from local store
+				a.logger.Warn("Permission denied for remote user %s on machine %s", remoteUser, machineID)
+				return fmt.Errorf("permission denied: %s not allowed to access %s", remoteUser, machineID)
+			}
+			return nil
+		} else {
+			return fmt.Errorf("permission denied: %s not allowed to access %s", remoteUser, machineID)
+		}
 	}
 
 	// Check ReBAC permissions with remote user
@@ -126,6 +190,12 @@ func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, ac
 		return fmt.Errorf("failed to create permission: %w", err)
 	}
 
+	if a.authorizer != nil {
+		if err := a.authorizer.WriteGrant(ctx, userID, machineID, accessType); err != nil {
+			a.logger.Warn("Failed to write OpenFGA tuple: %v", err)
+		}
+	}
+
 	a.logger.Info("Permission granted: user=%s, machine=%s, type=%s, remote_users=%v",
 		userID, machineID, accessType, remoteUsers)
 	return nil
@@ -133,8 +203,19 @@ func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, ac
 
 // RevokePermission revokes a user's permission
 func (a *AuthService) RevokePermission(ctx context.Context, permissionID string) error {
+	perm, err := a.store.GetPermission(ctx, permissionID)
+	if err != nil {
+		return fmt.Errorf("failed to get permission: %w", err)
+	}
+
 	if err := a.store.DeletePermission(ctx, permissionID); err != nil {
 		return fmt.Errorf("failed to revoke permission: %w", err)
+	}
+
+	if a.authorizer != nil {
+		if err := a.authorizer.DeleteGrant(ctx, perm.UserID, perm.MachineID, perm.AccessType); err != nil {
+			a.logger.Warn("Failed to delete OpenFGA tuple: %v", err)
+		}
 	}
 
 	a.logger.Info("Permission revoked: %s", permissionID)

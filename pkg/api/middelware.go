@@ -89,20 +89,21 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 	}
 }
 
-// adminMiddleware requires the authenticated user to be an admin
+// adminMiddleware requires admin or operator role
 func (s *APIServer) adminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		isAdmin, exists := c.Get("is_admin")
-		if !exists || !isAdmin.(bool) {
-			userID, _ := c.Get("user_id")
-			s.logger.Warn("Admin access denied for user: %v", userID)
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "admin privileges required",
-			})
-			c.Abort()
+		role, _ := c.Get("role")
+		isAdmin, _ := c.Get("is_admin")
+		r, _ := role.(string)
+		admin, _ := isAdmin.(bool)
+		if admin || r == common.RoleAdmin || r == common.RoleOperator {
+			c.Next()
 			return
 		}
-		c.Next()
+		userID, _ := c.Get("user_id")
+		s.logger.Warn("Admin access denied for user: %v role=%v", userID, role)
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin or operator privileges required"})
+		c.Abort()
 	}
 }
 
@@ -113,6 +114,15 @@ func (s *APIServer) setAuthContext(c *gin.Context, userID, username string, isAd
 	c.Set("is_admin", isAdmin)
 	c.Set("auth_method", authMethod)
 	c.Set("authenticated", true)
+	role := common.RoleUser
+	if isAdmin {
+		role = common.RoleAdmin
+	}
+	if user, err := s.store.GetUser(c.Request.Context(), userID); err == nil {
+		role = user.EffectiveRole()
+		c.Set("is_admin", user.IsAdmin || role == common.RoleAdmin)
+	}
+	c.Set("role", role)
 }
 
 // validateAPIKey validates an API key and returns the associated user

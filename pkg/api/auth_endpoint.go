@@ -141,6 +141,7 @@ func (s *APIServer) deleteAPIKey(c *gin.Context) {
 type LoginRequest struct {
 	Username  string `json:"username" binding:"required"`
 	PublicKey string `json:"public_key" binding:"required"`
+	TOTPCode  string `json:"totp_code,omitempty"`
 }
 
 // LoginResponse represents a login response
@@ -149,10 +150,11 @@ type LoginResponse struct {
 	AccessToken  string    `json:"access_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         struct {
-		ID       string `json:"id"`
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		IsAdmin  bool   `json:"is_admin"`
+		ID         string `json:"id"`
+		Username   string `json:"username"`
+		Email      string `json:"email"`
+		IsAdmin    bool   `json:"is_admin"`
+		MFAEnabled bool   `json:"mfa_enabled"`
 	} `json:"user"`
 }
 
@@ -189,6 +191,10 @@ func (s *APIServer) login(c *gin.Context) {
 		return
 	}
 
+	if !s.enforceMFAAfterPubkey(c, user.ID, req.TOTPCode) {
+		return
+	}
+
 	session, rawSession, err := s.authService.CreateSession(
 		ctx,
 		user.ID,
@@ -210,6 +216,7 @@ func (s *APIServer) login(c *gin.Context) {
 	response.User.Username = user.Username
 	response.User.Email = user.Email
 	response.User.IsAdmin = user.IsAdmin
+	response.User.MFAEnabled = user.MFAEnabled
 
 	if s.jwt != nil && s.jwt.Enabled() {
 		if token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin); err == nil {

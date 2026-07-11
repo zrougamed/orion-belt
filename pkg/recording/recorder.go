@@ -1,6 +1,7 @@
 package recording
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 type Recorder struct {
 	storagePath string
 	logger      *common.Logger
+	crypto      *Crypto
 	mu          sync.RWMutex
 	sessions    map[string]*SessionRecorder
 }
@@ -25,14 +27,15 @@ type Recorder struct {
 // SessionRecorder records a single SSH session
 type SessionRecorder struct {
 	sessionID string
-	file      *os.File
+	buf       *bytes.Buffer
+	filePath  string
+	crypto    *Crypto
 	startTime time.Time
 	mu        sync.Mutex
 }
 
 // NewRecorder creates a new session recorder
 func NewRecorder(storagePath string, logger *common.Logger) (*Recorder, error) {
-	// Create storage directory if it doesn't exist
 	if err := os.MkdirAll(storagePath, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
@@ -44,33 +47,32 @@ func NewRecorder(storagePath string, logger *common.Logger) (*Recorder, error) {
 	}, nil
 }
 
+// SetCrypto enables at-rest encryption for recordings.
+func (r *Recorder) SetCrypto(c *Crypto) {
+	r.crypto = c
+}
+
 // StartRecording starts recording a new session
 func (r *Recorder) StartRecording(sessionID string) (*SessionRecorder, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Check if already recording
 	if _, exists := r.sessions[sessionID]; exists {
 		return nil, fmt.Errorf("session already being recorded: %s", sessionID)
 	}
 
-	// Create session file
 	filename := r.GetRecordingPath(sessionID)
-	file, err := os.Create(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recording file: %w", err)
-	}
-
 	recorder := &SessionRecorder{
 		sessionID: sessionID,
-		file:      file,
+		buf:       &bytes.Buffer{},
+		filePath:  filename,
+		crypto:    r.crypto,
 		startTime: time.Now(),
 	}
 
-	// Write header
 	header := fmt.Sprintf("# Orion-Belt Session Recording\n# Session ID: %s\n# Start Time: %s\n\n",
 		sessionID, recorder.startTime.Format(time.RFC3339))
-	file.WriteString(header)
+	recorder.buf.WriteString(header)
 
 	r.sessions[sessionID] = recorder
 	r.logger.Info("Started recording session: %s", sessionID)
@@ -78,7 +80,7 @@ func (r *Recorder) StartRecording(sessionID string) (*SessionRecorder, error) {
 	return recorder, nil
 }
 
-// StopRecording stops recording a session
+// StopRecording stops recording a session and flushes (optionally encrypted) to disk
 func (r *Recorder) StopRecording(sessionID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -88,21 +90,28 @@ func (r *Recorder) StopRecording(sessionID string) error {
 		return fmt.Errorf("session not being recorded: %s", sessionID)
 	}
 
-	// Write footer
 	footer := fmt.Sprintf("\n# End Time: %s\n# Duration: %s\n",
 		time.Now().Format(time.RFC3339),
 		time.Since(recorder.startTime))
-	recorder.file.WriteString(footer)
+	recorder.mu.Lock()
+	recorder.buf.WriteString(footer)
+	plain := append([]byte(nil), recorder.buf.Bytes()...)
+	recorder.mu.Unlock()
 
-	// Close file
-	if err := recorder.file.Close(); err != nil {
-		r.logger.Error("Failed to close recording file for session %s: %v", sessionID, err)
+	var err error
+	if recorder.crypto != nil && recorder.crypto.Enabled() {
+		err = recorder.crypto.EncryptAndWrite(recorder.filePath, plain)
+	} else {
+		err = os.WriteFile(recorder.filePath, plain, 0600)
+	}
+	if err != nil {
+		r.logger.Error("Failed to write recording for session %s: %v", sessionID, err)
 	}
 
 	delete(r.sessions, sessionID)
 	r.logger.Info("Stopped recording session: %s", sessionID)
 
-	return nil
+	return err
 }
 
 // GetRecorder returns a session recorder
@@ -128,19 +137,16 @@ func (r *Recorder) GetRecordingPath(sessionID string) string {
 	return filepath.Join(r.storagePath, fmt.Sprintf("%s.txt", sessionID))
 }
 
-// Write writes data to the session recording
+// Write writes data to the session recording buffer
 func (s *SessionRecorder) Write(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Strip ANSI codes (colors, bold, etc.) to keep the text clean
 	cleanData := ansiRegex.ReplaceAll(data, []byte(""))
-
-	_, err := s.file.Write(cleanData)
+	_, err := s.buf.Write(cleanData)
 	if err != nil {
 		return fmt.Errorf("failed to write to recording: %w", err)
 	}
-
 	return nil
 }
 
@@ -160,13 +166,9 @@ func NewRecordingWriter(writer io.Writer, recorder *SessionRecorder) *RecordingW
 
 // Write writes data and records it
 func (rw *RecordingWriter) Write(p []byte) (n int, err error) {
-	// Record the data
 	if err := rw.recorder.Write(p); err != nil {
-		// Log error but don't fail the write
 		fmt.Fprintf(os.Stderr, "Recording error: %v\n", err)
 	}
-
-	// Write to actual writer
 	return rw.writer.Write(p)
 }
 
