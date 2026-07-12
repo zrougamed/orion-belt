@@ -1,4 +1,4 @@
-.PHONY: build build-server build-client build-agent test clean install plugins \
+.PHONY: build build-server build-client build-agent build-ui test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
         docker-push docker-up docker-down docker-logs \
         cve packages repos packaging-key sign-artifacts lab-compose-up lab-compose-down lab-bootstrap-admin \
@@ -14,6 +14,8 @@ BUILD_DIR_PLUGINS=bin/plugins
 PLUGINS := audit-logger notification email-notifications webhook-notifications
 GO=go
 GOFLAGS=-v
+NODE_BIN ?= $(CURDIR)/.tools/node/bin
+export PATH := $(NODE_BIN):$(PATH)
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -39,7 +41,13 @@ else
 endif
 
 # Build all components
-build: build-server build-client build-admin build-agent
+build: build-ui build-server build-client build-admin build-agent
+
+# Build React console into web/static (embedded by the server)
+build-ui:
+	@echo "Building web UI..."
+	@command -v npm >/dev/null || { echo "npm not found — install Node.js or set NODE_BIN=$(NODE_BIN)"; exit 1; }
+	cd web/ui && npm install --no-fund --no-audit && npm run build
 
 # Build server
 build-server:

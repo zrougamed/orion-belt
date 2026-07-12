@@ -238,7 +238,10 @@ ocp machine-name:/remote/file local-path
 orion-belt/
 ├── cmd/              # server, agent, osh, ocp, oadmin
 ├── pkg/              # server, client, agent, api, auth, authz, recording, …
-├── web/              # embedded admin/ops console (/ui)
+├── web/              # React console → build → embed at /ui
+│   ├── ui/           # Vite + React source
+│   ├── static/       # built assets (go:embed into server)
+│   └── embed.go      # serves /ui/ from the server binary
 ├── docs/
 │   ├── openapi/      # OpenAPI 3.0 (embedded + served)
 │   ├── SRS-UI.md     # Web console requirements (as implemented)

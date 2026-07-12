@@ -945,6 +945,26 @@ func (s *Server) ListConnectedAgents() []string {
 	return ids
 }
 
+// DisconnectAgent closes the reverse tunnel for a connected agent.
+func (s *Server) DisconnectAgent(machineID string) error {
+	s.agentsMu.Lock()
+	agentConn, exists := s.agents[machineID]
+	if exists {
+		delete(s.agents, machineID)
+	}
+	agentCount := len(s.agents)
+	s.agentsMu.Unlock()
+	if !exists {
+		return fmt.Errorf("agent not connected: %s", machineID)
+	}
+	metrics.Default.SetAgentsConnected(int64(agentCount))
+	if agentConn.SSHConn != nil {
+		_ = agentConn.SSHConn.Close()
+	}
+	s.logger.Info("Agent disconnected by admin: %s", machineID)
+	return nil
+}
+
 // SendAgentCommand opens a session to a connected agent and runs a control/exec command.
 func (s *Server) SendAgentCommand(machineID, command string) ([]byte, error) {
 	s.agentsMu.RLock()

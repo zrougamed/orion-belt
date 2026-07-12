@@ -30,6 +30,23 @@ type AuthService struct {
 	}
 }
 
+// privilegedAccess matches admin middleware: admins and operators bypass ReBAC for
+// terminal/files. Role string is authoritative when is_admin was never set.
+func privilegedAccess(user *common.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.IsAdmin {
+		return true
+	}
+	switch user.EffectiveRole() {
+	case common.RoleAdmin, common.RoleOperator:
+		return true
+	default:
+		return false
+	}
+}
+
 // NewAuthService creates a new authentication service
 func NewAuthService(store database.Store, logger *common.Logger) *AuthService {
 	return &AuthService{
@@ -96,8 +113,8 @@ func (a *AuthService) CheckPermission(ctx context.Context, userID, machineID, ac
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.IsAdmin {
-		a.logger.Debug("Admin access granted for user %s", userID)
+	if privilegedAccess(user) {
+		a.logger.Debug("Privileged access granted for user %s role=%s", userID, user.EffectiveRole())
 		return nil
 	}
 
@@ -136,8 +153,8 @@ func (a *AuthService) CheckPermissionWithRemoteUser(ctx context.Context, userID,
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.IsAdmin {
-		a.logger.Debug("Admin access granted for user %s", userID)
+	if privilegedAccess(user) {
+		a.logger.Debug("Privileged access granted for user %s role=%s", userID, user.EffectiveRole())
 		return nil
 	}
 

@@ -52,7 +52,7 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Try Session Token authentication (header, cookie, or query for WebSocket)
+		// Session: header, cookie, or ?token= (WebSocket cannot set custom headers)
 		sessionToken := c.GetHeader("X-Session-Token")
 		if sessionToken == "" {
 			if cookie, err := c.Cookie("session_token"); err == nil {
@@ -62,9 +62,6 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 		if sessionToken == "" {
 			sessionToken = c.Query("token")
 		}
-		if sessionToken == "" {
-			sessionToken = c.Query("access_token")
-		}
 		if sessionToken != "" {
 			if user, err := s.validateSession(ctx, sessionToken); err == nil {
 				s.setAuthContext(c, user.ID, user.Username, user.IsAdmin, "session")
@@ -73,15 +70,19 @@ func (s *APIServer) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Try Bearer Token authentication
-		if authHeader := c.GetHeader("Authorization"); authHeader != "" {
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				bearerToken := strings.TrimPrefix(authHeader, "Bearer ")
-				if user, err := s.validateBearerToken(ctx, bearerToken); err == nil {
-					s.setAuthContext(c, user.ID, user.Username, user.IsAdmin, "bearer")
-					c.Next()
-					return
-				}
+		// JWT: Authorization Bearer, or ?access_token= for WebSocket/SSE
+		bearerToken := ""
+		if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+			bearerToken = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+		if bearerToken == "" {
+			bearerToken = c.Query("access_token")
+		}
+		if bearerToken != "" {
+			if user, err := s.validateBearerToken(ctx, bearerToken); err == nil {
+				s.setAuthContext(c, user.ID, user.Username, user.IsAdmin, "bearer")
+				c.Next()
+				return
 			}
 		}
 

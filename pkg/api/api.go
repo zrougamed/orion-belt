@@ -42,6 +42,7 @@ type APIServer struct {
 type AgentCommander interface {
 	SendAgentCommand(machineID, command string) ([]byte, error)
 	ListConnectedAgents() []string
+	DisconnectAgent(machineID string) error
 }
 
 // Options configures optional API server dependencies.
@@ -236,6 +237,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Agent remote management
 		admin.GET("/agents/connected", s.listConnectedAgents)
 		admin.POST("/agents/:machine_id/command", s.sendAgentCommand)
+		admin.POST("/agents/:machine_id/disconnect", s.disconnectAgent)
 		admin.POST("/agents/install-script", s.generateAgentInstallScript)
 	}
 }

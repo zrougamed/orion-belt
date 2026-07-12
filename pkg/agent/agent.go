@@ -408,7 +408,7 @@ func (a *Agent) sendExitStatus(channel gossh.Channel, status int) {
 }
 
 // handleControlCommand processes server→agent management commands.
-// Supported: orion:status, orion:health, orion:info, orion:ping
+// Supported: orion:status, orion:health, orion:info, orion:ping, orion:restart
 func (a *Agent) handleControlCommand(channel gossh.Channel, command string) {
 	defer channel.Close()
 
@@ -447,13 +447,31 @@ func (a *Agent) handleControlCommand(channel gossh.Channel, command string) {
 			"num_cpu":    runtime.NumCPU(),
 			"hostname":   hostnameOrEmpty(),
 		}
+	case "orion:restart":
+		result = map[string]interface{}{
+			"ok":      true,
+			"message": "restart scheduled",
+		}
+		data, _ := json.Marshal(result)
+		channel.Write(append(data, '\n'))
+		a.sendExitStatus(channel, 0)
+		channel.CloseWrite()
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			cmd := exec.Command("systemctl", "restart", "orion-belt-agent")
+			if err := cmd.Start(); err != nil {
+				a.logger.Warn("systemctl restart failed (%v); exiting for process supervisor", err)
+				os.Exit(0)
+			}
+		}()
+		return
 	default:
 		result = map[string]interface{}{
 			"ok":      false,
 			"error":   "unknown control command",
 			"command": cmd,
 			"supported": []string{
-				"orion:ping", "orion:health", "orion:status", "orion:info",
+				"orion:ping", "orion:health", "orion:status", "orion:info", "orion:restart",
 			},
 		}
 		exitStatus = 1

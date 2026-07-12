@@ -1,0 +1,137 @@
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import type { AuditLog, User } from "../lib/types";
+import { fmtTime, shortId } from "../lib/format";
+import { Pagination, SortTh, useTableState } from "../components/DataTable";
+
+export function AuditPage() {
+  const [actionFilter, setActionFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
+  const [limit, setLimit] = useState(200);
+  const logs = useQuery({
+    queryKey: ["audit", limit],
+    queryFn: () => api<AuditLog[]>(`/audit-logs?limit=${limit}`),
+  });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/users") });
+  const table = useTableState<AuditLog>({ pageSize: 25 });
+
+  const userName = (id?: string) => {
+    if (!id) return "—";
+    return users.data?.find((u) => u.id === id)?.username || shortId(id);
+  };
+
+  const actions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of logs.data || []) if (l.action) set.add(l.action);
+    return [...set].sort();
+  }, [logs.data]);
+
+  const filtered = useMemo(() => {
+    let rows = logs.data || [];
+    if (actionFilter) rows = rows.filter((l) => l.action === actionFilter);
+    if (actorFilter) {
+      rows = rows.filter((l) => {
+        const name = userName(l.user_id).toLowerCase();
+        return name.includes(actorFilter.toLowerCase()) || (l.user_id || "").includes(actorFilter);
+      });
+    }
+    return rows;
+  }, [logs.data, actionFilter, actorFilter, users.data]);
+
+  const processed = useMemo(() => {
+    return table.process(
+      filtered,
+      (l, key) => {
+        if (key === "time") return l.timestamp ? new Date(l.timestamp).getTime() : 0;
+        if (key === "actor") return userName(l.user_id);
+        if (key === "action") return l.action;
+        if (key === "resource") return l.resource || "";
+        if (key === "ip") return l.ip_address || "";
+        return "";
+      },
+      (l) => `${userName(l.user_id)} ${l.action} ${l.resource || ""} ${l.ip_address || ""} ${l.id}`,
+    );
+  }, [filtered, table.query, table.sortKey, table.sortDir, table.page, table.pageSize, users.data]);
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Audit</h1>
+          <p>Trail of privileged actions.</p>
+        </div>
+        <button type="button" className="btn secondary sm" onClick={() => void logs.refetch()}>
+          Refresh
+        </button>
+      </div>
+      <div className="card">
+        <div className="table-toolbar">
+          <input
+            className="table-search"
+            value={table.query}
+            onChange={(e) => table.setQuery(e.target.value)}
+            placeholder="Search logs…"
+          />
+          <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); table.setPage(0); }}>
+            <option value="">All actions</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+          <input
+            value={actorFilter}
+            onChange={(e) => { setActorFilter(e.target.value); table.setPage(0); }}
+            placeholder="Actor…"
+            style={{ maxWidth: 160 }}
+          />
+          <select value={limit} onChange={(e) => setLimit(Number(e.target.value) || 200)}>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <SortTh label="Time" col="time" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+              <SortTh label="Actor" col="actor" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+              <SortTh label="Action" col="action" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+              <SortTh label="Resource" col="resource" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+              <SortTh label="IP" col="ip" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+            </tr>
+          </thead>
+          <tbody>
+            {processed.rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="empty">
+                  No audit events.
+                </td>
+              </tr>
+            ) : (
+              processed.rows.map((l) => (
+                <tr key={l.id}>
+                  <td className="mono">{fmtTime(l.timestamp)}</td>
+                  <td>{userName(l.user_id)}</td>
+                  <td className="mono">{l.action}</td>
+                  <td className="mono">{l.resource || "—"}</td>
+                  <td className="mono">{l.ip_address || "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <Pagination
+          page={processed.page}
+          pageCount={processed.pageCount}
+          total={processed.total}
+          pageSize={table.pageSize}
+          onPage={table.setPage}
+        />
+      </div>
+    </>
+  );
+}
