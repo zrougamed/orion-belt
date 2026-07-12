@@ -74,19 +74,20 @@ builds:
       - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
 archives:
-  # Linux: full gateway + agent + CLI tools (same binary count on amd64/arm64)
-  - id: linux
-    ids: [server, agent, osh, ocp, oadmin]
+  # Gateway binaries — Linux only (uniform binary count)
+  - id: gateway
+    ids: [server, agent]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     formats: [tar.gz]
     files:
       - LICENSE
       - README.md
-      - config/*.example.yaml
+      - config/server.example.yaml
+      - config/agent.example.yaml
       - packaging/systemd/*
 
-  # macOS: CLI tools only (server/agent are Linux-only)
-  - id: darwin-tools
+  # CLI tools — Linux + Darwin (same 3 binaries on every platform)
+  - id: tools
     ids: [osh, ocp, oadmin]
     name_template: '{{ .ProjectName }}_tools_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     formats: [tar.gz]
