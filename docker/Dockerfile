@@ -1,8 +1,8 @@
 # Build stage
 FROM golang:1.26.5-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git make gcc musl-dev
+# Go tools + Node (React console → web/static, embedded via go:embed)
+RUN apk add --no-cache git make gcc musl-dev nodejs npm
 
 # Set working directory
 WORKDIR /build
@@ -16,7 +16,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build all components
+# build-ui then binaries; UI lands in web/static and is compiled into the server
 RUN make build
 
 # Server image
@@ -35,6 +35,6 @@ RUN mkdir -p /var/lib/orion-belt/recordings /etc/orion-belt
 # Generate SSH host key
 RUN ssh-keygen -t rsa -f /etc/orion-belt/ssh_host_key -N ""
 
-EXPOSE 2222
+EXPOSE 2222 8080
 
 CMD ["/app/orion-belt-server", "-c", "/config/config.yaml"]

@@ -171,9 +171,26 @@ func (s *APIServer) sendAgentCommand(c *gin.Context) {
 		return
 	}
 
+	s.recordAudit(c, "agent.command", "machine:"+machineID, map[string]interface{}{
+		"command": req.Command,
+	})
 	c.JSON(http.StatusOK, gin.H{
 		"machine_id": machineID,
 		"command":    req.Command,
 		"output":     string(out),
 	})
+}
+
+func (s *APIServer) disconnectAgent(c *gin.Context) {
+	if s.agentCommander == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent commander not available"})
+		return
+	}
+	machineID := c.Param("machine_id")
+	if err := s.agentCommander.DisconnectAgent(machineID); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	s.recordAudit(c, "agent.disconnect", "machine:"+machineID, nil)
+	c.JSON(http.StatusOK, gin.H{"message": "agent disconnected", "machine_id": machineID})
 }

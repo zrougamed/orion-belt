@@ -1,10 +1,10 @@
 # SRS — Orion Belt Web Console (UI)
 
 **Document type:** Software Requirements Specification (UI)  
-**Scope:** High-fidelity web console as implemented in `web/static/index.html`  
+**Scope:** React SPA under `web/ui/` (built into `web/static/`, embedded at `/ui/`)  
 **Base URL:** `/ui/` (served by the gateway; redirects from `/` and `/admin`)  
 **API:** `/api/v1/*` — see [openapi/openapi.yaml](openapi/openapi.yaml)  
-**Status:** Implemented (Alpha, aligned with packaging / session-recording / versioning work)  
+**Status:** React console Phase 2 (palette, permissions, dashboard health)  
 **Last updated:** July 2026
 
 ---
@@ -13,7 +13,7 @@
 
 The Orion Belt web console is the primary operator surface for privileged access: authenticate, request and approve access, open recorded web terminals, browse remote files, manage users/machines/agents, and inspect audit/session trails — without leaving the browser.
 
-This SRS documents **what is implemented now**, not a future redesign. It is the acceptance baseline for UI regressions and for matching OpenAPI coverage.
+This SRS is the acceptance baseline for UI regressions and for matching OpenAPI coverage.
 
 ---
 
@@ -21,21 +21,22 @@ This SRS documents **what is implemented now**, not a future redesign. It is the
 
 ### Goals
 
-- Single embedded SPA with role-aware navigation
+- Vite + React 19 + TypeScript console with role-aware navigation
 - High-contrast, brand-led dark console (Instrument Sans + JetBrains Mono)
 - First-class login with SSH pubkey, optional TOTP, and WebAuthn/FIDO2
 - Live PTY terminal over WebSocket with session recording (`source=web`)
 - Timed cast session playback (xterm), audit log browser, user/machine admin CRUD
 - **Add agent** install-script generator (OS-specific)
 - Visible **build version** so operators can confirm shipped features
+- Production assets embedded via `go:embed` (`make build-ui` → `web/static`)
 
 ### Non-goals (deferred)
 
 - Fine-grained UI RBAC beyond role-gated nav (API still enforces ReBAC)
-- Multi-page React/Vue app or design-system package
 - Live shared session watching / collaborative cursors
-- Full permission matrix editor UX (grants exist via API/`oadmin`; UI focuses on users, machines, requests)
+- Full permission matrix editor UX (grants exist via API/`oadmin`)
 - Light theme
+- Heavy third-party admin kits (MUI/Ant) — prefer owned CSS tokens
 
 ---
 
@@ -48,7 +49,7 @@ This SRS documents **what is implemented now**, not a future redesign. It is the
 | **auditor** | Dashboard, Sessions, Users (read), Audit, Security | No terminal/files/agents/setup |
 | **user** | Machines, Terminal, Files, Sessions, Requests, Audit, Security | Self-service access + own security |
 
-Role uses `EffectiveRole`: explicit `admin`/`operator`/`auditor`, else `is_admin → admin`, else `role`/`user`. A stale `role=user` with `is_admin=true` is treated as admin.
+Role uses `EffectiveRole`: explicit `admin`/`operator`/`auditor`, else `is_admin → admin`, else `role`/`user`.
 
 ---
 
@@ -56,266 +57,87 @@ Role uses `EffectiveRole`: explicit `admin`/`operator`/`auditor`, else `is_admin
 
 ```
 /ui/
-├── Login stage (unauthenticated)
-└── App shell (authenticated)
+├── /login
+└── App shell
     ├── Side nav (role-filtered) + version in footer
-    ├── Workspace top bar (product label + version)
-    └── Views
-        ├── Dashboard
-        ├── Setup guide
-        ├── Access requests
-        ├── Machines
-        ├── Terminal
-        ├── Files
-        ├── Sessions (+ timed cast playback)
-        ├── Users
-        ├── Agents
-        ├── Add agent (OS install script)
-        ├── Audit
-        └── Security (MFA | WebAuthn | SSH keys)
+    └── Routes
+        ├── / (dashboard for admin/operator/auditor)
+        ├── /setup
+        ├── /requests
+        ├── /machines
+        ├── /terminal
+        ├── /files
+        ├── /sessions (+ cast playback)
+        ├── /users
+        ├── /agents
+        ├── /add-agent
+        ├── /audit
+        └── /security
 ```
 
 ---
 
-## 5. Visual design system (as shipped)
+## 5. Visual design system
 
 ### 5.1 Brand & composition
 
 - **Brand first:** Login hero is “Orion *Belt*” at display size; tagline secondary; version under tagline.
 - **One composition:** Login is a centered stage (not a dashboard). App shell is nav + workspace.
-- **Atmosphere:** Deep teal/charcoal base with grid + radial washes (not flat `#000`).
-- **Accent:** Amber `#e8a54b` for CTAs and version chip; teal `#2dd4bf` for secondary signals.
+- **Atmosphere:** Deep teal/charcoal base with grid + radial washes.
+- **Accent:** Amber `#e8a54b`; teal `#2dd4bf` for secondary signals.
 
-### 5.2 Tokens (`:root`)
+### 5.2 Tokens
 
-| Token | Value | Use |
-|-------|-------|-----|
-| `--bg-deep` / `--bg` | `#0a1214` / `#0e181c` | Page ground |
-| `--bg-elev` / `--bg-panel` | `#152226` / `#1a2a30` | Panels |
-| `--text` / `--muted` | `#e8f0f2` / `#8aa0a8` | Typography |
-| `--accent` | `#e8a54b` | Primary actions |
-| `--ok` / `--warn` / `--danger` | green / amber / red | Badges & toasts |
-| `--font` | Instrument Sans | UI text |
-| `--mono` | JetBrains Mono | IDs, times, paths, version |
-| `--radius` | 12px | Panels / controls |
-| `--nav-w` | 240px | Side nav |
+Defined in `web/ui/src/styles/theme.css` (`:root` CSS variables).
 
-### 5.3 Motion
+### 5.3 Stack
 
-- Login background drift (`@keyframes drift`, ~18s)
-- Panel focus ring / border transitions (`--ease`)
-- Toast show/hide
-- Terminal connect status (live/off dot)
-
-### 5.4 Components in use
-
-- **Buttons:** primary / secondary / danger / small (`sm`) / block
-- **Cards:** interaction or table containers (not decorative hero cards)
-- **Badges:** status/source (`ok` / `warn` / `danger` / `neutral`)
-- **Tables:** dense mono-friendly listings
-- **Toasts:** transient success/error
-- **Forms:** labeled fields, form-grid, selects
-- **xterm.js** + FitAddon for terminal viewport
+| Layer | Choice |
+|-------|--------|
+| Bundler | Vite |
+| UI | React 19 + TypeScript |
+| Routing | React Router (`basename=/ui`) |
+| Data | TanStack Query |
+| Terminal / cast | `@xterm/xterm` + FitAddon |
 
 ---
 
-## 6. Functional requirements by screen
+## 6. Functional requirements
 
-### 6.1 Login — FR-LOGIN
+Parity with the original console FRs remains the Phase 1 bar:
 
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-LOGIN-01 | Sign in with username + SSH public key | Done |
-| FR-LOGIN-02 | Optional TOTP / backup code field | Done |
-| FR-LOGIN-03 | WebAuthn / YubiKey / FIDO2 button (begin/finish) | Done |
-| FR-LOGIN-04 | Persist `session_token` (localStorage + cookie) and optional JWT | Done |
-| FR-LOGIN-05 | Show server build version from `GET /api/v1/version` | Done |
-| FR-LOGIN-06 | Surface MFA required / enrollment errors clearly | Done |
+- Login (pubkey, TOTP, WebAuthn)
+- Role-filtered shell + version chip
+- Dashboard / setup / requests / machines / terminal / files
+- Sessions list + timed cast playback + download
+- Users / agents / **Add agent** install script
+- Audit / security (MFA enroll/confirm, SSH keys list)
 
-**APIs:** `POST /public/login`, `POST /public/webauthn/login/*`, `GET /version`
-
-### 6.2 Shell / chrome — FR-SHELL
+### Build & ship
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| FR-SHELL-01 | Role-filtered side navigation | Done |
-| FR-SHELL-02 | Show username, role pill, email in nav footer | Done |
-| FR-SHELL-03 | Sign out → `POST /logout`, clear auth, return to login | Done |
-| FR-SHELL-04 | Workspace bar shows product name + version | Done |
-| FR-SHELL-05 | Nav footer shows version (mono) with commit/date tooltip | Done |
-| FR-SHELL-06 | Responsive: nav stacks / workspace padding adjusts on narrow viewports | Done |
-
-### 6.3 Dashboard — FR-DASH
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-DASH-01 | Stats: machines, active sessions, pending requests (as available) | Done |
-| FR-DASH-02 | Mini table of active sessions (id, user, machine, remote, source, status) | Done |
-| FR-DASH-03 | Setup incompleteness banner / deep-link when `setup/status` incomplete | Done |
-
-**APIs:** `/machines`, `/sessions/active`, `/access-requests/pending`, `/setup/status`
-
-### 6.4 Setup guide — FR-SETUP
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-SETUP-01 | Checklist for admin, agents, grants, connect paths | Done |
-| FR-SETUP-02 | Reflect live `setup/status` steps and counts | Done |
-| FR-SETUP-03 | Visible only to admin/operator nav | Done |
-
-### 6.5 Access requests — FR-REQ
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-REQ-01 | List pending requests | Done |
-| FR-REQ-02 | Create request (machine, remote users, reason, duration) | Done |
-| FR-REQ-03 | Approve / reject for admin/operator | Done |
-
-**APIs:** `/access-requests*`, `/admin/access-requests/:id/approve|reject`
-
-### 6.6 Machines — FR-MACH
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-MACH-01 | List machines with activity badges | Done |
-| FR-MACH-02 | Admin/operator create / edit / archive-or-delete | Done |
-| FR-MACH-03 | Tags and hostname/port editable in admin flows | Done |
-
-**APIs:** `/machines`, `/admin/machines`
-
-### 6.7 Terminal — FR-TERM
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-TERM-01 | Select machine + remote user; Connect / Disconnect | Done |
-| FR-TERM-02 | xterm.js PTY via `WS /terminal/ws?machine&user&token` | Done |
-| FR-TERM-03 | Resize messages `{type:resize,cols,rows}` | Done |
-| FR-TERM-04 | Cookie + query token auth for WebSocket | Done |
-| FR-TERM-05 | Every successful connect creates recorded session `source=web` | Done (server) |
-| FR-TERM-06 | Status indicator (connecting / live / disconnected / error) | Done |
-| FR-TERM-07 | Disconnect on navigate away from Terminal | Done |
-
-### 6.8 Files — FR-FILES
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-FILES-01 | Browse remote path for selected machine/user | Done |
-| FR-FILES-02 | Download / upload / mkdir / delete | Done |
-| FR-FILES-03 | Respect same ReBAC as terminal | Done (server) |
-
-**APIs:** `/files/list|download|upload|mkdir`, `DELETE /files`
-
-### 6.9 Sessions — FR-SESS
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-SESS-01 | List sessions with filters all / active / completed | Done |
-| FR-SESS-02 | Columns: id, user, machine, remote, **source**, times, status | Done |
-| FR-SESS-03 | Playback loads `/sessions/:id/content` | Done |
-| FR-SESS-04 | Download recording from playback | Done |
-| FR-SESS-05 | Distinguish `ssh` vs `web` source via badge | Done |
-| FR-SESS-06 | Timed cast (`.cast`) replay in xterm with play/pause/seek/speed | Done |
-| FR-SESS-07 | Legacy `.txt` recordings still open as plain text | Done |
-
-### 6.10 Users — FR-USER
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-USER-01 | List users with role, MFA, WebAuthn posture | Done |
-| FR-USER-02 | Admin/operator create user (username, email, role, optional pubkey) | Done |
-| FR-USER-03 | Inline edit email/role + save; delete | Done |
-
-**APIs:** `/users`, `/admin/users`
-
-### 6.11 Agents — FR-AGENT
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-AGENT-01 | Show connected agents | Done |
-| FR-AGENT-02 | Register agent (public register / install script) | Done |
-| FR-AGENT-03 | Send control command (e.g. `orion:info`) and show output | Done |
-| FR-AGENT-04 | **Add agent** nav — OS picker + generate install script | Done |
-| FR-AGENT-05 | Script embeds key, downloads package, joins gateway | Done |
-
-**APIs:** `/admin/agents/*` (incl. `POST /admin/agents/install-script`), `/public/register/agent`
-
-### 6.12 Audit — FR-AUDIT
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-AUDIT-01 | Table of recent audit logs (actor, action, resource, IP, details) | Done |
-| FR-AUDIT-02 | Refresh control | Done |
-
-**API:** `GET /audit-logs?limit=`
-
-### 6.13 Security — FR-SEC
-
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-SEC-01 | Tabs: MFA / WebAuthn / SSH keys | Done |
-| FR-SEC-02 | MFA enroll → confirm with code; disable with code; status | Done |
-| FR-SEC-03 | WebAuthn register / list / delete | Done |
-| FR-SEC-04 | SSH key add / list / delete (supports sk-* types server-side) | Done |
+| FR-BUILD-01 | `make build-ui` produces `web/static/index.html` + assets | Done |
+| FR-BUILD-02 | Server embeds `web/static` at `/ui/` | Done |
+| FR-BUILD-03 | `npm run dev` proxies API to `:8080` for local UI work | Done |
 
 ---
 
-## 7. Cross-cutting requirements
+## 7. Acceptance checklist (QA)
 
-| ID | Requirement | Status |
-|----|-------------|--------|
-| FR-X-01 | All authenticated `fetch` calls send session/JWT headers as configured by `api()` helper | Done |
-| FR-X-02 | 401 clears auth and returns to login | Done |
-| FR-X-03 | Toasts for success/failure on mutating actions | Done |
-| FR-X-04 | Escape HTML in rendered dynamic strings (`esc`) | Done |
-| FR-X-05 | Version shown on login + shell without auth for `/version` | Done |
-| FR-X-06 | Web terminal sessions appear under Sessions with playback | Done |
+1. `make build-ui && go build -o bin/orion-belt-server ./cmd/server`
+2. Open `/ui/` — login brand + version visible
+3. Admin login shows **Add agent** under Agents
+4. Terminal connect → disconnect → Sessions playback works for `.cast`
+5. Add agent generates install script (`POST /admin/agents/install-script`)
+6. Role `user` cannot open `/add-agent` or `/agents`
 
 ---
 
-## 8. Non-functional requirements
+## 8. Implementation notes
 
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-01 | Load console without a separate frontend build step | Single embedded HTML/CSS/JS |
-| NFR-02 | Usable on desktop and narrow mobile widths | Responsive CSS present |
-| NFR-03 | Terminal usable at ≥80×24 with fit-on-resize | FitAddon |
-| NFR-04 | No silent “connected but unrecorded” web sessions | Server refuses WS if recorder/session create fails |
-| NFR-05 | Operators can verify binary features via version string | `/api/v1/version` + UI |
-
----
-
-## 9. Acceptance checklist (QA)
-
-1. Fresh load shows **login brand + version**.
-2. Pubkey login lands on role-correct default view; version visible in bar/footer.
-3. WebAuthn login works when credentials registered.
-4. Open **Terminal** → connect → type → disconnect → **Sessions** shows `web` row → **Playback** replays the cast in xterm.
-5. **Add agent** → pick OS → generate script → run as root on the host → agent appears under **Agents**.
-6. **Audit** contains `session.web_terminal.start` / `.end` and `agent.install_script`.
-7. Admin creates user and machine; user requests access; operator approves.
-8. **Files** list/download against a connected agent.
-9. **Security** MFA enroll/confirm; SSH key add.
-10. After upgrade, UI version string matches `orion-belt-server --version` / `/api/v1/version`.
-
----
-
-## 10. Traceability
-
-| UI area | Primary OpenAPI tags |
-|---------|----------------------|
-| Login / Security | Auth, MFA, WebAuthn, SSH Keys |
-| Terminal | Terminal, Sessions |
-| Files | Files |
-| Sessions / Audit | Sessions, Audit |
-| Users / Machines / Agents | Users, Machines, Agents |
-| Requests | Access Requests |
-| Setup / Dashboard | Setup, Machines, Sessions |
-
----
-
-## 11. Implementation notes
-
-- **Source of truth for UI behavior:** `web/static/index.html` (embedded via `web/embed.go`).
-- **No separate SPA build**; CDN loads xterm + FitAddon.
+- **Source:** `web/ui/`
+- **Shipped assets:** `web/static/` (built; embedded by `web/embed.go`)
 - **RBAC in UI** is navigation gating only; the API remains authoritative.
-- Future UI RBAC / permission editors should extend this SRS rather than replace it silently.
+- Phase 2 delivered: permission editor (`/permissions`), command palette (⌘/Ctrl+K), dashboard agent health, session search.
+- Phase 3 candidates: live session join, richer audit filters, MFA enrollment polish.

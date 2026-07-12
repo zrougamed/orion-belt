@@ -53,3 +53,10 @@ lab/qemu/images/
 lab/qemu/run/
 lab/compose/agent-keys/
 lab/credentials/
+
+# Frontend
+web/ui/node_modules/
+web/ui/dist/
+.tools/
+
+.tools/
