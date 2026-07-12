@@ -74,8 +74,9 @@ builds:
       - -X github.com/zrougamed/orion-belt/pkg/version.Date={{.Date}}
 
 archives:
-  - id: tarballs
-    builds: [server, agent, osh, ocp, oadmin]
+  # Linux: full gateway + agent + CLI tools (same binary count on amd64/arm64)
+  - id: linux
+    ids: [server, agent, osh, ocp, oadmin]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     formats: [tar.gz]
     files:
@@ -83,6 +84,16 @@ archives:
       - README.md
       - config/*.example.yaml
       - packaging/systemd/*
+
+  # macOS: CLI tools only (server/agent are Linux-only)
+  - id: darwin-tools
+    ids: [osh, ocp, oadmin]
+    name_template: '{{ .ProjectName }}_tools_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - config/client.example.yaml
 
 nfpms:
   - id: orion-belt
@@ -95,7 +106,7 @@ nfpms:
     bindir: /usr/bin
     section: net
     priority: optional
-    builds: [server]
+    ids: [server]
     contents:
       - src: packaging/systemd/orion-belt-server.service
         dst: /lib/systemd/system/orion-belt-server.service
@@ -137,7 +148,7 @@ nfpms:
     license: Apache-2.0
     formats: [deb, rpm, apk]
     bindir: /usr/bin
-    builds: [agent]
+    ids: [agent]
     contents:
       - src: packaging/systemd/orion-belt-agent.service
         dst: /lib/systemd/system/orion-belt-agent.service
@@ -160,7 +171,7 @@ nfpms:
     license: Apache-2.0
     formats: [deb, rpm, apk]
     bindir: /usr/bin
-    builds: [osh, ocp, oadmin]
+    ids: [osh, ocp, oadmin]
     contents:
       - src: config/client.example.yaml
         dst: /etc/orion-belt/client.yaml
