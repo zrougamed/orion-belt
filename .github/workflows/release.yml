@@ -12,6 +12,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Secrets cannot be referenced in `if:` — map them to env first.
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,11 +33,11 @@ jobs:
 
       - name: Import packaging GPG key
         id: import_gpg
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.GPG_PRIVATE_KEY != ''
         uses: crazy-max/ghaction-import-gpg@v6
         with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          gpg_private_key: ${{ env.GPG_PRIVATE_KEY }}
+          passphrase: ${{ env.GPG_PASSPHRASE }}
 
       - name: Export public packaging key
         if: steps.import_gpg.outcome == 'success'
@@ -63,7 +67,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
-          GPG_PASSWORD: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PASSWORD: ${{ env.GPG_PASSPHRASE }}
 
       - name: Build signed package repositories
         if: steps.import_gpg.outcome == 'success'
