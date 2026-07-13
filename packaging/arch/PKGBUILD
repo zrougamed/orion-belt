@@ -7,7 +7,7 @@
 
 pkgbase=orion-belt
 pkgname=(orion-belt orion-belt-agent orion-belt-tools)
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc='Orion Belt privileged access gateway'
 arch=(x86_64 aarch64)

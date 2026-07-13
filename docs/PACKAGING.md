@@ -68,8 +68,8 @@ sudo systemctl enable --now orion-belt-agent
 Push a tag `v*`. The Release workflow runs the CVE gate, then GoReleaser publishes archives + packages to GitHub Releases.
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 ## APT / YUM / APK repositories (signed)
