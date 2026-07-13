@@ -109,7 +109,7 @@ OpenSSH: ssh alice+web-01@gateway
 | [openssh-clients.md](openssh-clients.md) | Current |
 | [openfga-model.fga](openfga-model.fga) | Current |
 | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) | Plugin API |
-| [SREVER-CLI.md](SREVER-CLI.md) | Server CLI (filename typo: “SREVER”) |
+| [SERVER-CLI.md](SERVER-CLI.md) | Server CLI |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Current |
 | [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md) | QEMU lab QA |
 

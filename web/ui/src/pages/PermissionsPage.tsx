@@ -6,10 +6,14 @@ import type { Machine, Permission, User } from "../lib/types";
 import { fmtTime, shortId } from "../lib/format";
 import { useToast } from "../components/Toast";
 import { Badge } from "../components/Badge";
+import { Pagination, SortTh, TableToolbar, useTableState } from "../components/DataTable";
+
+type ViewMode = "user" | "machine";
 
 export function PermissionsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const table = useTableState<Permission>({ pageSize: 25 });
   const usersQ = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/users") });
   const machinesQ = useQuery({ queryKey: ["machines"], queryFn: () => api<Machine[]>("/machines") });
   const [userId, setUserId] = useState("");
@@ -18,10 +22,16 @@ export function PermissionsPage() {
   const [remoteUsers, setRemoteUsers] = useState("root");
   const [durationHours, setDurationHours] = useState(0);
 
+  const [viewMode, setViewMode] = useState<ViewMode>("user");
+  const [viewUserId, setViewUserId] = useState("");
+  const [viewMachineId, setViewMachineId] = useState("");
+  const viewId = viewMode === "user" ? viewUserId : viewMachineId;
+
   const permsQ = useQuery({
-    queryKey: ["permissions", "user", userId],
-    queryFn: () => api<Permission[]>(`/permissions/user/${encodeURIComponent(userId)}`),
-    enabled: !!userId,
+    queryKey: ["permissions", viewMode, viewId],
+    queryFn: () =>
+      api<Permission[]>(`/permissions/${viewMode}/${encodeURIComponent(viewId)}`),
+    enabled: !!viewId,
   });
 
   const grant = useMutation({
@@ -40,7 +50,7 @@ export function PermissionsPage() {
     },
     onSuccess: () => {
       toast("Permission granted");
-      void qc.invalidateQueries({ queryKey: ["permissions", "user", userId] });
+      void qc.invalidateQueries({ queryKey: ["permissions"] });
     },
     onError: (e: Error) => toast(e.message, "err"),
   });
@@ -63,15 +73,32 @@ export function PermissionsPage() {
     grant.mutate();
   }
 
-  async function revoke(id: string) {
+  async function revoke(id: string, label: string) {
+    if (!confirm(`Revoke access to ${label}?`)) return;
     try {
       await api(`/admin/permissions/${encodeURIComponent(id)}`, { method: "DELETE" });
       toast("Permission revoked");
-      void qc.invalidateQueries({ queryKey: ["permissions", "user", userId] });
+      void qc.invalidateQueries({ queryKey: ["permissions"] });
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
     }
   }
+
+  const perms = permsQ.data || [];
+  const processed = useMemo(() => {
+    return table.process(
+      perms,
+      (p, key) => {
+        if (key === "peer") return viewMode === "user" ? machineName(p.machine_id) : userName(p.user_id);
+        if (key === "access") return p.access_type;
+        if (key === "granted") return p.granted_at || "";
+        if (key === "expires") return p.expires_at || "";
+        return "";
+      },
+      (p) =>
+        `${machineName(p.machine_id)} ${userName(p.user_id)} ${p.access_type} ${(p.remote_users || []).join(" ")}`,
+    );
+  }, [perms, viewMode, machineName, userName, table.query, table.sortKey, table.sortDir, table.page, table.pageSize]);
 
   return (
     <>
@@ -128,44 +155,105 @@ export function PermissionsPage() {
         </button>
       </form>
       <div className="card">
-        <h3>Grants for {userId ? userName(userId) : "…"}</h3>
-        {!userId ? (
-          <div className="empty">Select a user to list permissions.</div>
+        <div className="row" style={{ marginBottom: "0.75rem", alignItems: "flex-end" }}>
+          <div>
+            <label className="field">View grants by</label>
+            <select
+              value={viewMode}
+              onChange={(e) => {
+                setViewMode(e.target.value as ViewMode);
+                table.setPage(0);
+              }}
+            >
+              <option value="user">User</option>
+              <option value="machine">Machine</option>
+            </select>
+          </div>
+          {viewMode === "user" ? (
+            <div>
+              <label className="field">User</label>
+              <select value={viewUserId} onChange={(e) => setViewUserId(e.target.value)}>
+                <option value="">Select…</option>
+                {(usersQ.data || []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="field">Machine</label>
+              <select value={viewMachineId} onChange={(e) => setViewMachineId(e.target.value)}>
+                <option value="">Select…</option>
+                {(machinesQ.data || []).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <h3>
+          Grants for {viewId ? (viewMode === "user" ? userName(viewId) : machineName(viewId)) : "…"}
+        </h3>
+        {!viewId ? (
+          <div className="empty">Select a {viewMode} to list permissions.</div>
         ) : permsQ.isLoading ? (
           <p className="muted">Loading…</p>
-        ) : (permsQ.data || []).length === 0 ? (
+        ) : perms.length === 0 ? (
           <div className="empty">No permissions.</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Machine</th>
-                <th>Access</th>
-                <th>Remote users</th>
-                <th>Granted</th>
-                <th>Expires</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {(permsQ.data || []).map((p) => (
-                <tr key={p.id}>
-                  <td>{machineName(p.machine_id)}</td>
-                  <td>
-                    <Badge status={p.access_type}>{p.access_type}</Badge>
-                  </td>
-                  <td className="mono">{(p.remote_users || []).join(", ") || "—"}</td>
-                  <td className="mono">{fmtTime(p.granted_at)}</td>
-                  <td className="mono">{fmtTime(p.expires_at)}</td>
-                  <td>
-                    <button type="button" className="btn danger sm" onClick={() => void revoke(p.id)}>
-                      Revoke
-                    </button>
-                  </td>
+          <>
+            <TableToolbar query={table.query} onQuery={table.setQuery} placeholder="Filter grants…" />
+            <table>
+              <thead>
+                <tr>
+                  <SortTh
+                    label={viewMode === "user" ? "Machine" : "User"}
+                    col="peer"
+                    sortKey={table.sortKey}
+                    sortDir={table.sortDir}
+                    onSort={table.toggleSort}
+                  />
+                  <SortTh label="Access" col="access" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+                  <th>Remote users</th>
+                  <SortTh label="Granted" col="granted" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+                  <SortTh label="Expires" col="expires" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {processed.rows.map((p) => {
+                  const peerLabel = viewMode === "user" ? machineName(p.machine_id) : userName(p.user_id);
+                  return (
+                    <tr key={p.id}>
+                      <td>{peerLabel}</td>
+                      <td>
+                        <Badge status={p.access_type}>{p.access_type}</Badge>
+                      </td>
+                      <td className="mono">{(p.remote_users || []).join(", ") || "—"}</td>
+                      <td className="mono">{fmtTime(p.granted_at)}</td>
+                      <td className="mono">{fmtTime(p.expires_at)}</td>
+                      <td>
+                        <button type="button" className="btn danger sm" onClick={() => void revoke(p.id, peerLabel)}>
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <Pagination
+              page={processed.page}
+              pageCount={processed.pageCount}
+              total={processed.total}
+              pageSize={table.pageSize}
+              onPage={table.setPage}
+            />
+          </>
         )}
       </div>
     </>

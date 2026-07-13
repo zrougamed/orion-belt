@@ -206,10 +206,10 @@ try:
     entries.append({"name":n,"path":fp,"is_dir":os.path.isdir(fp),"size":st.st_size,"mtime":int(st.st_mtime)})
 except Exception as e:
   print(json.dumps({"error":str(e)})); sys.exit(1)
-print(json.dumps({"path":p,"entries":entries}))' %q`, path)
+print(json.dumps({"path":p,"entries":entries}))' %s`, shellQuote(path))
 	out, err := s.execOnMachine(c, machine, remoteUser, cmd)
 	if err != nil {
-		out, err = s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("ls -la %q", path))
+		out, err = s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("ls -la %s", shellQuote(path)))
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
@@ -224,7 +224,8 @@ func (s *APIServer) filesDownload(c *gin.Context) {
 	machine := c.Query("machine")
 	path := c.Query("path")
 	remoteUser := c.DefaultQuery("user", "root")
-	out, err := s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("base64 -w0 %q 2>/dev/null || base64 %q", path, path))
+	q := shellQuote(path)
+	out, err := s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("base64 -w0 %s 2>/dev/null || base64 %s", q, q))
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -259,7 +260,7 @@ func (s *APIServer) filesUpload(c *gin.Context) {
 		return
 	}
 	b64 := base64.StdEncoding.EncodeToString(data)
-	cmd := fmt.Sprintf("echo %s | base64 -d > %q", shellQuote(b64), path)
+	cmd := fmt.Sprintf("echo %s | base64 -d > %s", shellQuote(b64), shellQuote(path))
 	if _, err := s.execOnMachine(c, machine, remoteUser, cmd); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -280,7 +281,7 @@ func (s *APIServer) filesMkdir(c *gin.Context) {
 	if req.User == "" {
 		req.User = "root"
 	}
-	if _, err := s.execOnMachine(c, req.Machine, req.User, fmt.Sprintf("mkdir -p %q", req.Path)); err != nil {
+	if _, err := s.execOnMachine(c, req.Machine, req.User, fmt.Sprintf("mkdir -p %s", shellQuote(req.Path))); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -291,7 +292,7 @@ func (s *APIServer) filesDelete(c *gin.Context) {
 	machine := c.Query("machine")
 	path := c.Query("path")
 	remoteUser := c.DefaultQuery("user", "root")
-	if _, err := s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("rm -rf %q", path)); err != nil {
+	if _, err := s.execOnMachine(c, machine, remoteUser, fmt.Sprintf("rm -rf %s", shellQuote(path))); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -317,7 +318,7 @@ func (s *APIServer) execOnMachine(c *gin.Context, machineName, remoteUser, comma
 	defer channel.Close()
 	go ssh.DiscardRequests(reqs)
 
-	ok, err := channel.SendRequest("exec", true, ssh.Marshal(&struct{ Command string }{command}))
+	ok, err := channel.SendRequest("exec", true, ssh.Marshal(&struct{ Command, User string }{command, remoteUser}))
 	if err != nil || !ok {
 		return nil, fmt.Errorf("exec rejected")
 	}

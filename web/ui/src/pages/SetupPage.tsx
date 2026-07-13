@@ -1,23 +1,40 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { useRole } from "../auth/AuthContext";
+import { useAuth, useRole } from "../auth/AuthContext";
+import { Badge } from "../components/Badge";
+
+type SetupStatus = {
+  complete?: boolean;
+  steps?: {
+    admin_exists?: boolean;
+    has_machines?: boolean;
+    has_connected_agents?: boolean;
+    has_users?: boolean;
+    has_permissions?: boolean;
+  };
+  counts?: {
+    admins?: number;
+    users?: number;
+    machines?: number;
+    connected_agents?: number;
+    permissions?: number;
+  };
+  next?: string;
+};
 
 export function SetupPage() {
   const role = useRole();
+  const { user } = useAuth();
   const setup = useQuery({
     queryKey: ["setup"],
-    queryFn: () =>
-      api<{
-        has_admin?: boolean;
-        agents_connected?: number;
-        machines?: number;
-        ready?: boolean;
-        checklist?: string[];
-      }>("/setup/status"),
+    queryFn: () => api<SetupStatus>("/setup/status"),
   });
 
   const d = setup.data;
+  const statusSteps = d?.steps;
+  const counts = d?.counts;
+  const hardenedAuth = !!(user?.mfa_enabled || user?.webauthn_enabled);
   const steps = [
     {
       title: "1. Gateway config",
@@ -38,7 +55,7 @@ export function SetupPage() {
           public key.
         </>
       ),
-      done: !!d?.has_admin,
+      done: !!statusSteps?.admin_exists,
     },
     {
       title: "3. Enroll agents",
@@ -48,7 +65,7 @@ export function SetupPage() {
           Watch <Link to="/agents">Agents</Link> until the tunnel shows <em>online</em>.
         </>
       ),
-      done: (d?.agents_connected ?? 0) > 0,
+      done: !!statusSteps?.has_connected_agents,
     },
     {
       title: "4. Grant access",
@@ -58,7 +75,7 @@ export function SetupPage() {
           (or approve <Link to="/requests">Access requests</Link>). Set allowed remote users (e.g. <span className="mono">root</span>).
         </>
       ),
-      done: (d?.machines ?? 0) > 0 && !!d?.has_admin,
+      done: !!statusSteps?.has_permissions,
     },
     {
       title: "5. Harden auth",
@@ -68,7 +85,9 @@ export function SetupPage() {
           add Vite/production origins under <span className="mono">auth.webauthn.origins</span>.
         </>
       ),
-      done: false,
+      // No org-wide "hardened auth" signal exists in /setup/status yet, so this uses
+      // the signed-in user's own MFA/WebAuthn enrollment as the best available proxy.
+      done: hardenedAuth,
     },
     {
       title: "6. Verify sessions",
@@ -78,7 +97,7 @@ export function SetupPage() {
           <Link to="/sessions">Sessions</Link>.
         </>
       ),
-      done: !!d?.ready,
+      done: !!d?.complete,
     },
   ];
 
@@ -112,19 +131,19 @@ export function SetupPage() {
           <div className="grid">
             <div>
               <div className="stat-label">Admin</div>
-              <div>{d.has_admin ? "ready" : "missing"}</div>
+              <div>{statusSteps?.admin_exists ? "ready" : "missing"}</div>
             </div>
             <div>
               <div className="stat-label">Machines</div>
-              <div>{d.machines ?? 0}</div>
+              <div>{counts?.machines ?? 0}</div>
             </div>
             <div>
               <div className="stat-label">Agents connected</div>
-              <div>{d.agents_connected ?? 0}</div>
+              <div>{counts?.connected_agents ?? 0}</div>
             </div>
             <div>
               <div className="stat-label">Ready</div>
-              <div>{d.ready ? "yes" : "not yet"}</div>
+              <div>{d.complete ? "yes" : "not yet"}</div>
             </div>
           </div>
         ) : null}
@@ -135,7 +154,7 @@ export function SetupPage() {
           <div key={s.title} className={`card setup-step${s.done ? " done" : ""}`}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h3 style={{ margin: 0 }}>{s.title}</h3>
-              <BadgeDone done={s.done} />
+              <Badge status={s.done ? "completed" : "pending"}>{s.done ? "done" : "todo"}</Badge>
             </div>
             <p className="muted" style={{ marginBottom: 0 }}>
               {s.body}
@@ -165,8 +184,4 @@ export function SetupPage() {
       )}
     </>
   );
-}
-
-function BadgeDone({ done }: { done: boolean }) {
-  return <span className={`role-pill${done ? "" : ""}`}>{done ? "done" : "todo"}</span>;
 }

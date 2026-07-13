@@ -4,9 +4,15 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
 )
+
+// defaultHookTimeout bounds how long a single plugin can block a hook call
+// (SSH post-auth, session start/end) before it's treated as failed. Variable
+// (not const) so tests can shrink it instead of sleeping for the real value.
+var defaultHookTimeout = 5 * time.Second
 
 // Plugin defines the interface for Orion-Belt plugins
 type Plugin interface {
@@ -110,7 +116,8 @@ func (m *Manager) LoadPlugin(ctx context.Context, path string) error {
 	if m.loader == nil {
 		return fmt.Errorf("plugin loader not initialized")
 	}
-	return m.loader.LoadPlugin(ctx, path)
+	_, err := m.loader.LoadPlugin(ctx, path)
+	return err
 }
 
 // Register registers a plugin
@@ -204,13 +211,43 @@ func (m *Manager) TriggerHook(ctx context.Context, hook Hook, hookCtx *HookConte
 	m.mu.RUnlock()
 
 	for _, plugin := range plugins {
-		if err := plugin.OnHook(ctx, hook, hookCtx); err != nil {
+		if err := m.callHook(ctx, plugin, hook, hookCtx); err != nil {
 			m.logger.Error("Hook %s failed for plugin %s: %v", hook, plugin.Name(), err)
 			return fmt.Errorf("hook %s failed: %w", hook, err)
 		}
 	}
 
 	return nil
+}
+
+// callHook invokes a single plugin's OnHook with panic recovery and a bounded
+// timeout, so one misbehaving plugin — a panic, or a blocking call with no
+// timeout of its own (e.g. a webhook HTTP request) — can't crash the server
+// process or stall every login/session indefinitely. On timeout the plugin's
+// goroutine is abandoned (Go has no way to force-preempt it), which is an
+// accepted leak for a plugin that's already misbehaving; it does not block the
+// caller past defaultHookTimeout.
+func (m *Manager) callHook(ctx context.Context, p HookPlugin, hook Hook, hookCtx *HookContext) error {
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.logger.Error("Plugin %s panicked handling hook %s: %v", p.Name(), hook, r)
+				done <- fmt.Errorf("plugin %s panicked: %v", p.Name(), r)
+			}
+		}()
+		done <- p.OnHook(ctx, hook, hookCtx)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(defaultHookTimeout):
+		m.logger.Error("Plugin %s timed out (>%s) handling hook %s", p.Name(), defaultHookTimeout, hook)
+		return fmt.Errorf("plugin %s timed out handling hook %s", p.Name(), hook)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // InitializeAll initializes all registered plugins.

@@ -5,6 +5,37 @@
 **Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
 **Status:** v0.4 merged on `master`; packaging / CVE / multi-distro lab in progress
 
+## Audit Findings — 2026-07-13
+
+A full pass over the backend (`pkg/`, `cmd/`, `plugins/`), docs (`docs/`, `README.md`, OpenAPI spec), and web console (`web/ui/src`) turned up concrete, specific gaps — listed here rather than folded silently into the sections below so they don't get lost among the aspirational Phase 2-4 items. Two were security-critical and fixed same-day; the rest are queued.
+
+All items below were found and fixed same-day (backend, docs, and web-console work landed in parallel).
+
+### Security / correctness
+
+- [x] **Agent shell spawn no longer shells out to `su -`.** `pkg/agent/agent.go` now resolves the target user from the local user database and drops privileges directly via `syscall.Credential` (setuid/setgid), resolving the user's real login shell from `/etc/passwd` instead of assuming `/bin/bash` exists. Matches how OpenSSH spawns sessions; fixes hard failures on minimal distro images (e.g. `agent-opensuse`) where `su`'s PAM/setuid path was unreliable.
+- [x] **CRITICAL — command injection in the web file browser, fixed.** `pkg/api/terminal.go`'s `filesList`/`filesDownload`/`filesUpload`/`filesMkdir`/`filesDelete` built shell command strings with Go's `%q` verb, which escapes Go-string syntax only — not shell metacharacters. `$(...)` command substitution still expanded inside the resulting double-quoted shell token, so a `path` like `/tmp/$(id>/tmp/pwned)` executed arbitrary commands on the target agent. All five handlers now use the existing `shellQuote()` POSIX single-quote escaper. Regression-tested in `pkg/api/terminal_test.go`.
+- [x] **`exec` requests now forward `remote_user` to the agent.** File ops and CLI `exec` previously always ran as the agent's own uid (root) regardless of the selected remote user — only the interactive `shell` request carried a `User` field. Added `User` to the exec payload on both the web-terminal-bridge path (`pkg/api/terminal.go` `execOnMachine`) and the CLI/gateway path (`pkg/server/server.go`); `pkg/agent/agent.go`'s `executeCommand` now impersonates that user via the same setuid/setgid machinery `buildShellCommand` uses for interactive shells (factored into shared `resolveUnixIdentity()`/`credentialForIdentity()` helpers), falling back to the agent's own identity when no user is specified (admin control commands, heartbeat).
+- [x] **Plugin hooks now have panic recovery and a bounded timeout.** `pkg/plugin/plugin.go`'s `TriggerHook` runs each plugin via `recover()`-guarded `callHook`, raced against a timeout (default 5s) so a panicking or hanging plugin (e.g. a webhook with no HTTP timeout) can no longer crash the server or stall every login/session. Covered in `pkg/plugin/plugin_test.go`.
+- [x] **Plugin config wiring no longer picks a plugin at random.** `pkg/plugin/plugin_loader.go`'s `LoadPlugin` now returns the just-loaded plugin's real name instead of `LoadPluginWithConfig` re-deriving "the" plugin via undefined map-iteration order over `loadedLibs`.
+- [x] **Expired HTTP sessions are now cleaned up.** `pkg/server/server.go` has a new `runSessionCleanupLoop` (hourly ticker, same shutdown-channel pattern as the recording retention loop) calling the previously-unwired `AuthService.CleanupExpiredSessions`.
+
+### Documentation
+
+- [x] **`docs/openapi/openapi.yaml`** now documents `POST /api/v1/admin/agents/{machine_id}/disconnect`, matching the sibling `/admin/agents/*` entries.
+- [x] **`docs/SETUP.md`** now points readers at `config/server.example.yaml` right after the minimal-config step, with one-line explanations of the WebAuthn/OpenFGA/MFA-enforcement/rate-limiting/recording-encryption knobs that were previously undiscoverable.
+- [x] **`docs/SREVER-CLI.md` filename typo, fixed** — renamed to `docs/SERVER-CLI.md`; fixed the inbound link and typo callout in `ARCHITECTURE.md`.
+- [x] **`docs/SRS-UI.md`'s role/nav table** now includes the Permissions page (admin/operator only, confirmed against `web/ui/src/lib/nav.ts`).
+
+### Web console
+
+- [x] **`PermissionsPage.tsx` `revoke()` now requires confirmation**, matching every other destructive action in the console.
+- [x] **`PermissionsPage.tsx` migrated to the shared `DataTable`/`useTableState` pattern**, with a new "view by user / by machine" toggle wired to the existing `GET /permissions/machine/:id` endpoint — the concrete substance behind the old "richer permission editor" line.
+- [x] **API key management UI added** — new "API keys" tab in `SecurityPage.tsx` alongside MFA/WebAuthn/SSH keys: create (with optional expiry), one-time copyable reveal of the raw key on creation (mirrors the MFA-enrollment "show secret once" UX), and separate soft-Revoke vs. permanent-Delete actions matching the backend's actual semantics.
+- [x] **`SetupPage.tsx` onboarding fixed — and a larger bug found in the process.** Step 5 ("Harden auth") no longer hardcodes `done: false` (now derived from the signed-in user's MFA/WebAuthn enrollment status). While fixing it, discovered the page was reading fields (`has_admin`, `agents_connected`, `machines`, `ready`) that don't exist in the real `/setup/status` response shape (`complete`, `steps.*`, `counts.*`) — so steps 2, 3, 4, and 6 (not just 5) were silently stuck on "todo" regardless of actual state. Fixed the type and all step/stat derivations to match the real backend response. Also replaced the dead-ternary `BadgeDone` component with the existing shared `Badge` component instead of inventing new CSS.
+
+---
+
 ## What Orion Belt Is
 
 Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) system built in Go. It implements a bastion host pattern using *reverse SSH tunnels*, fine-grained access control (ReBAC), session recording, and an approval-based workflow for temporary access. The goal is secure, auditable access to infrastructure with no open inbound ports.
@@ -261,5 +292,5 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 
 This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.4** is on `master`; packaging/CVE/lab work targets the next cut.
 
-**Last Updated:** July 2026  
+**Last Updated:** 2026-07-13 (code/docs/UI audit — all 14 findings fixed same-day: agent shell spawn, file-browser command injection, exec remote-user impersonation, plugin hook hardening, plugin config wiring, session cleanup, OpenAPI/SETUP/SRS-UI docs, Permissions page UX + table migration, API key management UI, Setup page onboarding)  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	webauthnlib "github.com/go-webauthn/webauthn/webauthn"
 	"github.com/zrougamed/orion-belt/pkg/api"
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/authz"
@@ -18,7 +19,6 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/metrics"
 	"github.com/zrougamed/orion-belt/pkg/plugin"
 	"github.com/zrougamed/orion-belt/pkg/recording"
-	webauthnlib "github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -239,6 +239,9 @@ func (s *Server) Start() error {
 	if s.config.Recording.RetentionDays > 0 {
 		go s.runRetentionLoop()
 	}
+
+	// Periodic expired HTTP session cleanup
+	go s.runSessionCleanupLoop()
 
 	for {
 		select {
@@ -698,7 +701,7 @@ func (s *Server) proxyToMachine(clientChannel ssh.Channel, commandLine, userID, 
 		if strings.Contains(remoteCommand, "scp") {
 			s.logger.Debug("Directing SCP command to agent: %s", remoteCommand)
 		}
-		s.executeCommand(clientChannel, agentChannel, agentReqs, remoteCommand, sessionRecorder)
+		s.executeCommand(clientChannel, agentChannel, agentReqs, remoteCommand, remoteUser, sessionRecorder)
 	} else {
 		s.logger.Info("Starting interactive shell on agent")
 		s.startInteractiveShell(clientChannel, agentChannel, agentReqs, sessionRecorder, remoteUser)
@@ -723,7 +726,7 @@ func splitFirst(s string) []string {
 	return []string{s}
 }
 
-func (s *Server) executeCommand(clientChannel, agentChannel ssh.Channel, agentReqs <-chan *ssh.Request, command string, recorder *recording.SessionRecorder) {
+func (s *Server) executeCommand(clientChannel, agentChannel ssh.Channel, agentReqs <-chan *ssh.Request, command, remoteUser string, recorder *recording.SessionRecorder) {
 	exitStatusReceived := make(chan struct{})
 
 	go func() {
@@ -744,7 +747,7 @@ func (s *Server) executeCommand(clientChannel, agentChannel ssh.Channel, agentRe
 		}
 	}()
 
-	ok, err := agentChannel.SendRequest("exec", true, ssh.Marshal(&struct{ Command string }{command}))
+	ok, err := agentChannel.SendRequest("exec", true, ssh.Marshal(&struct{ Command, User string }{command, remoteUser}))
 	if err != nil {
 		s.logger.Error("Failed to send exec request: %v", err)
 		clientChannel.Write([]byte(fmt.Sprintf("Failed to execute command: %v\n", err)))
@@ -897,6 +900,29 @@ func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
 }
 
+// runSessionCleanupLoop periodically deletes expired HTTP sessions. Expiry is
+// already enforced at validation time (a token past its expiry is rejected
+// regardless of whether the row still exists), so this only reclaims storage —
+// without it, http_sessions grows unbounded.
+func (s *Server) runSessionCleanupLoop() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	cleanup := func() {
+		if err := s.authService.CleanupExpiredSessions(context.Background()); err != nil {
+			s.logger.Warn("session cleanup: %v", err)
+		}
+	}
+	cleanup()
+	for {
+		select {
+		case <-s.shutdown:
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
 // runRetentionLoop periodically deletes expired recordings.
 func (s *Server) runRetentionLoop() {
 	ticker := time.NewTicker(6 * time.Hour)
@@ -982,7 +1008,10 @@ func (s *Server) SendAgentCommand(machineID, command string) ([]byte, error) {
 
 	go ssh.DiscardRequests(reqs)
 
-	ok, err := channel.SendRequest("exec", true, ssh.Marshal(&struct{ Command string }{command}))
+	// No remote-user impersonation for admin agent commands (orion:* control
+	// commands are intercepted agent-side before reaching executeCommand; any
+	// other command here runs as the agent's own identity, same as before).
+	ok, err := channel.SendRequest("exec", true, ssh.Marshal(&struct{ Command, User string }{command, ""}))
 	if err != nil {
 		return nil, fmt.Errorf("send command: %w", err)
 	}

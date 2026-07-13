@@ -13,6 +13,18 @@ Set at least:
 - `database.connection_string` — Postgres DSN
 - `auth.jwt_secret` — long random string (not the example value)
 
+This is enough to start the server, but it leaves every optional hardening
+control at its default. Before going further, diff your config against
+[`config/server.example.yaml`](../config/server.example.yaml) — it's the only
+place these are documented:
+
+- `auth.webauthn.*` — hardware-key (FIDO2/YubiKey) login; enabled by default, set `rp_id`/`origins` to your real hostname before going to production
+- `auth.mfa_required` — block SSH/API access until a user has enrolled MFA (TOTP or WebAuthn)
+- `auth.rate_limit_per_minute` — per-user/IP request cap on protected API routes (default `600`)
+- `auth.openfga.*` — optional ReBAC via an external OpenFGA server instead of the built-in permission tables
+- `recording.encryption_key` — AES-256-GCM key for session recordings at rest; leave empty only if you accept plaintext recordings
+- `recording.retention_days` — how long recordings are kept before the retention loop deletes them
+
 ```bash
 sudo systemctl enable --now orion-belt-server
 ```

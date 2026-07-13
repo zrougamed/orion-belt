@@ -8,9 +8,13 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -199,6 +203,7 @@ func (a *Agent) handleSession(newChannel gossh.NewChannel) {
 		case "exec":
 			var payload struct {
 				Command string
+				User    string
 			}
 			if err := gossh.Unmarshal(req.Payload, &payload); err != nil {
 				a.logger.Error("Failed to parse exec payload: %v", err)
@@ -216,7 +221,7 @@ func (a *Agent) handleSession(newChannel gossh.NewChannel) {
 				return
 			}
 
-			a.executeCommand(channel, execCommand)
+			a.executeCommand(channel, execCommand, payload.User)
 			return
 
 		case "env":
@@ -246,11 +251,16 @@ type ptyRequestMsg struct {
 func (a *Agent) startShell(channel gossh.Channel, username string, ptyReq *ptyRequestMsg) {
 	a.logger.Info("Starting interactive shell")
 
-	cmd := exec.Command("su", "-", username)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	if username == "" {
+		username = "root"
+	}
 
-	if ptyReq != nil {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
+	cmd, err := a.buildShellCommand(username, ptyReq)
+	if err != nil {
+		a.logger.Error("Failed to prepare shell for %s: %v", username, err)
+		channel.Write([]byte(fmt.Sprintf("Failed to start shell for %s: %v\r\n", username, err)))
+		a.sendExitStatus(channel, 1)
+		return
 	}
 
 	ptmx, err := pty.Start(cmd)
@@ -312,11 +322,178 @@ func (a *Agent) startShell(channel gossh.Channel, username string, ptyReq *ptyRe
 	channel.Close()
 }
 
-func (a *Agent) executeCommand(channel gossh.Channel, command string) {
-	a.logger.Info("Executing command: %s", command)
+// unixIdentity is the subset of a local user-database entry needed to spawn a
+// process as that user: uid/gid/supplementary groups, home directory, and shell.
+type unixIdentity struct {
+	Username string
+	UID      uint32
+	GID      uint32
+	Groups   []uint32
+	Home     string
+	Shell    string
+}
+
+// resolveUnixIdentity looks up username in the local user database. Shared by
+// buildShellCommand (interactive shell) and executeCommand (one-shot exec) so
+// both impersonate a target user the same way.
+func resolveUnixIdentity(username string) (*unixIdentity, error) {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return nil, fmt.Errorf("unknown user %q: %w", username, err)
+	}
+	uid, err := strconv.ParseUint(u.Uid, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uid for %q: %w", username, err)
+	}
+	gid, err := strconv.ParseUint(u.Gid, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gid for %q: %w", username, err)
+	}
+	groups := []uint32{}
+	if ids, gErr := u.GroupIds(); gErr == nil {
+		for _, g := range ids {
+			if n, pErr := strconv.ParseUint(g, 10, 32); pErr == nil {
+				groups = append(groups, uint32(n))
+			}
+		}
+	}
+	return &unixIdentity{
+		Username: username,
+		UID:      uint32(uid),
+		GID:      uint32(gid),
+		Groups:   groups,
+		Home:     u.HomeDir,
+		Shell:    loginShell(username),
+	}, nil
+}
+
+// credentialForIdentity returns the syscall.Credential needed to drop privileges
+// to id, or nil if the agent is already running as that user (no-op). Errors if
+// the agent isn't root and the target differs from its own identity — dropping
+// privileges to an arbitrary uid requires CAP_SETUID/CAP_SETGID.
+func credentialForIdentity(id *unixIdentity) (*syscall.Credential, error) {
+	if id.UID == uint32(os.Geteuid()) {
+		return nil, nil
+	}
+	if os.Geteuid() != 0 {
+		return nil, fmt.Errorf("agent is not running as root; cannot start a session as %q", id.Username)
+	}
+	return &syscall.Credential{Uid: id.UID, Gid: id.GID, Groups: id.Groups}, nil
+}
+
+// buildShellCommand resolves the target OS user from the local user database
+// (uid/gid/home/shell) and prepares a login shell to run under that identity by
+// dropping privileges via syscall.Credential, the same low-level mechanism
+// OpenSSH uses for session spawning. This avoids shelling out to `su`, whose
+// behavior (PAM stack, setuid handling, hardcoded fallback shell) varies enough
+// across distros/hardened images that it fails outright on some of them.
+func (a *Agent) buildShellCommand(username string, ptyReq *ptyRequestMsg) (*exec.Cmd, error) {
+	id, err := resolveUnixIdentity(username)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := credentialForIdentity(id)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(id.Shell)
+	// Leading "-" on argv[0] is the standard Unix convention (used by login, su -,
+	// getty) that tells the shell to behave as a login shell.
+	cmd.Args = []string{"-" + filepath.Base(id.Shell)}
+	cmd.Dir = id.Home
+	if _, statErr := os.Stat(cmd.Dir); statErr != nil {
+		cmd.Dir = "/"
+	}
+
+	term := "xterm-256color"
+	if ptyReq != nil && ptyReq.Term != "" {
+		term = ptyReq.Term
+	}
+	cmd.Env = []string{
+		"TERM=" + term,
+		"HOME=" + id.Home,
+		"USER=" + username,
+		"LOGNAME=" + username,
+		"SHELL=" + id.Shell,
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
+
+	if cred != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+	}
+
+	return cmd, nil
+}
+
+// loginShell reads the target user's registered shell straight from /etc/passwd,
+// falling back to /bin/sh if it's unset or the db can't be read. Never assumes
+// /bin/bash exists — minimal distro images frequently don't ship it.
+func loginShell(username string) string {
+	return loginShellFromPasswd("/etc/passwd", username)
+}
+
+func loginShellFromPasswd(passwdPath, username string) string {
+	data, err := os.ReadFile(passwdPath)
+	if err != nil {
+		return "/bin/sh"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) < 7 || fields[0] != username {
+			continue
+		}
+		if shell := strings.TrimSpace(fields[6]); shell != "" {
+			return shell
+		}
+	}
+	return "/bin/sh"
+}
+
+// executeCommand runs a single non-interactive command via /bin/sh -c. When
+// username is non-empty, it resolves that user from the local user database and
+// drops privileges to it (same mechanism as buildShellCommand) before running the
+// command, so file-browser and CLI exec requests honor the remote user that was
+// actually granted access — instead of always running as the agent's own uid.
+// An empty username preserves the previous behavior (run as the agent's identity)
+// for callers that don't carry a remote user, e.g. admin agent control commands.
+func (a *Agent) executeCommand(channel gossh.Channel, command string, username string) {
+	a.logger.Info("Executing command as %q: %s", username, command)
 
 	cmd := exec.Command("/bin/sh", "-c", command)
-	cmd.Env = os.Environ()
+
+	if username == "" {
+		cmd.Env = os.Environ()
+	} else {
+		id, err := resolveUnixIdentity(username)
+		if err != nil {
+			a.logger.Error("Failed to resolve user %s for exec: %v", username, err)
+			channel.Write([]byte(fmt.Sprintf("Failed to execute command as %s: %v\n", username, err)))
+			a.sendExitStatus(channel, 1)
+			return
+		}
+		cred, err := credentialForIdentity(id)
+		if err != nil {
+			a.logger.Error("Failed to prepare credential for %s: %v", username, err)
+			channel.Write([]byte(fmt.Sprintf("Failed to execute command as %s: %v\n", username, err)))
+			a.sendExitStatus(channel, 1)
+			return
+		}
+		if cred != nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+		}
+		cmd.Dir = id.Home
+		if _, statErr := os.Stat(cmd.Dir); statErr != nil {
+			cmd.Dir = "/"
+		}
+		cmd.Env = []string{
+			"HOME=" + id.Home,
+			"USER=" + username,
+			"LOGNAME=" + username,
+			"SHELL=" + id.Shell,
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		}
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -424,15 +601,15 @@ func (a *Agent) handleControlCommand(channel gossh.Channel, command string) {
 		}
 	case "orion:health", "orion:status":
 		result = map[string]interface{}{
-			"ok":         true,
-			"status":     "healthy",
-			"agent":      a.config.Agent.Name,
-			"machine_id": a.machineID,
-			"connected":  a.sshConn != nil,
-			"hostname":   hostnameOrEmpty(),
-			"goos":       runtime.GOOS,
-			"goarch":     runtime.GOARCH,
-			"pid":        os.Getpid(),
+			"ok":          true,
+			"status":      "healthy",
+			"agent":       a.config.Agent.Name,
+			"machine_id":  a.machineID,
+			"connected":   a.sshConn != nil,
+			"hostname":    hostnameOrEmpty(),
+			"goos":        runtime.GOOS,
+			"goarch":      runtime.GOARCH,
+			"pid":         os.Getpid(),
 			"uptime_hint": "connected",
 		}
 	case "orion:info":

@@ -1047,6 +1047,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/v1/admin/agents/{machine_id}/disconnect:
+    post:
+      tags: [Agents]
+      summary: Force-disconnect a connected agent
+      description: |
+        Closes the agent's reverse SSH tunnel, immediately dropping its live
+        connection to the gateway. The agent will attempt to reconnect on its
+        normal retry schedule. Does not delete the machine record.
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Agent disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: agent disconnected }
+                  machine_id: { type: string }
+        "502":
+          description: Disconnect failed (e.g. agent already offline)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Agent commander unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/v1/terminal/ws:
     get:
       tags: [Terminal]

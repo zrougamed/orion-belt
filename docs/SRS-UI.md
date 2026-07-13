@@ -44,7 +44,7 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 
 | Role | Nav access (implemented) | Notes |
 |------|--------------------------|-------|
-| **admin** | Dashboard, Setup, Requests, Machines, Terminal, Files, Sessions, Users, Agents, Add agent, Audit, Security | Full console |
+| **admin** | Dashboard, Setup, Requests, Machines, Terminal, Files, Sessions, Users, Permissions, Agents, Add agent, Audit, Security | Full console |
 | **operator** | Same as admin | Approvals + admin API allowed |
 | **auditor** | Dashboard, Sessions, Users (read), Audit, Security | No terminal/files/agents/setup |
 | **user** | Machines, Terminal, Files, Sessions, Requests, Audit, Security | Self-service access + own security |

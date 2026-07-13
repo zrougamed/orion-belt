@@ -9,13 +9,22 @@ import { fmtTime, preparePublicKeyCreation, publicKeyCredentialToJSON } from "..
 
 type SSHKey = { id: string; name: string; key_type?: string; public_key?: string; created_at?: string };
 type WACred = { id: string; name: string; cred_id?: string; created_at?: string };
+type APIKeyItem = {
+  id: string;
+  name: string;
+  key_prefix?: string;
+  last_used_at?: string;
+  expires_at?: string;
+  created_at?: string;
+  revoked_at?: string;
+};
 
 export function SecurityPage() {
   const { toast } = useToast();
   const { refreshMe, user } = useAuth();
   const manageHint = canApprove(user);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"mfa" | "webauthn" | "keys">("mfa");
+  const [tab, setTab] = useState<"mfa" | "webauthn" | "keys" | "api-keys">("mfa");
   const [otpauth, setOtpauth] = useState("");
   const [secret, setSecret] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
@@ -23,6 +32,9 @@ export function SecurityPage() {
   const [keyName, setKeyName] = useState("");
   const [keyPub, setKeyPub] = useState("");
   const [waErr, setWaErr] = useState("");
+  const [apiKeyName, setApiKeyName] = useState("");
+  const [apiKeyExpiresDays, setApiKeyExpiresDays] = useState(0);
+  const [newAPIKey, setNewAPIKey] = useState("");
 
   const mfaStatus = useQuery({
     queryKey: ["mfa", "status"],
@@ -39,6 +51,11 @@ export function SecurityPage() {
     queryFn: () => api<WACred[]>("/webauthn/credentials"),
     enabled: tab === "webauthn",
     retry: false,
+  });
+  const apiKeys = useQuery({
+    queryKey: ["api-keys"],
+    queryFn: () => api<{ api_keys?: APIKeyItem[] }>("/api-keys"),
+    enabled: tab === "api-keys",
   });
 
   async function enrollMfa() {
@@ -148,6 +165,43 @@ export function SecurityPage() {
     }
   }
 
+  async function createAPIKey(e: FormEvent) {
+    e.preventDefault();
+    try {
+      const body: Record<string, unknown> = { name: apiKeyName.trim() };
+      if (apiKeyExpiresDays > 0) body.expires_in = apiKeyExpiresDays;
+      const res = await api<{ api_key: string }>("/api-keys", { method: "POST", body: JSON.stringify(body) });
+      setNewAPIKey(res.api_key);
+      setApiKeyName("");
+      setApiKeyExpiresDays(0);
+      void qc.invalidateQueries({ queryKey: ["api-keys"] });
+    } catch (ex) {
+      toast(ex instanceof Error ? ex.message : String(ex), "err");
+    }
+  }
+
+  async function revokeAPIKey(id: string, name: string) {
+    if (!confirm(`Revoke API key "${name}"? It will stop working immediately but stays in the audit trail.`)) return;
+    try {
+      await api(`/api-keys/${encodeURIComponent(id)}/revoke`, { method: "POST", body: "{}" });
+      toast("API key revoked");
+      void qc.invalidateQueries({ queryKey: ["api-keys"] });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function deleteAPIKey(id: string, name: string) {
+    if (!confirm(`Permanently delete API key "${name}"? This cannot be undone.`)) return;
+    try {
+      await api(`/api-keys/${encodeURIComponent(id)}`, { method: "DELETE" });
+      toast("API key deleted");
+      void qc.invalidateQueries({ queryKey: ["api-keys"] });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
   const keyList = keys.data || [];
   const qrSrc = otpauth
     ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=M&data=${encodeURIComponent(otpauth)}`
@@ -162,9 +216,9 @@ export function SecurityPage() {
         </div>
       </div>
       <div className="row" style={{ marginBottom: "1rem" }}>
-        {(["mfa", "webauthn", "keys"] as const).map((t) => (
+        {(["mfa", "webauthn", "keys", "api-keys"] as const).map((t) => (
           <button key={t} type="button" className={`btn sm${tab === t ? "" : " secondary"}`} onClick={() => setTab(t)}>
-            {t === "mfa" ? "MFA" : t === "webauthn" ? "WebAuthn" : "SSH keys"}
+            {t === "mfa" ? "MFA" : t === "webauthn" ? "WebAuthn" : t === "keys" ? "SSH keys" : "API keys"}
           </button>
         ))}
       </div>
@@ -344,6 +398,100 @@ export function SecurityPage() {
                         <button type="button" className="btn danger sm" onClick={() => void deleteKey(k.id)}>
                           Delete
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {tab === "api-keys" ? (
+        <>
+          <div className="card">
+            <h3>Create API key</h3>
+            <p className="muted">
+              API keys authenticate CLI tools (<span className="mono">osh</span>) and scripts against the REST API. The
+              raw key is shown once at creation — copy it now, it can't be retrieved again.
+            </p>
+            <form onSubmit={createAPIKey}>
+              <label className="field">Name</label>
+              <input value={apiKeyName} onChange={(e) => setApiKeyName(e.target.value)} placeholder="ci-pipeline, laptop-cli…" required />
+              <label className="field">Expires in days (0 = never)</label>
+              <input
+                type="number"
+                min={0}
+                value={apiKeyExpiresDays}
+                onChange={(e) => setApiKeyExpiresDays(Number(e.target.value) || 0)}
+              />
+              <button className="btn sm" type="submit" style={{ marginTop: "0.55rem" }}>
+                Create key
+              </button>
+            </form>
+            {newAPIKey ? (
+              <div className="mfa-enroll" style={{ marginTop: "1rem" }}>
+                <p className="okmsg">Copy this key now — it won't be shown again.</p>
+                <div className="row">
+                  <input className="mono" readOnly value={newAPIKey} style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    className="btn secondary sm"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(newAPIKey);
+                      toast("API key copied");
+                    }}
+                  >
+                    Copy
+                  </button>
+                  <button type="button" className="btn secondary sm" onClick={() => setNewAPIKey("")}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="card" style={{ marginTop: "1rem" }}>
+            <h3>Your API keys</h3>
+            {(apiKeys.data?.api_keys || []).length === 0 ? (
+              <div className="empty">No API keys yet. Create one above to authenticate {"osh"} or scripts.</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Prefix</th>
+                    <th>Created</th>
+                    <th>Last used</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {(apiKeys.data?.api_keys || []).map((k) => (
+                    <tr key={k.id}>
+                      <td>{k.name}</td>
+                      <td className="mono">{k.key_prefix ? `${k.key_prefix}…` : "—"}</td>
+                      <td className="mono">{fmtTime(k.created_at)}</td>
+                      <td className="mono">{k.last_used_at ? fmtTime(k.last_used_at) : "never"}</td>
+                      <td className="mono">{k.expires_at ? fmtTime(k.expires_at) : "never"}</td>
+                      <td>{k.revoked_at ? <span className="muted">revoked</span> : <span className="okmsg">active</span>}</td>
+                      <td>
+                        <div className="row">
+                          <button
+                            type="button"
+                            className="btn secondary sm"
+                            disabled={!!k.revoked_at}
+                            onClick={() => void revokeAPIKey(k.id, k.name)}
+                          >
+                            Revoke
+                          </button>
+                          <button type="button" className="btn danger sm" onClick={() => void deleteAPIKey(k.id, k.name)}>
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

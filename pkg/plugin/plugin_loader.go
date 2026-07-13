@@ -51,7 +51,7 @@ func (l *PluginLoader) LoadAll(ctx context.Context) error {
 		}
 
 		pluginPath := filepath.Join(l.pluginDir, entry.Name())
-		if err := l.LoadPlugin(ctx, pluginPath); err != nil {
+		if _, err := l.LoadPlugin(ctx, pluginPath); err != nil {
 			l.manager.logger.Error("Failed to load plugin %s: %v", entry.Name(), err)
 			// Continue loading other plugins even if one fails
 			continue
@@ -61,26 +61,29 @@ func (l *PluginLoader) LoadAll(ctx context.Context) error {
 	return nil
 }
 
-// LoadPlugin loads a single plugin from a .so file
-func (l *PluginLoader) LoadPlugin(ctx context.Context, path string) error {
+// LoadPlugin loads a single plugin from a .so file and returns its registered
+// name, so callers (e.g. LoadPluginWithConfig) can address the plugin they just
+// loaded directly instead of re-deriving it from loadedLibs afterward — that map
+// can hold other plugins loaded earlier, and Go map iteration order is undefined.
+func (l *PluginLoader) LoadPlugin(ctx context.Context, path string) (string, error) {
 	l.manager.logger.Info("Loading plugin from: %s", path)
 
 	// Open the plugin
 	p, err := plugin.Open(path)
 	if err != nil {
-		return fmt.Errorf("failed to open plugin: %w", err)
+		return "", fmt.Errorf("failed to open plugin: %w", err)
 	}
 
 	// Look for the NewPlugin symbol
 	symNewPlugin, err := p.Lookup("NewPlugin")
 	if err != nil {
-		return fmt.Errorf("plugin does not export NewPlugin function: %w", err)
+		return "", fmt.Errorf("plugin does not export NewPlugin function: %w", err)
 	}
 
 	// Type assert to function that returns Plugin
 	newPluginFunc, ok := symNewPlugin.(func() Plugin)
 	if !ok {
-		return fmt.Errorf("NewPlugin has incorrect signature, expected func() Plugin")
+		return "", fmt.Errorf("NewPlugin has incorrect signature, expected func() Plugin")
 	}
 
 	// Create plugin instance
@@ -88,7 +91,7 @@ func (l *PluginLoader) LoadPlugin(ctx context.Context, path string) error {
 
 	// Register with manager
 	if err := l.manager.Register(pluginInstance); err != nil {
-		return fmt.Errorf("failed to register plugin: %w", err)
+		return "", fmt.Errorf("failed to register plugin: %w", err)
 	}
 
 	// Store reference to loaded library
@@ -97,22 +100,14 @@ func (l *PluginLoader) LoadPlugin(ctx context.Context, path string) error {
 	l.manager.logger.Info("Successfully loaded plugin: %s v%s",
 		pluginInstance.Name(), pluginInstance.Version())
 
-	return nil
+	return pluginInstance.Name(), nil
 }
 
 // LoadPluginWithConfig loads a plugin and initializes it with config
 func (l *PluginLoader) LoadPluginWithConfig(ctx context.Context, path string, config map[string]interface{}) error {
-	if err := l.LoadPlugin(ctx, path); err != nil {
+	pluginName, err := l.LoadPlugin(ctx, path)
+	if err != nil {
 		return err
-	}
-
-	var pluginName string
-	for name := range l.loadedLibs {
-		pluginName = name
-	}
-
-	if pluginName == "" {
-		return fmt.Errorf("no plugin was loaded")
 	}
 
 	plugin, err := l.manager.Get(pluginName)
