@@ -1,45 +1,31 @@
 # Build stage
 FROM golang:1.26.5-alpine AS builder
 
-# Install build dependencies
 RUN apk add --no-cache git make gcc musl-dev
 
-# Set working directory
 WORKDIR /build
 
-# Copy go mod files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy source code
 COPY . .
-
-# Build all components
-RUN make build
+RUN make build-agent
 
 # Agent image
 FROM alpine:latest AS agent
 
-RUN apk add --no-cache ca-certificates openssh-client openssh-server openssh-keygen
+# The agent dials out to the server over a reverse SSH tunnel and manages the
+# host it runs on directly (setuid-drop to the requested local user) — it does
+# not run its own sshd, so no ssh server, no local user accounts, no password
+# auth. It only needs to reach the server outbound.
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
 COPY --from=builder /build/bin/orion-belt-agent /app/
-COPY --from=builder /build/config/agent.example.yaml /app/config.yaml
-COPY --from=builder /build/scripts/agent-init.sh /app/agent-init.sh
+COPY docker/agent-entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Make init script executable
-RUN chmod +x /app/agent-init.sh
+RUN mkdir -p /etc/orion-belt
 
-# Configure SSH server
-RUN mkdir -p /var/run/sshd && \
-    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
-    echo "root:password" | chpasswd
-
-EXPOSE 22
-
-# Use init script that generates keys and starts both sshd and agent
-CMD ["/app/agent-init.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]

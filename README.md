@@ -118,6 +118,48 @@ See [ROADMAP.md](docs/ROADMAP.md) for the complete plan and tag history.
 
 ## Installation
 
+### Docker (fastest way to try it)
+
+**One command** — generates secrets, starts the server, and bootstraps the
+first admin login for you:
+```bash
+./scripts/docker-quickstart.sh
+```
+It prints the admin username + public key to log in with at the end. Safe to
+re-run (skips anything already done).
+
+**Or step by step**, if you'd rather see/control each piece:
+```bash
+cp .env.server.example .env.server
+# fill in POSTGRES_PASSWORD and ORION_JWT_SECRET (openssl rand -hex 32)
+docker compose -f docker-compose.server.yml --env-file .env.server up -d
+```
+There's no self-service "create account" page in the web console (it's
+SSH-public-key auth, not passwords) — the first admin is created once via the
+CLI, from a public key you already hold:
+```bash
+ssh-keygen -t ed25519 -f admin-key -N ""   # or reuse an existing key
+docker compose -f docker-compose.server.yml --env-file .env.server exec -T \
+  -e ORION_SETUP_ADMIN_NAME=admin -e ORION_SETUP_ADMIN_EMAIL=admin@localhost \
+  -e ORION_SETUP_ADMIN_KEY="$(cat admin-key.pub)" \
+  server /app/orion-belt-server -c /etc/orion-belt/config.generated.yaml setup
+```
+Then open http://localhost:8080/ui and sign in with username `admin` and the
+contents of `admin-key.pub` as the public key.
+
+Once logged in, register an agent from the web console ("Add agent") and run
+it on the machine you want to manage — it dials out to the server, so no
+inbound ports need to be opened on that host:
+```bash
+# save the private key the "Add agent" page gives you as ./agent-key (chmod 600)
+cp .env.agent.example .env.agent
+# fill in ORION_SERVER_HOST and ORION_AGENT_NAME (must match what you registered)
+docker compose -f docker-compose.agent.yml --env-file .env.agent up -d
+```
+
+Equivalent `make` targets: `docker-up` / `docker-down` / `docker-logs` for the
+server, `docker-agent-up` / `docker-agent-down` for the agent.
+
 ### From source
 
 ```bash
@@ -280,7 +322,11 @@ To switch databases, update the configuration and implement the `database.Store`
 
 ## License
 
-Apache License 2.0 – see [LICENSE](LICENSE) file for details.
+Apache License 2.0 with the [Commons Clause](https://commonsclause.com/) – see
+[LICENSE](LICENSE) for details. In short: free to use, modify, self-host, and
+contribute back, including for internal commercial use — the one thing withheld
+is selling the software itself, or a hosted/managed service whose value derives
+substantially from it, as a product.
 
 ## Architecture
 

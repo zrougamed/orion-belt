@@ -1,6 +1,6 @@
 .PHONY: build build-server build-client build-agent build-ui test clean install plugins \
         docker-build docker-build-server docker-build-agent docker-build-client \
-        docker-push docker-up docker-down docker-logs \
+        docker-push docker-up docker-down docker-logs docker-agent-up docker-agent-down \
         cve packages repos packaging-key sign-artifacts lab-compose-up lab-compose-down lab-bootstrap-admin \
         lab-qemu-images lab-qemu-images-refresh lab-qemu-up lab-qemu-down lab-qemu-restart lab-qemu-test \
         lab-qemu-connect-agents lab-qemu-collect-keys lab-qemu-register-agents \
@@ -140,21 +140,40 @@ docker-build-server:
 	@echo "Building server image: $(IMAGE_PREFIX)-server:$(DOCKER_TAG)..."
 	docker build \
 		--file $(DOCKERFILE) \
+		--target server \
 		--tag $(IMAGE_PREFIX)-server:$(DOCKER_TAG) \
 		.
 
-# Start the full stack via Docker Compose
+# Build agent image
+docker-build-agent:
+	@echo "Building agent image: $(IMAGE_PREFIX)-agent:$(DOCKER_TAG)..."
+	docker build \
+		--file $(DOCKERFILE_AGENT) \
+		--target agent \
+		--tag $(IMAGE_PREFIX)-agent:$(DOCKER_TAG) \
+		.
+
+# Start the server + Postgres via Docker Compose (see .env.server.example)
 docker-up:
-	docker compose -f $(DOCKER_DIR)/docker-compose.yml up -d
-	@echo "Stack is up. Server SSH: localhost:2222  API: localhost:8080"
+	docker compose -f docker-compose.server.yml --env-file .env.server up -d
+	@echo "Server is up. SSH: localhost:2222  Web console: http://localhost:8080/ui"
 
-# Stop the stack
+# Stop the server stack
 docker-down:
-	docker compose -f $(DOCKER_DIR)/docker-compose.yml down
+	docker compose -f docker-compose.server.yml --env-file .env.server down
 
-# Tail logs (optionally filter: make docker-logs SERVICE=server)
+# Tail server-stack logs (optionally filter: make docker-logs SERVICE=server)
 docker-logs:
-	docker compose -f $(DOCKER_DIR)/docker-compose.yml logs -f $(SERVICE)
+	docker compose -f docker-compose.server.yml --env-file .env.server logs -f $(SERVICE)
+
+# Start an agent via Docker Compose (see .env.agent.example — register the
+# agent on the server first and save its key to ./agent-key)
+docker-agent-up:
+	docker compose -f docker-compose.agent.yml --env-file .env.agent up -d
+
+# Stop the agent
+docker-agent-down:
+	docker compose -f docker-compose.agent.yml --env-file .env.agent down
 
 # ────────────────────────────────────────────────────────────
 # Security / packaging / labs

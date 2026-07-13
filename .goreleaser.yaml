@@ -102,7 +102,7 @@ nfpms:
     homepage: https://github.com/zrougamed/orion-belt
     maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
     description: Orion Belt PAM gateway server (SSH bastion + API)
-    license: Apache-2.0
+    license: Apache-2.0 WITH Commons-Clause
     formats: [deb, rpm, apk]
     bindir: /usr/bin
     section: net
@@ -146,7 +146,7 @@ nfpms:
     homepage: https://github.com/zrougamed/orion-belt
     maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
     description: Orion Belt reverse-SSH agent
-    license: Apache-2.0
+    license: Apache-2.0 WITH Commons-Clause
     formats: [deb, rpm, apk]
     bindir: /usr/bin
     ids: [agent]
@@ -169,7 +169,7 @@ nfpms:
     homepage: https://github.com/zrougamed/orion-belt
     maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
     description: Orion Belt CLI tools (osh, ocp, oadmin)
-    license: Apache-2.0
+    license: Apache-2.0 WITH Commons-Clause
     formats: [deb, rpm, apk]
     bindir: /usr/bin
     ids: [osh, ocp, oadmin]

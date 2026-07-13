@@ -1,0 +1,34 @@
+# Orion Belt agent — quick start
+#
+#   1. On the server's web console (http://<server>:8080/ui), go to "Add agent"
+#      and register a machine named the same as ORION_AGENT_NAME below.
+#      Save the private key it gives you as ./agent-key (chmod 600) next to
+#      this file.
+#   2. cp .env.agent.example .env.agent
+#      (fill in ORION_SERVER_HOST and ORION_AGENT_NAME to match step 1)
+#   3. docker compose -f docker-compose.agent.yml --env-file .env.agent up -d
+#
+# Run this on the machine you want Orion Belt to manage — the agent dials out
+# to the server, so no inbound ports need to be opened on this host.
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+      target: agent
+    environment:
+      ORION_SERVER_HOST: "${ORION_SERVER_HOST:?set ORION_SERVER_HOST in .env.agent}"
+      ORION_SERVER_PORT: "${ORION_SERVER_PORT:-2222}"
+      ORION_AGENT_NAME: "${ORION_AGENT_NAME:?set ORION_AGENT_NAME in .env.agent, must match the name registered on the server}"
+      ORION_AGENT_ENV: "${ORION_AGENT_ENV:-production}"
+      ORION_STRICT_HOST_KEY_CHECKING: "${ORION_STRICT_HOST_KEY_CHECKING:-ask}"
+    volumes:
+      # Order matters: the directory volume must be mounted before the more
+      # specific file bind-mount, otherwise it would shadow agent_key.
+      - orion_agent_state:/etc/orion-belt
+      - ./agent-key:/etc/orion-belt/agent_key:ro
+    restart: unless-stopped
+
+volumes:
+  orion_agent_state:

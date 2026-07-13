@@ -7,7 +7,7 @@ priority: optional
 maintainer: Orion Belt Maintainers <maintainers@orion-belt.dev>
 description: Orion Belt reverse-SSH agent
 homepage: https://github.com/zrougamed/orion-belt
-license: Apache-2.0
+license: Apache-2.0 WITH Commons-Clause
 contents:
   - src: dist/orion-belt-agent
     dst: /usr/bin/orion-belt-agent

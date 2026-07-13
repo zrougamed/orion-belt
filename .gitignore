@@ -54,6 +54,15 @@ lab/qemu/run/
 lab/compose/agent-keys/
 lab/credentials/
 
+# Docker quick-start secrets (see docker-compose.server.yml / docker-compose.agent.yml)
+.env
+.env.server
+.env.agent
+/agent-key
+/agent-key.pub
+/admin-key
+/admin-key.pub
+
 # Frontend
 web/ui/node_modules/
 web/ui/dist/

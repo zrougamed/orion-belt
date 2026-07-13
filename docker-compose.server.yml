@@ -1,0 +1,62 @@
+# Orion Belt server — quick start
+#
+# Easiest: ./scripts/docker-quickstart.sh (generates secrets, starts this
+# stack, and bootstraps the first admin login for you).
+#
+# Manual:
+#   1. cp .env.server.example .env.server
+#      (fill in POSTGRES_PASSWORD and ORION_JWT_SECRET — `openssl rand -hex 32`)
+#   2. docker compose -f docker-compose.server.yml --env-file .env.server up -d
+#   3. bootstrap the first admin (there's no browser sign-up form — this is
+#      SSH-key auth, not passwords) — see README.md's Docker section for the
+#      exact `... exec ... setup` command, then open http://localhost:8080/ui
+#
+# Agents connect to this server on port 2222; see docker-compose.agent.yml.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-orionbelt}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.server}"
+      POSTGRES_DB: "${POSTGRES_DB:-orionbelt}"
+    volumes:
+      - orion_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orionbelt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${ORION_SSH_PORT:-2222}:2222"
+      - "${ORION_API_PORT:-8080}:8080"
+    environment:
+      POSTGRES_HOST: "postgres"
+      POSTGRES_USER: "${POSTGRES_USER:-orionbelt}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.server}"
+      POSTGRES_DB: "${POSTGRES_DB:-orionbelt}"
+      ORION_JWT_SECRET: "${ORION_JWT_SECRET:?set ORION_JWT_SECRET in .env.server, generate with 'openssl rand -hex 32'}"
+      ORION_MFA_REQUIRED: "${ORION_MFA_REQUIRED:-false}"
+      ORION_WEBAUTHN_ENABLED: "${ORION_WEBAUTHN_ENABLED:-false}"
+      ORION_PUBLIC_HOST: "${ORION_PUBLIC_HOST:-localhost}"
+      ORION_PUBLIC_ORIGIN: "${ORION_PUBLIC_ORIGIN:-http://localhost:8080}"
+      ORION_RECORDING_ENCRYPTION_KEY: "${ORION_RECORDING_ENCRYPTION_KEY:-}"
+    volumes:
+      - orion_recordings:/var/lib/orion-belt/recordings
+      - orion_hostkey:/etc/orion-belt
+    restart: unless-stopped
+
+volumes:
+  orion_postgres_data:
+  orion_recordings:
+  orion_hostkey:
