@@ -8,7 +8,7 @@ import { useToast } from "../components/Toast";
 import { Badge } from "../components/Badge";
 import { Pagination, SortTh, TableToolbar, useTableState } from "../components/DataTable";
 
-type ViewMode = "user" | "machine";
+type ViewMode = "user" | "machine" | "all";
 
 export function PermissionsPage() {
   const { toast } = useToast();
@@ -22,16 +22,18 @@ export function PermissionsPage() {
   const [remoteUsers, setRemoteUsers] = useState("root");
   const [durationHours, setDurationHours] = useState(0);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("user");
+  const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [viewUserId, setViewUserId] = useState("");
   const [viewMachineId, setViewMachineId] = useState("");
-  const viewId = viewMode === "user" ? viewUserId : viewMachineId;
+  const viewId = viewMode === "user" ? viewUserId : viewMode === "machine" ? viewMachineId : "all";
 
   const permsQ = useQuery({
     queryKey: ["permissions", viewMode, viewId],
-    queryFn: () =>
-      api<Permission[]>(`/permissions/${viewMode}/${encodeURIComponent(viewId)}`),
-    enabled: !!viewId,
+    queryFn: () => {
+      if (viewMode === "all") return api<Permission[]>("/admin/permissions");
+      return api<Permission[]>(`/permissions/${viewMode}/${encodeURIComponent(viewId)}`);
+    },
+    enabled: viewMode === "all" || !!viewId,
   });
 
   const grant = useMutation({
@@ -84,12 +86,37 @@ export function PermissionsPage() {
     }
   }
 
+  async function editGrant(p: Permission) {
+    const remotes = prompt("Remote users (comma-separated)", (p.remote_users || []).join(", "));
+    if (remotes === null) return;
+    const hours = prompt("TTL hours from now (blank = keep, 0 = permanent)", "");
+    if (hours === null) return;
+    const body: Record<string, unknown> = {
+      remote_users: remotes
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+    if (hours.trim() !== "") {
+      const h = Number(hours);
+      body.duration_seconds = h > 0 ? Math.round(h * 3600) : 0;
+    }
+    try {
+      await api(`/admin/permissions/${encodeURIComponent(p.id)}`, { method: "PATCH", body: JSON.stringify(body) });
+      toast("Permission updated");
+      void qc.invalidateQueries({ queryKey: ["permissions"] });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
   const perms = permsQ.data || [];
   const processed = useMemo(() => {
     return table.process(
       perms,
       (p, key) => {
-        if (key === "peer") return viewMode === "user" ? machineName(p.machine_id) : userName(p.user_id);
+        if (key === "peer")
+          return viewMode === "machine" ? userName(p.user_id) : machineName(p.machine_id);
         if (key === "access") return p.access_type;
         if (key === "granted") return p.granted_at || "";
         if (key === "expires") return p.expires_at || "";
@@ -165,6 +192,7 @@ export function PermissionsPage() {
                 table.setPage(0);
               }}
             >
+              <option value="all">All grants</option>
               <option value="user">User</option>
               <option value="machine">Machine</option>
             </select>
@@ -181,7 +209,8 @@ export function PermissionsPage() {
                 ))}
               </select>
             </div>
-          ) : (
+          ) : null}
+          {viewMode === "machine" ? (
             <div>
               <label className="field">Machine</label>
               <select value={viewMachineId} onChange={(e) => setViewMachineId(e.target.value)}>
@@ -193,12 +222,14 @@ export function PermissionsPage() {
                 ))}
               </select>
             </div>
-          )}
+          ) : null}
         </div>
         <h3>
-          Grants for {viewId ? (viewMode === "user" ? userName(viewId) : machineName(viewId)) : "…"}
+          {viewMode === "all"
+            ? "All active grants"
+            : `Grants for ${viewId ? (viewMode === "user" ? userName(viewId) : machineName(viewId)) : "…"}`}
         </h3>
-        {!viewId ? (
+        {viewMode !== "all" && !viewUserId && !viewMachineId ? (
           <div className="empty">Select a {viewMode} to list permissions.</div>
         ) : permsQ.isLoading ? (
           <p className="muted">Loading…</p>
@@ -210,8 +241,9 @@ export function PermissionsPage() {
             <table>
               <thead>
                 <tr>
+                  {viewMode === "all" ? <th>User</th> : null}
                   <SortTh
-                    label={viewMode === "user" ? "Machine" : "User"}
+                    label={viewMode === "machine" ? "User" : "Machine"}
                     col="peer"
                     sortKey={table.sortKey}
                     sortDir={table.sortDir}
@@ -226,9 +258,10 @@ export function PermissionsPage() {
               </thead>
               <tbody>
                 {processed.rows.map((p) => {
-                  const peerLabel = viewMode === "user" ? machineName(p.machine_id) : userName(p.user_id);
+                  const peerLabel = viewMode === "machine" ? userName(p.user_id) : machineName(p.machine_id);
                   return (
                     <tr key={p.id}>
+                      {viewMode === "all" ? <td>{userName(p.user_id)}</td> : null}
                       <td>{peerLabel}</td>
                       <td>
                         <Badge status={p.access_type}>{p.access_type}</Badge>
@@ -237,9 +270,14 @@ export function PermissionsPage() {
                       <td className="mono">{fmtTime(p.granted_at)}</td>
                       <td className="mono">{fmtTime(p.expires_at)}</td>
                       <td>
-                        <button type="button" className="btn danger sm" onClick={() => void revoke(p.id, peerLabel)}>
-                          Revoke
-                        </button>
+                        <div className="row">
+                          <button type="button" className="btn secondary sm" onClick={() => void editGrant(p)}>
+                            Edit
+                          </button>
+                          <button type="button" className="btn danger sm" onClick={() => void revoke(p.id, peerLabel)}>
+                            Revoke
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

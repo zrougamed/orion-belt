@@ -5,12 +5,14 @@ import { api, apiRaw } from "../lib/api";
 import { fmtTime, shortId } from "../lib/format";
 import type { Machine, Session, User } from "../lib/types";
 import { CastPlayer } from "../components/CastPlayer";
+import { LiveSessionWatch } from "../components/LiveSessionWatch";
 import { Pagination, SortTh, TableToolbar, useTableState } from "../components/DataTable";
 
 export function SessionsPage() {
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [castText, setCastText] = useState<string | null>(null);
   const [playId, setPlayId] = useState<string | null>(null);
+  const [watchId, setWatchId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const table = useTableState<Session>({ pageSize: 25 });
 
@@ -56,6 +58,7 @@ export function SessionsPage() {
 
   async function play(id: string) {
     setErr("");
+    setWatchId(null);
     setPlayId(id);
     setCastText(null);
     try {
@@ -130,9 +133,27 @@ export function SessionsPage() {
                     <Badge status={s.status}>{s.status}</Badge>
                   </td>
                   <td>
-                    <button type="button" className="btn secondary sm" disabled={!s.recording_path} onClick={() => void play(s.id)}>
-                      Playback
-                    </button>
+                    <div className="row">
+                      {s.status === "active" ? (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => {
+                            setPlayId(null);
+                            setCastText(null);
+                            setWatchId(s.id);
+                            window.setTimeout(() => {
+                              document.getElementById("watch-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                            }, 50);
+                          }}
+                        >
+                          Watch
+                        </button>
+                      ) : null}
+                      <button type="button" className="btn secondary sm" disabled={!s.recording_path} onClick={() => void play(s.id)}>
+                        Playback
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -148,6 +169,7 @@ export function SessionsPage() {
           pageSize={table.pageSize}
           onPage={table.setPage}
         />
+        {watchId ? <LiveSessionWatch sessionId={watchId} onClose={() => setWatchId(null)} /> : null}
         <div className="playback-panel" id="playback-panel">
           {err ? <div className="err">{err}</div> : null}
           {playId && castText !== null ? (

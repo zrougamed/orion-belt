@@ -35,6 +35,7 @@ export function RequestsPage() {
   const [machineId, setMachineId] = useState("");
   const [reason, setReason] = useState("");
   const [remote, setRemote] = useState("root");
+  const [accessType, setAccessType] = useState("both");
   const [duration, setDuration] = useState(DEFAULT_TTL_SECONDS);
   const [ttlByRequest, setTtlByRequest] = useState<Record<string, number>>({});
 
@@ -45,6 +46,7 @@ export function RequestsPage() {
         body: JSON.stringify({
           machine_id: machineId,
           remote_users: [remote],
+          access_type: accessType,
           reason,
           duration,
         }),
@@ -138,6 +140,14 @@ export function RequestsPage() {
             <input value={remote} onChange={(e) => setRemote(e.target.value)} />
           </div>
           <div>
+            <label className="field">Access type</label>
+            <select value={accessType} onChange={(e) => setAccessType(e.target.value)}>
+              <option value="ssh">ssh</option>
+              <option value="scp">scp</option>
+              <option value="both">both</option>
+            </select>
+          </div>
+          <div>
             <label className="field">Reason</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)} required />
           </div>
@@ -177,6 +187,7 @@ export function RequestsPage() {
               <SortTh label="User" col="user" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
               <SortTh label="Machine" col="machine" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
               <th>Remote</th>
+              <th>Access</th>
               <SortTh label="Status" col="status" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
               <th>TTL</th>
               <SortTh label="Created" col="created" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
@@ -189,6 +200,9 @@ export function RequestsPage() {
                 <td>{userName(r.user_id)}</td>
                 <td>{machineName(r.machine_id)}</td>
                 <td className="mono">{(r.remote_users || []).join(", ")}</td>
+                <td>
+                  <Badge status={r.access_type || "both"}>{r.access_type || "both"}</Badge>
+                </td>
                 <td>
                   <Badge status={r.status}>{r.status}</Badge>
                 </td>

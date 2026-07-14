@@ -60,6 +60,8 @@ recording:
   enabled: true
   storage_path: "/var/lib/orion-belt/recordings"
   retention_days: 90
+  # gzip (default) or none — compress cast files at flush; playback auto-decompresses.
+  compression: gzip
   # 32-byte key (raw or base64). Leave empty to store plaintext.
   encryption_key: ""
 

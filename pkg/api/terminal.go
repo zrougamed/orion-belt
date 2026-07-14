@@ -32,6 +32,7 @@ type TerminalBridge interface {
 
 func (s *APIServer) registerTerminalRoutes(protected *gin.RouterGroup) {
 	protected.GET("/terminal/ws", s.terminalWS)
+	protected.GET("/sessions/:id/watch", s.sessionWatchWS)
 	protected.GET("/files/list", s.filesList)
 	protected.GET("/files/download", s.filesDownload)
 	protected.POST("/files/upload", s.filesUpload)

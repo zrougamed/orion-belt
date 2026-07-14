@@ -107,6 +107,9 @@ OpenSSH: ssh alice+web-01@gateway
 | [PACKAGING.md](PACKAGING.md) | deb/rpm/apk + GPG-signed repos |
 | [CLIENT-CLI.md](CLIENT-CLI.md) | osh / ocp / oadmin flags |
 | [ROADMAP.md](ROADMAP.md) | Current |
+| [OBSERVABILITY.md](OBSERVABILITY.md) | JSON logs, Prometheus, alerts |
+| [DEPLOYMENT_HARDENING.md](DEPLOYMENT_HARDENING.md) | Production checklist |
+| [adr/](adr/) | Architecture decision records |
 | [SETUP.md](SETUP.md) | First-run |
 | [openssh-clients.md](openssh-clients.md) | Current |
 | [openfga-model.fga](openfga-model.fga) | Current |
@@ -115,4 +118,4 @@ OpenSSH: ssh alice+web-01@gateway
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Current |
 | [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md) | QEMU lab QA |
 
-**Still open:** dedicated deployment hardening guide.
+**Still open:** broader integration suite and coverage targets (~80%). Hardening and observability guides are in-tree.

@@ -41,6 +41,7 @@ export type AccessRequest = {
   user_id: string;
   machine_id: string;
   remote_users?: string[];
+  access_type?: string;
   reason?: string;
   status?: string;
   duration?: number;

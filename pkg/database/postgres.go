@@ -93,6 +93,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id),
 			machine_id VARCHAR(36) NOT NULL REFERENCES machines(id),
 			remote_users TEXT[] NOT NULL,
+			access_type VARCHAR(50) NOT NULL DEFAULT 'both',
 			reason TEXT NOT NULL,
 			duration INTEGER NOT NULL,
 			status VARCHAR(50) NOT NULL,
@@ -164,6 +165,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		// Repair admins created before role was persisted on INSERT (DEFAULT 'user' left them as role=user).
 		`UPDATE users SET role = 'admin' WHERE is_admin = true AND (role IS NULL OR role = '' OR role = 'user')`,
 		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'ssh'`,
+		`ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS access_type VARCHAR(50) NOT NULL DEFAULT 'both'`,
 		`CREATE TABLE IF NOT EXISTS user_ssh_keys (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -198,6 +200,13 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS backup_eligible BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS backup_state BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS flags_known BOOLEAN NOT NULL DEFAULT FALSE`,
+		`CREATE TABLE IF NOT EXISTS notification_prefs (
+			user_id VARCHAR(36) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			in_app_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+			event_types TEXT[] NOT NULL DEFAULT '{}',
+			updated_at TIMESTAMP NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS notifications (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -701,14 +710,17 @@ func (s *PostgresStore) EndSession(ctx context.Context, id string, endTime time.
 
 // CreateAccessRequest creates a new access request
 func (s *PostgresStore) CreateAccessRequest(ctx context.Context, request *common.AccessRequest) error {
-	query := `INSERT INTO access_requests (id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	if request.AccessType == "" {
+		request.AccessType = "both"
+	}
+	query := `INSERT INTO access_requests (id, user_id, machine_id, remote_users, access_type, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 	remoteUsers := pq.Array(request.RemoteUsers)
 
 	_, err := s.db.ExecContext(ctx, query,
 		request.ID, request.UserID, request.MachineID,
-		remoteUsers,
+		remoteUsers, request.AccessType,
 		request.Reason, request.Duration, request.Status, request.RequestedAt,
 		request.ReviewedAt, request.ReviewedBy, request.ExpiresAt)
 
@@ -720,12 +732,12 @@ func (s *PostgresStore) CreateAccessRequest(ctx context.Context, request *common
 
 // GetAccessRequest retrieves an access request by ID
 func (s *PostgresStore) GetAccessRequest(ctx context.Context, id string) (*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id,remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id, remote_users, access_type, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE id = $1`
 	var remoteUsers pq.StringArray
 	request := &common.AccessRequest{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
+		&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.AccessType, &request.Reason,
 		&request.Duration, &request.Status, &request.RequestedAt,
 		&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt)
 
@@ -761,7 +773,7 @@ func (s *PostgresStore) UpdateAccessRequest(ctx context.Context, request *common
 
 // ListPendingAccessRequests lists all pending access requests
 func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id,remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id, remote_users, access_type, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE status = 'pending' ORDER BY requested_at DESC`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -774,7 +786,7 @@ func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*commo
 	var remoteUsers pq.StringArray
 	for rows.Next() {
 		request := &common.AccessRequest{}
-		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.AccessType, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan access request: %w", err)
@@ -788,7 +800,7 @@ func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*commo
 
 // ListAllAccessRequests lists access requests of any status, paginated.
 func (s *PostgresStore) ListAllAccessRequests(ctx context.Context, limit, offset int) ([]*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id, remote_users, access_type, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests ORDER BY requested_at DESC LIMIT $1 OFFSET $2`
 
 	rows, err := s.db.QueryContext(ctx, query, limit, offset)
@@ -801,7 +813,7 @@ func (s *PostgresStore) ListAllAccessRequests(ctx context.Context, limit, offset
 	for rows.Next() {
 		request := &common.AccessRequest{}
 		var remoteUsers pq.StringArray
-		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.AccessType, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan access request: %w", err)
@@ -815,7 +827,7 @@ func (s *PostgresStore) ListAllAccessRequests(ctx context.Context, limit, offset
 
 // ListUserAccessRequests lists access requests for a specific user
 func (s *PostgresStore) ListUserAccessRequests(ctx context.Context, userID string, limit, offset int) ([]*common.AccessRequest, error) {
-	query := `SELECT id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+	query := `SELECT id, user_id, machine_id, remote_users, access_type, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
 			  FROM access_requests WHERE user_id = $1 ORDER BY requested_at DESC LIMIT $2 OFFSET $3`
 
 	rows, err := s.db.QueryContext(ctx, query, userID, limit, offset)
@@ -828,7 +840,7 @@ func (s *PostgresStore) ListUserAccessRequests(ctx context.Context, userID strin
 	for rows.Next() {
 		request := &common.AccessRequest{}
 		var remoteUsers pq.StringArray
-		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.AccessType, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan access request: %w", err)
@@ -919,7 +931,7 @@ func (s *PostgresStore) DeletePermission(ctx context.Context, id string) error {
 
 // ListUserPermissions lists permissions for a specific user
 func (s *PostgresStore) ListUserPermissions(ctx context.Context, userID string) ([]*common.Permission, error) {
-	query := `SELECT id, user_id, machine_id, access_type, granted_by, granted_at, expires_at
+	query := `SELECT id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at
 			  FROM permissions WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
 			  ORDER BY granted_at DESC`
 
@@ -932,11 +944,13 @@ func (s *PostgresStore) ListUserPermissions(ctx context.Context, userID string) 
 	var permissions []*common.Permission
 	for rows.Next() {
 		permission := &common.Permission{}
+		var remoteUsers pq.StringArray
 		if err := rows.Scan(&permission.ID, &permission.UserID, &permission.MachineID,
-			&permission.AccessType, &permission.GrantedBy, &permission.GrantedAt,
+			&permission.AccessType, &remoteUsers, &permission.GrantedBy, &permission.GrantedAt,
 			&permission.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan permission: %w", err)
 		}
+		permission.RemoteUsers = []string(remoteUsers)
 		permissions = append(permissions, permission)
 	}
 
@@ -945,7 +959,7 @@ func (s *PostgresStore) ListUserPermissions(ctx context.Context, userID string) 
 
 // ListMachinePermissions lists permissions for a specific machine
 func (s *PostgresStore) ListMachinePermissions(ctx context.Context, machineID string) ([]*common.Permission, error) {
-	query := `SELECT id, user_id, machine_id, access_type, granted_by, granted_at, expires_at
+	query := `SELECT id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at
 			  FROM permissions WHERE machine_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
 			  ORDER BY granted_at DESC`
 
@@ -958,15 +972,81 @@ func (s *PostgresStore) ListMachinePermissions(ctx context.Context, machineID st
 	var permissions []*common.Permission
 	for rows.Next() {
 		permission := &common.Permission{}
+		var remoteUsers pq.StringArray
 		if err := rows.Scan(&permission.ID, &permission.UserID, &permission.MachineID,
-			&permission.AccessType, &permission.GrantedBy, &permission.GrantedAt,
+			&permission.AccessType, &remoteUsers, &permission.GrantedBy, &permission.GrantedAt,
 			&permission.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("failed to scan permission: %w", err)
 		}
+		permission.RemoteUsers = []string(remoteUsers)
 		permissions = append(permissions, permission)
 	}
 
 	return permissions, nil
+}
+
+// ListAllPermissions returns active grants (admin list / matrix spine).
+func (s *PostgresStore) ListAllPermissions(ctx context.Context, limit, offset int) ([]*common.Permission, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	query := `SELECT id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at
+			  FROM permissions WHERE (expires_at IS NULL OR expires_at > NOW())
+			  ORDER BY granted_at DESC LIMIT $1 OFFSET $2`
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list permissions: %w", err)
+	}
+	defer rows.Close()
+	var permissions []*common.Permission
+	for rows.Next() {
+		permission := &common.Permission{}
+		var remoteUsers pq.StringArray
+		if err := rows.Scan(&permission.ID, &permission.UserID, &permission.MachineID,
+			&permission.AccessType, &remoteUsers, &permission.GrantedBy, &permission.GrantedAt,
+			&permission.ExpiresAt); err != nil {
+			return nil, fmt.Errorf("failed to scan permission: %w", err)
+		}
+		permission.RemoteUsers = []string(remoteUsers)
+		permissions = append(permissions, permission)
+	}
+	return permissions, nil
+}
+
+// UpdatePermission updates mutable grant fields.
+func (s *PostgresStore) UpdatePermission(ctx context.Context, permission *common.Permission) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE permissions SET access_type=$1, remote_users=$2, expires_at=$3, granted_by=$4, granted_at=$5
+		WHERE id=$6`,
+		permission.AccessType, pq.Array(permission.RemoteUsers), permission.ExpiresAt,
+		permission.GrantedBy, permission.GrantedAt, permission.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update permission: %w", err)
+	}
+	return nil
+}
+
+// FindActivePermission returns an existing non-expired grant for the user/machine/access_type trio.
+func (s *PostgresStore) FindActivePermission(ctx context.Context, userID, machineID, accessType string) (*common.Permission, error) {
+	query := `SELECT id, user_id, machine_id, access_type, remote_users, granted_by, granted_at, expires_at
+			  FROM permissions
+			  WHERE user_id=$1 AND machine_id=$2 AND access_type=$3
+			    AND (expires_at IS NULL OR expires_at > NOW())
+			  ORDER BY granted_at DESC LIMIT 1`
+	permission := &common.Permission{}
+	var remoteUsers pq.StringArray
+	err := s.db.QueryRowContext(ctx, query, userID, machineID, accessType).Scan(
+		&permission.ID, &permission.UserID, &permission.MachineID,
+		&permission.AccessType, &remoteUsers, &permission.GrantedBy,
+		&permission.GrantedAt, &permission.ExpiresAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	permission.RemoteUsers = []string(remoteUsers)
+	return permission, nil
 }
 
 // HasPermission checks if a user has permission to access a machine
@@ -1124,6 +1204,51 @@ func (s *PostgresStore) MarkAllNotificationsRead(ctx context.Context, userID str
 		return fmt.Errorf("failed to mark all notifications read: %w", err)
 	}
 	return nil
+}
+
+func (s *PostgresStore) GetNotificationPrefs(ctx context.Context, userID string) (*common.NotificationPrefs, error) {
+	p := &common.NotificationPrefs{UserID: userID}
+	var types pq.StringArray
+	err := s.db.QueryRowContext(ctx, `
+		SELECT in_app_enabled, email_enabled, event_types FROM notification_prefs WHERE user_id=$1`, userID).
+		Scan(&p.InAppEnabled, &p.EmailEnabled, &types)
+	if err == sql.ErrNoRows {
+		return common.DefaultNotificationPrefs(userID), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.EventTypes = []string(types)
+	return p, nil
+}
+
+func (s *PostgresStore) UpsertNotificationPrefs(ctx context.Context, prefs *common.NotificationPrefs) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO notification_prefs (user_id, in_app_enabled, email_enabled, event_types, updated_at)
+		VALUES ($1,$2,$3,$4,NOW())
+		ON CONFLICT (user_id) DO UPDATE SET
+		  in_app_enabled=EXCLUDED.in_app_enabled,
+		  email_enabled=EXCLUDED.email_enabled,
+		  event_types=EXCLUDED.event_types,
+		  updated_at=NOW()`,
+		prefs.UserID, prefs.InAppEnabled, prefs.EmailEnabled, pq.Array(prefs.EventTypes))
+	return err
+}
+
+// ExpireStalePendingAccessRequests marks old pending requests as expired.
+func (s *PostgresStore) ExpireStalePendingAccessRequests(ctx context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		olderThan = 7 * 24 * time.Hour
+	}
+	cutoff := time.Now().Add(-olderThan)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE access_requests SET status='expired'
+		WHERE status='pending' AND requested_at < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // GetSessionDetails retrieves a session with user and machine names

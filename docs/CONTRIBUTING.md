@@ -85,6 +85,16 @@ make cve                    # 0-CVE gate (govulncheck)
 ORION_CVE_E2E=1 go test ./e2e/cve/ -v
 ```
 
+Coverage and microbenchmarks (when touching hot paths such as recording):
+
+```bash
+go test ./pkg/... -coverprofile=/tmp/ob.cov
+go tool cover -func=/tmp/ob.cov | tail
+go test ./pkg/recording/ -bench=. -benchtime=200ms
+```
+
+Target remains ~80% package coverage over time; new packages should ship with unit tests. Integration depth is covered by [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md).
+
 ### Packages & labs
 
 ```bash

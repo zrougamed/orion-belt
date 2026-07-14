@@ -167,6 +167,7 @@ type AccessRequest struct {
 	UserID      string     `json:"user_id"`
 	MachineID   string     `json:"machine_id"`
 	RemoteUsers []string   `json:"remote_users"` // Allowed remote users ["root", "user"]
+	AccessType  string     `json:"access_type"`  // ssh, scp, both
 	Reason      string     `json:"reason"`
 	Duration    int        `json:"duration"` // in seconds
 	Status      string     `json:"status"`   // pending, approved, rejected, expired
@@ -347,6 +348,7 @@ func NewAccessRequest(userID, machineID string, remoteUsers []string, reason str
 		UserID:      userID,
 		MachineID:   machineID,
 		RemoteUsers: remoteUsers,
+		AccessType:  "both",
 		Reason:      reason,
 		Duration:    duration,
 		Status:      "pending",

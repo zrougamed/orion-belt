@@ -81,6 +81,8 @@ type RecordingConfig struct {
 	StoragePath   string `yaml:"storage_path"`
 	RetentionDays int    `yaml:"retention_days,omitempty"`
 	EncryptionKey string `yaml:"encryption_key,omitempty"` // 32-byte key, base64 or raw 32 chars
+	// Compression: gzip | none (default gzip for new recordings)
+	Compression string `yaml:"compression,omitempty"`
 }
 
 // SSHCAConfig configures the server-side SSH Certificate Authority: short-

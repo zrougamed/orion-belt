@@ -17,6 +17,7 @@ func TestCastRecordingOutputOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rec.SetCompression("none")
 
 	sr, err := rec.StartRecordingSized("sess-1", 80, 24, "lab")
 	if err != nil {

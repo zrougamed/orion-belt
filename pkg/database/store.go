@@ -46,9 +46,12 @@ type Store interface {
 	// Permission operations
 	CreatePermission(ctx context.Context, permission *common.Permission) error
 	GetPermission(ctx context.Context, id string) (*common.Permission, error)
+	UpdatePermission(ctx context.Context, permission *common.Permission) error
 	DeletePermission(ctx context.Context, id string) error
 	ListUserPermissions(ctx context.Context, userID string) ([]*common.Permission, error)
 	ListMachinePermissions(ctx context.Context, machineID string) ([]*common.Permission, error)
+	ListAllPermissions(ctx context.Context, limit, offset int) ([]*common.Permission, error)
+	FindActivePermission(ctx context.Context, userID, machineID, accessType string) (*common.Permission, error)
 	HasPermission(ctx context.Context, userID, machineID, accessType string) (bool, error)
 	HasPermissionWithRemoteUser(ctx context.Context, userID, machineID, accessType, remoteUser string) (bool, error)
 
@@ -62,6 +65,11 @@ type Store interface {
 	CountUnreadNotifications(ctx context.Context, userID string) (int, error)
 	MarkNotificationRead(ctx context.Context, id, userID string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
+	GetNotificationPrefs(ctx context.Context, userID string) (*common.NotificationPrefs, error)
+	UpsertNotificationPrefs(ctx context.Context, prefs *common.NotificationPrefs) error
+
+	// Access request hygiene
+	ExpireStalePendingAccessRequests(ctx context.Context, olderThan time.Duration) (int, error)
 
 	// API Key operations
 	CreateAPIKey(ctx context.Context, key *common.APIKey) error

@@ -1,9 +1,11 @@
 package common
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
+	"strings"
 )
 
 // LogLevel represents logging level
@@ -17,59 +19,100 @@ const (
 	FATAL
 )
 
-// Logger provides structured logging
+// Logger provides structured JSON logging (slog) suitable for Loki/ELK.
 type Logger struct {
 	level  LogLevel
-	logger *log.Logger
+	logger *slog.Logger
+	attrs  []slog.Attr
 }
 
-// NewLogger creates a new logger
+// NewLogger creates a JSON logger writing to stdout.
 func NewLogger(level LogLevel) *Logger {
+	opts := &slog.HandlerOptions{Level: slogLevel(level)}
+	h := slog.NewJSONHandler(os.Stdout, opts)
 	return &Logger{
 		level:  level,
-		logger: log.New(os.Stdout, "", log.LstdFlags),
+		logger: slog.New(h),
 	}
+}
+
+func slogLevel(level LogLevel) slog.Level {
+	switch level {
+	case DEBUG:
+		return slog.LevelDebug
+	case WARN:
+		return slog.LevelWarn
+	case ERROR, FATAL:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func (l *Logger) log(level slog.Level, format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	args := make([]any, 0, len(l.attrs)*2)
+	for _, a := range l.attrs {
+		args = append(args, a.Key, a.Value.Any())
+	}
+	l.logger.Log(context.Background(), level, msg, args...)
 }
 
 // Debug logs a debug message
 func (l *Logger) Debug(format string, v ...interface{}) {
 	if l.level <= DEBUG {
-		l.logger.Printf("[DEBUG] "+format, v...)
+		l.log(slog.LevelDebug, format, v...)
 	}
 }
 
 // Info logs an info message
 func (l *Logger) Info(format string, v ...interface{}) {
 	if l.level <= INFO {
-		l.logger.Printf("[INFO] "+format, v...)
+		l.log(slog.LevelInfo, format, v...)
 	}
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(format string, v ...interface{}) {
 	if l.level <= WARN {
-		l.logger.Printf("[WARN] "+format, v...)
+		l.log(slog.LevelWarn, format, v...)
 	}
 }
 
 // Error logs an error message
 func (l *Logger) Error(format string, v ...interface{}) {
 	if l.level <= ERROR {
-		l.logger.Printf("[ERROR] "+format, v...)
+		l.log(slog.LevelError, format, v...)
 	}
 }
 
 // Fatal logs a fatal message and exits
 func (l *Logger) Fatal(format string, v ...interface{}) {
-	l.logger.Printf("[FATAL] "+format, v...)
+	l.log(slog.LevelError, format, v...)
 	os.Exit(1)
 }
 
 // WithField returns a new logger with a field
 func (l *Logger) WithField(key, value string) *Logger {
-	prefix := fmt.Sprintf("[%s=%s] ", key, value)
+	attrs := append([]slog.Attr{}, l.attrs...)
+	attrs = append(attrs, slog.String(key, value))
 	return &Logger{
 		level:  l.level,
-		logger: log.New(os.Stdout, prefix, log.LstdFlags),
+		logger: l.logger,
+		attrs:  attrs,
+	}
+}
+
+// ParseLogLevel parses a level name (debug/info/warn/error).
+func ParseLogLevel(s string) LogLevel {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return DEBUG
+	case "warn", "warning":
+		return WARN
+	case "error":
+		return ERROR
+	default:
+		return INFO
 	}
 }

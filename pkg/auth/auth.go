@@ -202,6 +202,20 @@ func (a *AuthService) GrantPermission(ctx context.Context, userID, machineID, ac
 		expiresAt = &t
 	}
 
+	// Upsert: replace an existing active grant for the same user/machine/type.
+	if existing, err := a.store.FindActivePermission(ctx, userID, machineID, accessType); err == nil && existing != nil {
+		existing.RemoteUsers = remoteUsers
+		existing.ExpiresAt = expiresAt
+		existing.GrantedBy = grantedBy
+		existing.GrantedAt = time.Now()
+		if err := a.store.UpdatePermission(ctx, existing); err != nil {
+			return fmt.Errorf("failed to update permission: %w", err)
+		}
+		a.logger.Info("Permission updated: user=%s, machine=%s, type=%s, remote_users=%v",
+			userID, machineID, accessType, remoteUsers)
+		return nil
+	}
+
 	permission := common.NewPermission(userID, machineID, accessType, remoteUsers, grantedBy, expiresAt)
 
 	if err := a.store.CreatePermission(ctx, permission); err != nil {
@@ -300,7 +314,11 @@ func (a *AuthService) ApproveAccessRequestWithTTL(ctx context.Context, requestID
 
 	// Grant temporary permission with the requested remote users. A nil
 	// permDuration grants unlimited (no expiry) access.
-	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, "both", request.RemoteUsers, reviewerID, permDuration); err != nil {
+	accessType := request.AccessType
+	if accessType == "" {
+		accessType = "both"
+	}
+	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, accessType, request.RemoteUsers, reviewerID, permDuration); err != nil {
 		return fmt.Errorf("failed to grant permission: %w", err)
 	}
 

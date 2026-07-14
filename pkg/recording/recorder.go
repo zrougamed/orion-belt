@@ -27,20 +27,24 @@ type Recorder struct {
 	storagePath string
 	logger      *common.Logger
 	crypto      *Crypto
+	compression string // gzip | none
+	hub         *SessionHub
 	mu          sync.RWMutex
 	sessions    map[string]*SessionRecorder
 }
 
 // SessionRecorder records PTY output as a timed cast (version 2).
 type SessionRecorder struct {
-	sessionID string
-	buf       *bytes.Buffer
-	filePath  string
-	crypto    *Crypto
-	startTime time.Time
-	width     int
-	height    int
-	mu        sync.Mutex
+	sessionID   string
+	buf         *bytes.Buffer
+	filePath    string
+	crypto      *Crypto
+	compression string
+	hub         *SessionHub
+	startTime   time.Time
+	width       int
+	height      int
+	mu          sync.Mutex
 }
 
 // NewRecorder creates a new session recorder.
@@ -52,6 +56,8 @@ func NewRecorder(storagePath string, logger *common.Logger) (*Recorder, error) {
 	return &Recorder{
 		storagePath: storagePath,
 		logger:      logger,
+		compression: "gzip",
+		hub:         NewSessionHub(),
 		sessions:    make(map[string]*SessionRecorder),
 	}, nil
 }
@@ -59,6 +65,22 @@ func NewRecorder(storagePath string, logger *common.Logger) (*Recorder, error) {
 // SetCrypto enables at-rest encryption for recordings.
 func (r *Recorder) SetCrypto(c *Crypto) {
 	r.crypto = c
+}
+
+// SetCompression sets flush-time compression (gzip or none).
+func (r *Recorder) SetCompression(mode string) {
+	if mode == "" {
+		mode = "gzip"
+	}
+	r.compression = mode
+}
+
+// Hub returns the live session watch fan-out hub.
+func (r *Recorder) Hub() *SessionHub {
+	if r.hub == nil {
+		r.hub = NewSessionHub()
+	}
+	return r.hub
 }
 
 // StartRecording starts a timed cast recording (default 120×40).
@@ -84,13 +106,15 @@ func (r *Recorder) StartRecordingSized(sessionID string, width, height int, titl
 	filename := r.GetRecordingPath(sessionID)
 	start := time.Now()
 	recorder := &SessionRecorder{
-		sessionID: sessionID,
-		buf:       &bytes.Buffer{},
-		filePath:  filename,
-		crypto:    r.crypto,
-		startTime: start,
-		width:     width,
-		height:    height,
+		sessionID:   sessionID,
+		buf:         &bytes.Buffer{},
+		filePath:    filename,
+		crypto:      r.crypto,
+		compression: r.compression,
+		hub:         r.Hub(),
+		startTime:   start,
+		width:       width,
+		height:      height,
 	}
 
 	hdr, err := json.Marshal(castHeader{
@@ -113,7 +137,7 @@ func (r *Recorder) StartRecordingSized(sessionID string, width, height int, titl
 	return recorder, nil
 }
 
-// StopRecording stops recording a session and flushes (optionally encrypted) to disk.
+// StopRecording stops recording a session and flushes (optionally compressed/encrypted) to disk.
 func (r *Recorder) StopRecording(sessionID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -125,18 +149,29 @@ func (r *Recorder) StopRecording(sessionID string) error {
 
 	recorder.mu.Lock()
 	plain := append([]byte(nil), recorder.buf.Bytes()...)
+	compMode := recorder.compression
+	path := recorder.filePath
+	crypt := recorder.crypto
 	recorder.mu.Unlock()
 
-	var err error
-	if recorder.crypto != nil && recorder.crypto.Enabled() {
-		err = recorder.crypto.EncryptAndWrite(recorder.filePath, plain)
+	payload, err := maybeCompress(plain, compMode)
+	if err != nil {
+		r.logger.Error("Failed to compress recording for session %s: %v", sessionID, err)
+		payload = plain
+	}
+
+	if crypt != nil && crypt.Enabled() {
+		err = crypt.EncryptAndWrite(path, payload)
 	} else {
-		err = os.WriteFile(recorder.filePath, plain, 0600)
+		err = os.WriteFile(path, payload, 0600)
 	}
 	if err != nil {
 		r.logger.Error("Failed to write recording for session %s: %v", sessionID, err)
 	}
 
+	if r.hub != nil {
+		r.hub.CloseSession(sessionID)
+	}
 	delete(r.sessions, sessionID)
 	r.logger.Info("Stopped recording session: %s", sessionID)
 
@@ -169,7 +204,13 @@ func (r *Recorder) GetRecordingPath(sessionID string) string {
 // Write records PTY output as a timed cast event. Raw bytes are kept so the
 // player can reconstruct the terminal (do not strip control sequences).
 func (s *SessionRecorder) Write(data []byte) error {
-	return s.writeEvent("o", string(data))
+	if err := s.writeEvent("o", string(data)); err != nil {
+		return err
+	}
+	if s.hub != nil && len(data) > 0 {
+		s.hub.Broadcast(s.sessionID, data)
+	}
+	return nil
 }
 
 // RecordResize records a terminal size change for playback.

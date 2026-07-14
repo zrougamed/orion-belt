@@ -4,8 +4,8 @@
 **Scope:** React SPA under `web/ui/` (built into `web/static/`, embedded at `/ui/`)  
 **Base URL:** `/ui/` (served by the gateway; redirects from `/` and `/admin`)  
 **API:** `/api/v1/*` — see [openapi/openapi.yaml](openapi/openapi.yaml)  
-**Status:** React console Phase 2 (palette, permissions, dashboard health)  
-**Last updated:** July 2026
+**Status:** React console Phase 2 (palette, permissions, dashboard health) — **v0.9.0**  
+**Last updated:** July 2026 (v0.9.0: live watch, permissions all-grants/edit, notification prefs)
 
 ---
 
@@ -34,8 +34,8 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 ### Non-goals (deferred)
 
 - Fine-grained UI RBAC beyond role-gated nav (API still enforces ReBAC)
-- Live shared session watching / collaborative cursors
-- Full permission matrix editor UX (grants exist via API/`oadmin`)
+- Collaborative cursors / multi-viewer chat over live sessions (read-only watch is supported)
+- Full spreadsheet-style permission matrix (All grants + edit/revoke is supported)
 - SSH CA admin panel in the UI (export/list/revoke via `oadmin` / API today — see [SSH_CA.md](SSH_CA.md))
 - Heavy third-party admin kits (MUI/Ant) — prefer owned CSS tokens
 

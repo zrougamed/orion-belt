@@ -221,6 +221,8 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		protected.GET("/notifications/unread-count", s.unreadNotificationCount)
 		protected.POST("/notifications/:id/read", s.markNotificationRead)
 		protected.POST("/notifications/read-all", s.markAllNotificationsRead)
+		protected.GET("/notifications/prefs", s.getNotificationPrefs)
+		protected.PUT("/notifications/prefs", s.putNotificationPrefs)
 
 		// First-run / operator setup checklist
 		protected.GET("/setup/status", s.setupStatus)
@@ -253,7 +255,9 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		admin.DELETE("/machines/:id", s.deleteMachine)
 
 		// Permission management
+		admin.GET("/permissions", s.listAllPermissions)
 		admin.POST("/permissions", s.grantPermission)
+		admin.PATCH("/permissions/:id", s.updatePermission)
 		admin.DELETE("/permissions/:id", s.revokePermission)
 
 		// Access request management
@@ -526,6 +530,7 @@ type CreateAccessRequestRequest struct {
 	MachineID   string   `json:"machine_id" binding:"required"`
 	RemoteUsers []string `json:"remote_users" binding:"required"`
 	Reason      string   `json:"reason" binding:"required"`
+	AccessType  string   `json:"access_type"` // ssh, scp, both (default both)
 	// Duration in seconds. Omitted -> DefaultAccessRequestTTLSeconds (30m). 0 -> unlimited.
 	Duration *int `json:"duration"`
 }
@@ -558,6 +563,9 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 		req.Reason,
 		duration,
 	)
+	if req.AccessType != "" {
+		accessReq.AccessType = req.AccessType
+	}
 
 	if err := s.store.CreateAccessRequest(ctx, accessReq); err != nil {
 		s.logger.Error("Failed to create access request: %v", err)
@@ -726,6 +734,8 @@ func (s *APIServer) rejectAccessRequest(c *gin.Context) {
 		"user_id":    accessReq.UserID,
 		"machine_id": accessReq.MachineID,
 	})
+
+	s.notifyAccessRequestRejected(ctx, accessReq)
 
 	c.JSON(http.StatusOK, accessReq)
 }
@@ -1134,6 +1144,84 @@ func (s *APIServer) grantPermission(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "permission granted"})
 }
 
+func (s *APIServer) listAllPermissions(c *gin.Context) {
+	limit := 500
+	if v := c.Query("limit"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 1 && err == nil && limit > 0 {
+			if limit > 2000 {
+				limit = 2000
+			}
+		}
+	}
+	perms, err := s.store.ListAllPermissions(c.Request.Context(), limit, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if perms == nil {
+		perms = []*common.Permission{}
+	}
+	c.JSON(http.StatusOK, perms)
+}
+
+func (s *APIServer) updatePermission(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		AccessType  *string  `json:"access_type"`
+		RemoteUsers []string `json:"remote_users"`
+		ExpiresAt   *string  `json:"expires_at"` // RFC3339 or "" to clear (permanent)
+		DurationSec *int     `json:"duration_seconds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx := c.Request.Context()
+	perm, err := s.store.GetPermission(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "permission not found"})
+		return
+	}
+	if req.AccessType != nil && *req.AccessType != "" {
+		perm.AccessType = *req.AccessType
+	}
+	if req.RemoteUsers != nil {
+		perm.RemoteUsers = req.RemoteUsers
+	}
+	if req.DurationSec != nil {
+		if *req.DurationSec <= 0 {
+			perm.ExpiresAt = nil
+		} else {
+			t := time.Now().Add(time.Duration(*req.DurationSec) * time.Second)
+			perm.ExpiresAt = &t
+		}
+	} else if req.ExpiresAt != nil {
+		if *req.ExpiresAt == "" {
+			perm.ExpiresAt = nil
+		} else {
+			t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be RFC3339"})
+				return
+			}
+			perm.ExpiresAt = &t
+		}
+	}
+	adminID, _ := c.Get("user_id")
+	if g, ok := adminID.(string); ok && g != "" {
+		perm.GrantedBy = g
+		perm.GrantedAt = time.Now()
+	}
+	if err := s.store.UpdatePermission(ctx, perm); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update permission"})
+		return
+	}
+	s.recordAudit(c, "permission.update", "permission:"+id, map[string]interface{}{
+		"access_type": perm.AccessType,
+	})
+	c.JSON(http.StatusOK, perm)
+}
+
 func (s *APIServer) revokePermission(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
@@ -1269,19 +1357,25 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 		contentType = "application/x-asciicast"
 	}
 
+	var plain []byte
+	var errRead error
 	if s.recordingCrypt != nil && s.recordingCrypt.Enabled() {
-		plain, err := s.recordingCrypt.DecryptFile(session.RecordingPath)
-		if err != nil {
-			s.logger.Error("Failed to decrypt recording: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt recording"})
-			return
-		}
-		c.Data(http.StatusOK, contentType, plain)
+		plain, errRead = s.recordingCrypt.DecryptFile(session.RecordingPath)
+	} else {
+		plain, errRead = os.ReadFile(session.RecordingPath)
+	}
+	if errRead != nil {
+		s.logger.Error("Failed to read recording: %v", errRead)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read recording"})
 		return
 	}
-
-	c.Header("Content-Type", contentType)
-	c.File(session.RecordingPath)
+	plain, errRead = recording.MaybeDecompress(plain)
+	if errRead != nil {
+		s.logger.Error("Failed to decompress recording: %v", errRead)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decompress recording"})
+		return
+	}
+	c.Data(http.StatusOK, contentType, plain)
 }
 
 func (s *APIServer) listAuditLogs(c *gin.Context) {

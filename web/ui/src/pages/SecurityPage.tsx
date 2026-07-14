@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -22,7 +22,10 @@ export function SecurityPage() {
   const { toast } = useToast();
   const { refreshMe, user } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"mfa" | "password" | "webauthn" | "keys" | "api-keys">("mfa");
+  const [tab, setTab] = useState<"mfa" | "password" | "webauthn" | "keys" | "api-keys" | "notifications">("mfa");
+  const [notifInApp, setNotifInApp] = useState(true);
+  const [notifEmail, setNotifEmail] = useState(false);
+  const [notifEvents, setNotifEvents] = useState("");
   const [otpauth, setOtpauth] = useState("");
   const [secret, setSecret] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
@@ -58,6 +61,19 @@ export function SecurityPage() {
     queryFn: () => api<{ api_keys?: APIKeyItem[] }>("/api-keys"),
     enabled: tab === "api-keys",
   });
+  const notifPrefs = useQuery({
+    queryKey: ["notification-prefs"],
+    queryFn: () =>
+      api<{ in_app_enabled?: boolean; email_enabled?: boolean; event_types?: string[] }>("/notifications/prefs"),
+    enabled: tab === "notifications",
+  });
+
+  useEffect(() => {
+    if (!notifPrefs.data) return;
+    setNotifInApp(notifPrefs.data.in_app_enabled !== false);
+    setNotifEmail(!!notifPrefs.data.email_enabled);
+    setNotifEvents((notifPrefs.data.event_types || []).join(", "));
+  }, [notifPrefs.data]);
 
   async function enrollMfa() {
     try {
@@ -259,6 +275,28 @@ export function SecurityPage() {
     }
   }
 
+  async function saveNotifPrefs(e: FormEvent) {
+    e.preventDefault();
+    try {
+      const events = notifEvents
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api("/notifications/prefs", {
+        method: "PUT",
+        body: JSON.stringify({
+          in_app_enabled: notifInApp,
+          email_enabled: notifEmail,
+          event_types: events,
+        }),
+      });
+      toast("Notification preferences saved");
+      void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
+    } catch (ex) {
+      toast(ex instanceof Error ? ex.message : String(ex), "err");
+    }
+  }
+
   const keyList = keys.data || [];
   const qrSrc = otpauth
     ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&ecc=M&data=${encodeURIComponent(otpauth)}`
@@ -273,7 +311,7 @@ export function SecurityPage() {
         </div>
       </div>
       <div className="row" style={{ marginBottom: "1rem" }}>
-        {(["mfa", "password", "webauthn", "keys", "api-keys"] as const).map((t) => (
+        {(["mfa", "password", "webauthn", "keys", "api-keys", "notifications"] as const).map((t) => (
           <button key={t} type="button" className={`btn sm${tab === t ? "" : " secondary"}`} onClick={() => setTab(t)}>
             {t === "mfa"
               ? "MFA"
@@ -283,7 +321,9 @@ export function SecurityPage() {
                   ? "WebAuthn"
                   : t === "keys"
                     ? "SSH keys"
-                    : "API keys"}
+                    : t === "api-keys"
+                      ? "API keys"
+                      : "Notifications"}
           </button>
         ))}
       </div>
@@ -611,6 +651,43 @@ export function SecurityPage() {
             )}
           </div>
         </>
+      ) : null}
+
+      {tab === "notifications" ? (
+        <form className="card" onSubmit={(e) => void saveNotifPrefs(e)}>
+          <h3>Notification preferences</h3>
+          <p className="muted">
+            Control in-app delivery. Leave event types empty to receive all events (approve, reject, …). Email delivery
+            is reserved for a future SMTP channel and is stored but not mailed yet.
+          </p>
+          {notifPrefs.isLoading ? (
+            <p className="muted">Loading…</p>
+          ) : (
+            <>
+              <div className="form-grid">
+                <label className="row" style={{ alignItems: "center", gap: "0.5rem" }}>
+                  <input type="checkbox" checked={notifInApp} onChange={(e) => setNotifInApp(e.target.checked)} />
+                  In-app notifications
+                </label>
+                <label className="row" style={{ alignItems: "center", gap: "0.5rem" }}>
+                  <input type="checkbox" checked={notifEmail} onChange={(e) => setNotifEmail(e.target.checked)} />
+                  Email (stored preference)
+                </label>
+                <div>
+                  <label className="field">Event allow-list (comma-separated, empty = all)</label>
+                  <input
+                    value={notifEvents}
+                    onChange={(e) => setNotifEvents(e.target.value)}
+                    placeholder="access_request.approved, access_request.rejected"
+                  />
+                </div>
+              </div>
+              <button className="btn sm" type="submit" style={{ marginTop: "0.75rem" }}>
+                Save preferences
+              </button>
+            </>
+          )}
+        </form>
       ) : null}
     </>
   );

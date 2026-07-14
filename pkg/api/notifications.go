@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
+	"github.com/zrougamed/orion-belt/pkg/notify"
 )
 
 // listNotifications returns the authenticated user's notifications, most
@@ -39,8 +41,6 @@ func (s *APIServer) listNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, notifications)
 }
 
-// unreadNotificationCount returns how many unread notifications the
-// authenticated user has, for the bell widget's badge.
 func (s *APIServer) unreadNotificationCount(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, _ := c.Get("user_id")
@@ -54,8 +54,6 @@ func (s *APIServer) unreadNotificationCount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"unread": count})
 }
 
-// markNotificationRead marks a single notification as read. Scoped to the
-// caller: a user cannot mark another user's notification as read.
 func (s *APIServer) markNotificationRead(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, _ := c.Get("user_id")
@@ -72,7 +70,6 @@ func (s *APIServer) markNotificationRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "marked read"})
 }
 
-// markAllNotificationsRead marks all of the caller's unread notifications as read.
 func (s *APIServer) markAllNotificationsRead(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, _ := c.Get("user_id")
@@ -85,50 +82,93 @@ func (s *APIServer) markAllNotificationsRead(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "all marked read"})
 }
 
-// notifyAccessRequestApproved creates the in-app "your JIT request was
-// approved" notification for the requester. Best-effort: failures are
-// logged, never surfaced to the approver's response.
-func (s *APIServer) notifyAccessRequestApproved(ctx context.Context, req *common.AccessRequest) {
-	if s.store == nil || req == nil {
+func (s *APIServer) getNotificationPrefs(c *gin.Context) {
+	uid, _ := c.Get("user_id")
+	prefs, err := s.store.GetNotificationPrefs(c.Request.Context(), uid.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.JSON(http.StatusOK, prefs)
+}
 
-	machineName := req.MachineID
-	if s.store != nil {
-		if m, err := s.store.GetMachine(ctx, req.MachineID); err == nil && m != nil {
-			machineName = m.Name
-		}
+func (s *APIServer) putNotificationPrefs(c *gin.Context) {
+	uid, _ := c.Get("user_id")
+	var prefs common.NotificationPrefs
+	if err := c.ShouldBindJSON(&prefs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-
-	ttl := "unlimited"
-	if req.ExpiresAt != nil {
-		ttl = "until " + req.ExpiresAt.Format(time.RFC3339)
+	prefs.UserID = uid.(string)
+	if err := s.store.UpsertNotificationPrefs(c.Request.Context(), &prefs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
+	c.JSON(http.StatusOK, prefs)
+}
 
-	n := common.NewNotification(
-		req.UserID,
-		"access_request.approved",
-		"Access request approved",
-		fmt.Sprintf("Your access request for %s (%s) was approved — access %s.",
-			machineName, joinRemoteUsers(req.RemoteUsers), ttl),
-		map[string]interface{}{
-			"request_id": req.ID,
-			"machine_id": req.MachineID,
-			"expires_at": req.ExpiresAt,
-		},
-	)
+func (s *APIServer) deliverNotification(ctx context.Context, userID, notifType string, data map[string]string) {
+	if s.store == nil {
+		return
+	}
+	prefs, _ := s.store.GetNotificationPrefs(ctx, userID)
+	if !prefs.AllowsInApp(notifType) {
+		return
+	}
+	title, body := notify.Render(notifType, data)
+	meta := map[string]interface{}{}
+	for k, v := range data {
+		meta[k] = v
+	}
+	n := common.NewNotification(userID, notifType, title, body, meta)
 	if err := s.store.CreateNotification(ctx, n); err != nil && s.logger != nil {
-		s.logger.Warn("failed to create approval notification: %v", err)
+		s.logger.Warn("failed to create notification: %v", err)
 	}
 }
 
-func joinRemoteUsers(users []string) string {
-	if len(users) == 0 {
-		return "as allowed"
+func (s *APIServer) notifyAccessRequestApproved(ctx context.Context, req *common.AccessRequest) {
+	if req == nil {
+		return
 	}
-	out := "as " + users[0]
-	for _, u := range users[1:] {
-		out += ", " + u
+	machineName := req.MachineID
+	if m, err := s.store.GetMachine(ctx, req.MachineID); err == nil && m != nil {
+		machineName = m.Name
 	}
-	return out
+	s.deliverNotification(ctx, req.UserID, "access_request.approved", map[string]string{
+		"machine":      machineName,
+		"machine_id":   req.MachineID,
+		"request_id":   req.ID,
+		"remote_users": strings.Join(req.RemoteUsers, ", "),
+		"ttl":          notify.FormatTTL(req.ExpiresAt),
+	})
+}
+
+func (s *APIServer) notifyAccessRequestRejected(ctx context.Context, req *common.AccessRequest) {
+	if req == nil {
+		return
+	}
+	machineName := req.MachineID
+	if m, err := s.store.GetMachine(ctx, req.MachineID); err == nil && m != nil {
+		machineName = m.Name
+	}
+	s.deliverNotification(ctx, req.UserID, "access_request.rejected", map[string]string{
+		"machine":      machineName,
+		"machine_id":   req.MachineID,
+		"request_id":   req.ID,
+		"remote_users": strings.Join(req.RemoteUsers, ", "),
+	})
+}
+
+// expireStaleAccessRequests marks old pending JIT requests as expired.
+func (s *APIServer) expireStaleAccessRequests(ctx context.Context) {
+	n, err := s.store.ExpireStalePendingAccessRequests(ctx, 7*24*time.Hour)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("expire access requests: %v", err)
+		}
+		return
+	}
+	if n > 0 && s.logger != nil {
+		s.logger.Info("Expired %d stale pending access requests", n)
+	}
 }

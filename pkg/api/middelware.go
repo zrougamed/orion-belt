@@ -22,19 +22,23 @@ type AuthContext struct {
 	AuthMethod string // "api_key", "session", "bearer"
 }
 
-// loggingMiddleware logs all HTTP requests
+// loggingMiddleware logs all HTTP requests as structured JSON and increments API metrics.
 func (s *APIServer) loggingMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
-		method := c.Request.Method
+		reqID := c.GetHeader("X-Request-ID")
+		if reqID == "" {
+			reqID = fmt.Sprintf("%d", start.UnixNano())
+		}
+		c.Set("request_id", reqID)
+		c.Writer.Header().Set("X-Request-ID", reqID)
 
 		c.Next()
 
 		duration := time.Since(start)
 		status := c.Writer.Status()
-
-		s.logger.Info("%s %s %d %v", method, path, status, duration)
+		metrics.Default.IncAPIRequest()
+		s.logger.WithField("request_id", reqID).Info("%s %s %d %v", c.Request.Method, c.Request.URL.Path, status, duration)
 	}
 }
 

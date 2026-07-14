@@ -15,7 +15,7 @@ Agents dial **out** over reverse SSH, so you eliminate inbound firewall holes. Y
 
 > Free to use, modify, and self-host — including for internal commercial use — under [Apache 2.0 + Commons Clause](LICENSE). The Clause withholds only the right to **sell** Orion Belt (or a hosted service whose value derives substantially from it) as a product. See [orion-belt.dev](https://orion-belt.dev).
 
-> Status: **Alpha v0.8.0** — SSH Certificate Authority, challenge-response key login, in-app notifications, plugin platform with live UI config, chatops approvals (Slack/Discord/Teams/Rocket.Chat), MFA/WebAuthn, OpenSSH clients, role-aware web console with dark/light themes, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
+> Status: **Alpha v0.9.0** — permissions editor, recording compression, live session watch, notification prefs/templates, JIT polish, JSON/Prometheus observability docs, password+TOTP + WebAuthn, SSH Certificate Authority, challenge-response login, plugin platform with live UI config, chatops approvals, OpenSSH clients, role-aware web console, OpenFGA, native packages, OpenAPI, GPG-signed repos
 
 ![Orion-Belt](assets/banner-2.png)
 
@@ -50,17 +50,17 @@ Orion-Belt solves this by:
 - **Agent Mode**: Runs on target machines to receive connections
 - **ReBAC**: Relationship-based access control for authorized users
 - **Temporary Access**: Request-based temporary access with admin approval
-- **Session Recording**: Complete session recording and audit trails (optional AES-at-rest + retention)
+- **Session Recording**: Complete session recording and audit trails (optional AES-at-rest, gzip compression, retention; live watch for active sessions)
 - **Plugin System**: Built-in plugins (audit logger, Slack/email/webhook notifications, chatops access-request approvals for Slack/Discord/Teams/Rocket.Chat) — enable and configure live from the web console, no restart or YAML editing
 - **Host Key Verification**: TOFU / known_hosts, or Host-CA trust when SSH CA is enabled
 - **SSH CA**: Short-lived User certs for operators + Host certs for gateway/agents — [docs/SSH_CA.md](docs/SSH_CA.md)
-- **API Auth**: API keys, session tokens, JWT; pubkey login requires challenge-response proof-of-possession
+- **API Auth**: API keys, session tokens, JWT; pubkey login requires challenge-response proof-of-possession; optional password + TOTP
 - **MFA**: TOTP + YubiKey/FIDO2 (WebAuthn) for the web console; FIDO SSH keys (`sk-*`)
-- **Web console**: Role-aware `/ui` with live terminal, files, sessions playback, audit, users/machines, notification bell (see [SRS-UI.md](docs/SRS-UI.md))
+- **Web console**: Role-aware `/ui` with live terminal, files, sessions playback/watch, audit, users/machines, notification bell (see [SRS-UI.md](docs/SRS-UI.md))
 - **OpenAPI**: Full HTTP/WS spec — [docs/openapi/openapi.yaml](docs/openapi/openapi.yaml) / `GET /api/v1/openapi.yaml`
 - **Versioning**: `orion-belt-server --version`, `/health`, `/api/v1/version`, UI chrome
 - **OpenFGA**: Optional external authorization with ReBAC fallback
-- **Metrics**: Prometheus-format `/metrics` endpoint
+- **Metrics & logs**: Prometheus `/metrics` + JSON slog (see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)); hardening checklist in [docs/DEPLOYMENT_HARDENING.md](docs/DEPLOYMENT_HARDENING.md)
 - **Packaging**: deb/rpm/apk + GPG-signed APT/RPM repos
 - **Database Agnostic**: Interface-based database layer for easy switching
 
@@ -87,11 +87,11 @@ flowchart TB
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.8.0** — SSH CA, challenge-response API login, in-app notifications (on top of packaging, plugins, console theming, MFA/UI).
+**Current Status:** Alpha **v0.9.0** — permissions editor, recording compression, live session watch, notification prefs, JIT polish, and observability/hardening docs (on top of SSH CA, MFA/UI, packaging, and plugins).
 
-**Shipped:** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins (compiled-in + live UI config), chatops approvals, remote users, host-key / Host-CA verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console, optional OpenFGA, native packages + GPG-signed repos, OpenAPI, SSH Certificate Authority.
+**Shipped:** SSH proxy, ReBAC, recording (+ compression/encryption/retention + live watch), REST API, JWT/API keys, plugins (compiled-in + live UI config), chatops approvals, remote users, host-key / Host-CA verification, metrics + structured logs, TOTP + WebAuthn/FIDO + password login, OpenSSH agentless clients, role-aware web console (permissions editor, notification prefs), optional OpenFGA, native packages + GPG-signed repos, OpenAPI, SSH Certificate Authority, JIT access requests.
 
-**Next:** HA clustering, IdP (OIDC/SAML), live session monitoring, recording compression.
+**Next:** HA clustering, IdP (OIDC/SAML), OpenTelemetry span export, Vault integration.
 
 ## Packaging & labs
 

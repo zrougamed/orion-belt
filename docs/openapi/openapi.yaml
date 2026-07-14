@@ -19,7 +19,7 @@ info:
     **Admin routes** (`/api/v1/admin/*`) additionally require role `admin` or `operator` (or `is_admin`).
 
     **Rate limit:** protected (non-admin) routes — default 600 req/min per user (`auth.rate_limit_per_minute`).
-  version: "0.8.1"
+  version: "0.9.0"
   contact:
     name: Orion Belt Maintainers
     url: https://github.com/zrougamed/orion-belt
@@ -867,9 +867,25 @@ paths:
                   $ref: "#/components/schemas/Permission"
 
   /api/v1/admin/permissions:
+    get:
+      tags: [Permissions]
+      summary: List all active permissions (admin)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 500, maximum: 2000 }
+      responses:
+        "200":
+          description: Active grants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
     post:
       tags: [Permissions]
-      summary: Grant permission
+      summary: Grant permission (upserts existing user/machine/access_type)
       requestBody:
         required: true
         content:
@@ -885,6 +901,31 @@ paths:
                 $ref: "#/components/schemas/Permission"
 
   /api/v1/admin/permissions/{id}:
+    patch:
+      tags: [Permissions]
+      summary: Update remote users / access type / TTL on a grant
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                access_type: { type: string, enum: [ssh, scp, both] }
+                remote_users:
+                  type: array
+                  items: { type: string }
+                duration_seconds: { type: integer, description: "Seconds from now; 0 clears expiry" }
+                expires_at: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Permission"
     delete:
       tags: [Permissions]
       summary: Revoke permission
@@ -1085,6 +1126,27 @@ paths:
                   value: { error: "no recording for this session" }
                 missing_file:
                   value: { error: "recording file missing on server" }
+
+  /api/v1/sessions/{id}/watch:
+    get:
+      tags: [Sessions]
+      summary: Live watch an active session (WebSocket)
+      description: |
+        Upgrades to a WebSocket that streams raw PTY output for an **active**
+        session recorded on this gateway node. Auth via `?token=` session or
+        `?access_token=` JWT (same as terminal WS). Privileged roles or the
+        session owner may watch; connection is read-only.
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "101":
+          description: Switching Protocols
+        "409":
+          description: Session not active or recording not on this node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/audit-logs:
     get:
@@ -1530,6 +1592,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
 
+  /api/v1/notifications/prefs:
+    get:
+      tags: [Notifications]
+      summary: Get notification preferences for the current user
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPrefs"
+    put:
+      tags: [Notifications]
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPrefs"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPrefs"
+
   /api/v1/ssh-cert/ca:
     get:
       tags: [SSH CA]
@@ -1774,11 +1864,22 @@ components:
         type: { type: string, example: access_request.approved }
         title: { type: string }
         body: { type: string }
-        metadata:
-          type: object
-          additionalProperties: true
-        read_at: { type: string, format: date-time }
+        metadata: { type: object, additionalProperties: true }
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at: { type: string, format: date-time }
+    NotificationPrefs:
+      type: object
+      properties:
+        user_id: { type: string }
+        in_app_enabled: { type: boolean }
+        email_enabled: { type: boolean, description: Stored preference; email delivery not yet wired }
+        event_types:
+          type: array
+          items: { type: string }
+          description: Empty = all event types
     LoginResponse:
       type: object
       properties:
@@ -2047,6 +2148,9 @@ components:
         remote_users:
           type: array
           items: { type: string }
+        access_type:
+          type: string
+          enum: [ssh, scp, both]
         reason: { type: string }
         duration: { type: integer, description: Seconds }
         status:
@@ -2066,14 +2170,18 @@ components:
           nullable: true
     CreateAccessRequest:
       type: object
-      required: [machine_id, remote_users, reason, duration]
+      required: [machine_id, remote_users, reason]
       properties:
         machine_id: { type: string }
         remote_users:
           type: array
           items: { type: string }
+        access_type:
+          type: string
+          enum: [ssh, scp, both]
+          default: both
         reason: { type: string }
-        duration: { type: integer, description: Duration in seconds }
+        duration: { type: integer, description: Duration in seconds; omit for 30m default; 0 = unlimited }
     Session:
       type: object
       properties:

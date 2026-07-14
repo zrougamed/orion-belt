@@ -47,6 +47,7 @@ type AccessRequest struct {
 	UserID      string     `json:"user_id"`
 	MachineID   string     `json:"machine_id"`
 	RemoteUsers []string   `json:"remote_users"`
+	AccessType  string     `json:"access_type"`
 	Reason      string     `json:"reason"`
 	Duration    int        `json:"duration"`
 	Status      string     `json:"status"`

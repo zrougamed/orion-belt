@@ -25,7 +25,10 @@ place these are documented:
 - `ssh_ca.enabled` / `ssh_ca.master_key` — internal SSH CA (user + host certs); see [SSH_CA.md](SSH_CA.md). `master_key` is required when enabled (encrypts CA keys at rest)
 - `ssh_ca.host_principals` — hostnames/IPs clients use to reach the gateway (embedded in the gateway Host cert)
 - `recording.encryption_key` — AES-256-GCM key for session recordings at rest; leave empty only if you accept plaintext recordings
+- `recording.compression` — `gzip` (default) or `none` for cast files at flush
 - `recording.retention_days` — how long recordings are kept before the retention loop deletes them
+
+See also [DEPLOYMENT_HARDENING.md](DEPLOYMENT_HARDENING.md) and [OBSERVABILITY.md](OBSERVABILITY.md).
 
 ### WebAuthn (FIDO2)
 

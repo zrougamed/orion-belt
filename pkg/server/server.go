@@ -97,6 +97,7 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		return nil, fmt.Errorf("recording encryption: %w", err)
 	}
 	recorder.SetCrypto(recCrypto)
+	recorder.SetCompression(config.Recording.Compression)
 	if recCrypto.Enabled() {
 		logger.Info("Session recording encryption enabled")
 	}
@@ -1234,6 +1235,11 @@ func (s *Server) runRetentionLoop() {
 	if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
 		s.logger.Warn("retention cleanup: %v", err)
 	}
+	if n, err := s.store.ExpireStalePendingAccessRequests(context.Background(), 7*24*time.Hour); err != nil {
+		s.logger.Warn("expire access requests: %v", err)
+	} else if n > 0 {
+		s.logger.Info("Expired %d stale pending access requests", n)
+	}
 	for {
 		select {
 		case <-s.shutdown:
@@ -1241,6 +1247,11 @@ func (s *Server) runRetentionLoop() {
 		case <-ticker.C:
 			if _, err := recording.EnforceRetention(path, days, s.logger); err != nil {
 				s.logger.Warn("retention cleanup: %v", err)
+			}
+			if n, err := s.store.ExpireStalePendingAccessRequests(context.Background(), 7*24*time.Hour); err != nil {
+				s.logger.Warn("expire access requests: %v", err)
+			} else if n > 0 {
+				s.logger.Info("Expired %d stale pending access requests", n)
 			}
 		}
 	}

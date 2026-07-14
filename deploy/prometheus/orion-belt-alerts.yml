@@ -1,0 +1,34 @@
+groups:
+  - name: orion-belt
+    rules:
+      - alert: OrionBeltDown
+        expr: absent(orion_belt_up) or orion_belt_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Orion Belt gateway is down or unscrapeable
+
+      - alert: OrionBeltAuthFailuresHigh
+        expr: increase(orion_belt_auth_failures_total[15m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Elevated authentication failures
+
+      - alert: OrionBeltNoAgents
+        expr: orion_belt_agents_connected == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: No agents connected to the gateway
+
+      - alert: OrionBeltSessionsStuck
+        expr: orion_belt_ssh_sessions_active > 100
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Unusually high active SSH session count

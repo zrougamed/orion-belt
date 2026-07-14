@@ -2,23 +2,23 @@
 
 ## Current Status
 
-**Version:** Alpha v0.8.0 (SSH CA, challenge-response login, in-app notifications, plugins, packaging, MFA/UI)
-**Status:** v0.8.0 ready for release — SSH Certificate Authority + related auth/UX hardening
+**Version:** Alpha v0.9.0 (permissions editor, recording compression, live session watch, notification templates/prefs, JWT/ops observability, JIT polish, password+TOTP)
+**Status:** v0.9.0 ready for release — ops, JIT, and console depth on top of the v0.8 SSH CA / MFA baseline
 
 ## Pending / Next Up — 2026-07-14
 
 Consolidated view of everything still open, gathered from the checklists below so it doesn't have to be hunted across sections.
 
 **Notable open items:**
-- [ ] **Richer permission editor in UI** (partial credit: Permissions page got a table-migration + confirm-dialog pass in the 2026-07-13 audit, but a real editor is still open)
-- [ ] Recording compression
-- [ ] OpenTelemetry tracing, structured logs (Loki/ELK), alerting
-- [ ] Notification templates / per-user notification preferences
+- [x] **Richer permission editor in UI** — all-grants view, edit remotes/TTL, upsert on grant, `GET/PATCH /admin/permissions`
+- [x] Recording compression (`recording.compression`, OBGZ1+gzip)
+- [x] Structured JSON logs (slog) + Prometheus alerts docs; OpenTelemetry span export still deferred
+- [x] Notification templates / per-user notification preferences
 - [ ] HashiCorp Vault integration
 - [ ] Richer agent remote management (reload config, drain, update — beyond current `ping`/`health`/`status`/`info`)
-- [ ] Tech debt: ~80% unit test coverage, integration test suites, perf benchmarks, ADRs, error/logging standardization, deployment hardening guide
+- [x] Tech debt (partial): ADRs started, deployment hardening + observability guides, recording unit tests; coverage/integration suites still open
 
-**Phase 2–4 (larger, not started):** HA clustering, JIT access, RBAC-on-ReBAC, live session monitoring, command filtering, LDAP/SAML/OIDC, SIEM/ticketing integrations, compliance reporting (SOC2/HIPAA/PCI), RDP/VNC/Kubernetes/DB proxies, SDKs.
+**Phase 2–4 (larger):** HA clustering, RBAC-on-ReBAC, command filtering, LDAP/SAML/OIDC, SIEM/ticketing integrations, compliance reporting (SOC2/HIPAA/PCI), RDP/VNC/Kubernetes/DB proxies, SDKs. JIT access request workflow + live session watch shipped in v0.9.0.
 
 ## Audit Findings — 2026-07-13
 
@@ -244,10 +244,10 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 ### Phase 2 — Advanced Features
 
 - [ ] HA clustering and DB replication
-- [ ] JIT (Just-In-Time) access
+- [x] JIT (Just-In-Time) access — request/approve/reject with TTL, optional `access_type`, reject notifications, stale pending expiry
 - [ ] Risk-based access policies
 - [ ] RBAC complementary to ReBAC
-- [ ] Live session monitoring tools
+- [x] Live session monitoring tools — `GET /sessions/:id/watch` + Sessions “Watch”
 - [ ] Command filtering and blocking
 - [ ] Identity provider integrations (LDAP/SAML/OIDC)
 - [ ] SIEM integrations
@@ -312,28 +312,30 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.5:** Native packages (deb/rpm/apk) + GPG-signed repos, 0-CVE CI gate, multi-distro QEMU/Compose lab, React web console rebuild, web terminal session recording, setup wizard, OpenAPI + binary versioning, agent install-script UX
 * **v0.6:** Docker Compose quickstart (server/agent), Commons Clause license, security hardening (file-browser command injection fix, remote-user exec impersonation, plugin hook timeouts, session cleanup)
 * **v0.7:** Compiled-in plugin platform (replaced `.so` loading) with DB-backed live config + admin UI, `chatops-access-request` (Slack/Discord/Teams/Rocket.Chat), dark/light console theming, inline SVG nav
-* **v0.8:** SSH Certificate Authority (user/host certs, agent Host-cert identity, renewal, revoke), challenge-response pubkey API login, browser bootstrap codes, in-app notification bell — see `docs/SSH_CA.md` 
+* **v0.8:** SSH Certificate Authority (user/host certs, agent Host-cert identity, renewal, revoke), challenge-response pubkey API login, browser bootstrap codes, in-app notification bell, password+TOTP login — see `docs/SSH_CA.md`
+* **v0.9:** Richer permissions UI (all grants / edit / upsert), recording compression (OBGZ1+gzip), live session watch WS + console, notification templates + per-user prefs, JIT `access_type` + reject notify + stale expiry, JSON slog + Prometheus alert examples, deployment hardening + ADR docs
 * **v1.0 (planned):** Multi-protocol support, SDKs, compliance-ready reporting
 
 ---
 
 ## Contribution
 
-Open source — focus areas: IdP integrations, recording compression, HA, docs, and tests.
+Open source — focus areas: IdP integrations, HA, OTel span export, docs, and tests.
 
 **High-priority contribution areas (next):**
 - Identity provider integrations (OIDC/SAML)
-- Live session monitoring
-- Deployment / security hardening guides
-- Recording compression
+- OpenTelemetry tracing (OTLP export)
+- Broader integration coverage / benchmarks
+- Agent remote management (drain, reload, update)
 
 ---
 
 ## Notes
 
-This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.8.0** adds SSH CA on top of packaging, plugins, and console theming already on `master`.
+This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.9.0** adds permissions/ops/JIT polish and live watch on top of the **v0.8** SSH CA / MFA / notification baseline.
 
-**Last Updated:** 2026-07-14 (v0.8.0: SSH CA + challenge login + notifications; docs/OpenAPI aligned)  
+**Last Updated:** 2026-07-14 (v0.9.0: permissions editor, compression, live watch, notification prefs, observability/hardening docs)  
+Previously — 2026-07-14: v0.8 SSH CA + challenge login + notifications; docs/OpenAPI aligned  
 Previously — 2026-07-14: compiled-in plugin platform, chatops, dark/light theming  
 Previously — 2026-07-13: code/docs/UI audit fixes  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))
