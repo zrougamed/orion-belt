@@ -82,6 +82,9 @@ type WebAuthnCredential struct {
 	AAGUID          []byte    `json:"-"`
 	SignCount       uint32    `json:"sign_count"`
 	CloneWarning    bool      `json:"clone_warning"`
+	BackupEligible  bool      `json:"backup_eligible"`
+	BackupState     bool      `json:"backup_state"`
+	FlagsKnown      bool      `json:"-"` // false for credentials registered before flags were persisted
 	CreatedAt       time.Time `json:"created_at"`
 }
 

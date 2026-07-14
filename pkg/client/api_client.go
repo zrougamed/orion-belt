@@ -9,10 +9,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 // APIClient handles REST API communication with the Orion-Belt server
@@ -107,46 +110,87 @@ func LoadAPIClient(cfg *common.Config, usernameOverride string, logger *common.L
 // single-use challenge — a bare public key is not a secret (it's often
 // public on GitHub, in server logs, etc.), so /login/key requires this
 // signature, not just a matching key string.
+//
+// When the organization sets auth.mfa_required, the server returns mfa_required;
+// authenticate then prompts for a code and retries with a fresh challenge.
 func (c *APIClient) authenticate(username string, signer ssh.Signer) error {
 	publicKey := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
 
-	var challengeResp struct {
-		Challenge string `json:"challenge"`
-	}
-	if err := c.doRequestNoAuth("POST", "/api/v1/public/auth/challenge", map[string]string{"username": username}, &challengeResp); err != nil {
-		return fmt.Errorf("failed to obtain login challenge: %w", err)
+	loginOnce := func(totpCode string) error {
+		var challengeResp struct {
+			Challenge string `json:"challenge"`
+		}
+		if err := c.doRequestNoAuth("POST", "/api/v1/public/auth/challenge", map[string]string{"username": username}, &challengeResp); err != nil {
+			return fmt.Errorf("failed to obtain login challenge: %w", err)
+		}
+
+		sig, err := signer.Sign(rand.Reader, []byte(challengeResp.Challenge))
+		if err != nil {
+			return fmt.Errorf("failed to sign login challenge: %w", err)
+		}
+
+		loginReq := map[string]interface{}{
+			"username":         username,
+			"public_key":       publicKey,
+			"challenge":        challengeResp.Challenge,
+			"signature_format": sig.Format,
+			"signature":        base64.StdEncoding.EncodeToString(sig.Blob),
+		}
+		if totpCode != "" {
+			loginReq["totp_code"] = totpCode
+		}
+
+		var loginResp struct {
+			APIKey    string    `json:"api_key"`
+			ExpiresAt time.Time `json:"expires_at"`
+		}
+		if err := c.doRequestNoAuth("POST", "/api/v1/public/login/key", loginReq, &loginResp); err != nil {
+			return err
+		}
+		if loginResp.APIKey == "" {
+			return fmt.Errorf("no API key returned from login")
+		}
+		c.apiKey = loginResp.APIKey
+		if c.logger != nil {
+			c.logger.Info("Successfully authenticated, API key expires at: %s", loginResp.ExpiresAt.Format(time.RFC3339))
+		}
+		return nil
 	}
 
-	sig, err := signer.Sign(rand.Reader, []byte(challengeResp.Challenge))
-	if err != nil {
-		return fmt.Errorf("failed to sign login challenge: %w", err)
+	err := loginOnce("")
+	if err == nil {
+		return nil
 	}
-
-	loginReq := map[string]interface{}{
-		"username":         username,
-		"public_key":       publicKey,
-		"challenge":        challengeResp.Challenge,
-		"signature_format": sig.Format,
-		"signature":        base64.StdEncoding.EncodeToString(sig.Blob),
-	}
-
-	var loginResp struct {
-		APIKey    string    `json:"api_key"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}
-
-	// Use the key-based login endpoint
-	if err := c.doRequestNoAuth("POST", "/api/v1/public/login/key", loginReq, &loginResp); err != nil {
+	if !isMFARequired(err) {
 		return err
 	}
 
-	if loginResp.APIKey == "" {
-		return fmt.Errorf("no API key returned from login")
+	totp, promptErr := promptTOTP()
+	if promptErr != nil {
+		return fmt.Errorf("mfa required: %w", promptErr)
 	}
+	if totp == "" {
+		return fmt.Errorf("mfa code required")
+	}
+	return loginOnce(totp)
+}
 
-	c.apiKey = loginResp.APIKey
-	c.logger.Info("Successfully authenticated, API key expires at: %s", loginResp.ExpiresAt.Format(time.RFC3339))
-	return nil
+func promptTOTP() (string, error) {
+	fmt.Fprint(os.Stderr, "TOTP code: ")
+	b, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func isMFARequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, `"mfa_required":true`) || strings.Contains(s, `"mfa_required": true`)
 }
 
 // doRequestNoAuth performs an HTTP request without authentication (for login)

@@ -161,8 +161,13 @@ func (s *APIServer) mfaStatus(c *gin.Context) {
 }
 
 // enforceMFAAfterPubkey returns true if the request may proceed (MFA satisfied or not required).
-// When MFA is needed but missing/invalid, it writes the response and returns false.
+// TOTP after SSH-key login is only required when auth.mfa_required is set. Enrolling TOTP for
+// password login does not force a second factor on osh login / CLI key auth.
 func (s *APIServer) enforceMFAAfterPubkey(c *gin.Context, userID string, totpCode string) bool {
+	if !s.mfaRequired {
+		return true
+	}
+
 	ctx := c.Request.Context()
 	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
@@ -170,13 +175,9 @@ func (s *APIServer) enforceMFAAfterPubkey(c *gin.Context, userID string, totpCod
 		return false
 	}
 
-	needsMFA := user.MFAEnabled || s.mfaRequired
-	if !needsMFA {
-		return true
-	}
-	if s.mfaRequired && !user.MFAEnabled {
+	if !user.MFAEnabled {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error":             "mfa enrollment required",
+			"error":                   "mfa enrollment required",
 			"mfa_enrollment_required": true,
 		})
 		return false

@@ -188,10 +188,16 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			aaguid BYTEA,
 			sign_count INTEGER NOT NULL DEFAULT 0,
 			clone_warning BOOLEAN DEFAULT FALSE,
+			backup_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+			backup_state BOOLEAN NOT NULL DEFAULT FALSE,
+			flags_known BOOLEAN NOT NULL DEFAULT FALSE,
 			created_at TIMESTAMP NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_ssh_keys_user_id ON user_ssh_keys(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id)`,
+		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS backup_eligible BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS backup_state BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE webauthn_credentials ADD COLUMN IF NOT EXISTS flags_known BOOLEAN NOT NULL DEFAULT FALSE`,
 		`CREATE TABLE IF NOT EXISTS notifications (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1413,16 +1419,19 @@ func (s *PostgresStore) DeleteSSHKey(ctx context.Context, id string) error {
 func (s *PostgresStore) CreateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO webauthn_credentials
-		(id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		(id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning,
+		 backup_eligible, backup_state, flags_known, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		cred.ID, cred.UserID, cred.Name, cred.CredentialID, cred.PublicKey,
-		cred.AttestationType, cred.AAGUID, cred.SignCount, cred.CloneWarning, cred.CreatedAt)
+		cred.AttestationType, cred.AAGUID, cred.SignCount, cred.CloneWarning,
+		cred.BackupEligible, cred.BackupState, cred.FlagsKnown, cred.CreatedAt)
 	return err
 }
 
 func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID string) ([]*common.WebAuthnCredential, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at
+		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning,
+		       COALESCE(backup_eligible, false), COALESCE(backup_state, false), COALESCE(flags_known, false), created_at
 		FROM webauthn_credentials WHERE user_id=$1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
@@ -1432,7 +1441,8 @@ func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID stri
 	for rows.Next() {
 		c := &common.WebAuthnCredential{}
 		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.CredentialID, &c.PublicKey,
-			&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning, &c.CreatedAt); err != nil {
+			&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning,
+			&c.BackupEligible, &c.BackupState, &c.FlagsKnown, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -1443,10 +1453,12 @@ func (s *PostgresStore) ListWebAuthnCredentials(ctx context.Context, userID stri
 func (s *PostgresStore) GetWebAuthnCredentialByCredID(ctx context.Context, credID []byte) (*common.WebAuthnCredential, error) {
 	c := &common.WebAuthnCredential{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning, created_at
+		SELECT id, user_id, name, credential_id, public_key, attestation_type, aaguid, sign_count, clone_warning,
+		       COALESCE(backup_eligible, false), COALESCE(backup_state, false), COALESCE(flags_known, false), created_at
 		FROM webauthn_credentials WHERE credential_id=$1`, credID).Scan(
 		&c.ID, &c.UserID, &c.Name, &c.CredentialID, &c.PublicKey,
-		&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning, &c.CreatedAt)
+		&c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning,
+		&c.BackupEligible, &c.BackupState, &c.FlagsKnown, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -1455,8 +1467,9 @@ func (s *PostgresStore) GetWebAuthnCredentialByCredID(ctx context.Context, credI
 
 func (s *PostgresStore) UpdateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE webauthn_credentials SET sign_count=$1, clone_warning=$2 WHERE id=$3`,
-		cred.SignCount, cred.CloneWarning, cred.ID)
+		`UPDATE webauthn_credentials SET sign_count=$1, clone_warning=$2,
+		 backup_eligible=$3, backup_state=$4, flags_known=$5 WHERE id=$6`,
+		cred.SignCount, cred.CloneWarning, cred.BackupEligible, cred.BackupState, cred.FlagsKnown, cred.ID)
 	return err
 }
 

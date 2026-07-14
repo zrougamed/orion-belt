@@ -36,6 +36,10 @@ osh login --password      # prompt for password + TOTP, then open browser
 osh login --password --code
 ```
 
+If the organization sets `auth.mfa_required`, `osh login` / `ocp` / `oadmin`
+prompt for a TOTP code after the SSH key proof. Otherwise device login with an
+SSH key alone is enough (password console login still always needs TOTP).
+
 Password login requires an account password and enrolled TOTP (set once in the
 console under Security, or via the post-login setup gate). For hardware keys on
 SSH itself, use an `sk-*` identity (`-i ~/.ssh/id_ed25519_sk`); browser WebAuthn

@@ -57,6 +57,10 @@ func (s *APIServer) loadWebAuthnUser(ctx context.Context, user *common.User) (*w
 			ID:              c.CredentialID,
 			PublicKey:       c.PublicKey,
 			AttestationType: c.AttestationType,
+			Flags: webauthn.CredentialFlags{
+				BackupEligible: c.BackupEligible,
+				BackupState:    c.BackupState,
+			},
 			Authenticator: webauthn.Authenticator{
 				AAGUID:       c.AAGUID,
 				SignCount:    c.SignCount,
@@ -65,6 +69,35 @@ func (s *APIServer) loadWebAuthnUser(ctx context.Context, user *common.User) (*w
 		})
 	}
 	return wa, nil
+}
+
+// alignUnknownCredentialFlags copies BE/BS from the assertion onto the matched
+// credential when flags were never persisted (pre-v0.8.1 registrations), so
+// ValidateLogin does not reject otherwise-valid YubiKey / platform authenticators.
+func alignUnknownCredentialFlags(wa *webAuthnUser, stored []*common.WebAuthnCredential, parsed *protocol.ParsedCredentialAssertionData) {
+	if wa == nil || parsed == nil {
+		return
+	}
+	be := parsed.Response.AuthenticatorData.Flags.HasBackupEligible()
+	bs := parsed.Response.AuthenticatorData.Flags.HasBackupState()
+	rawID := parsed.Raw.RawID
+	for i := range wa.credentials {
+		if len(rawID) > 0 && !bytes.Equal(wa.credentials[i].ID, rawID) {
+			continue
+		}
+		var known bool
+		for _, s := range stored {
+			if bytes.Equal(s.CredentialID, wa.credentials[i].ID) {
+				known = s.FlagsKnown
+				break
+			}
+		}
+		if known {
+			continue
+		}
+		wa.credentials[i].Flags.BackupEligible = be
+		wa.credentials[i].Flags.BackupState = bs
+	}
 }
 
 func (s *APIServer) webauthnRegisterBegin(c *gin.Context) {
@@ -124,6 +157,9 @@ func (s *APIServer) webauthnRegisterFinish(c *gin.Context) {
 		AttestationType: credential.AttestationType,
 		AAGUID:          credential.Authenticator.AAGUID,
 		SignCount:       credential.Authenticator.SignCount,
+		BackupEligible:  credential.Flags.BackupEligible,
+		BackupState:     credential.Flags.BackupState,
+		FlagsKnown:      true,
 		CreatedAt:       time.Now(),
 	}
 	if err := s.store.CreateWebAuthnCredential(ctx, cred); err != nil {
@@ -264,6 +300,8 @@ func (s *APIServer) webauthnLoginFinish(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("parse: %v", err)})
 		return
 	}
+	storedList, _ := s.store.ListWebAuthnCredentials(ctx, user.ID)
+	alignUnknownCredentialFlags(waUser, storedList, parsed)
 	cred, err := s.webAuthn.ValidateLogin(waUser, *session, parsed)
 	if err != nil {
 		metrics.Default.IncAuthFailure()
@@ -276,6 +314,9 @@ func (s *APIServer) webauthnLoginFinish(c *gin.Context) {
 	if err == nil {
 		stored.SignCount = cred.Authenticator.SignCount
 		stored.CloneWarning = cred.Authenticator.CloneWarning
+		stored.BackupEligible = cred.Flags.BackupEligible
+		stored.BackupState = cred.Flags.BackupState
+		stored.FlagsKnown = true
 		_ = s.store.UpdateWebAuthnCredential(ctx, stored)
 	}
 

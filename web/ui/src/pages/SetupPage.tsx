@@ -81,8 +81,8 @@ export function SetupPage() {
       title: "5. Harden auth",
       body: (
         <>
-          On <Link to="/security">Security</Link>: enroll TOTP (QR), register WebAuthn keys, and add SSH keys to the key store. Admins:
-          add Vite/production origins under <span className="mono">auth.webauthn.origins</span>.
+          On <Link to="/security">Security</Link>: enroll TOTP (QR), register WebAuthn keys, and add SSH keys to the key store.
+          Operators configure <span className="mono">auth.webauthn</span> in <span className="mono">server.yaml</span> — see the setup docs.
         </>
       ),
       // No org-wide "hardened auth" signal exists in /setup/status yet, so this uses

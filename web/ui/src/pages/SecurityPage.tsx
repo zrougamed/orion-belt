@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../auth/AuthContext";
-import { canApprove } from "../lib/nav";
 import { fmtTime, preparePublicKeyCreation, publicKeyCredentialToJSON } from "../lib/format";
 
 type SSHKey = { id: string; name: string; key_type?: string; public_key?: string; created_at?: string };
@@ -22,7 +21,6 @@ type APIKeyItem = {
 export function SecurityPage() {
   const { toast } = useToast();
   const { refreshMe, user } = useAuth();
-  const manageHint = canApprove(user);
   const qc = useQueryClient();
   const [tab, setTab] = useState<"mfa" | "password" | "webauthn" | "keys" | "api-keys">("mfa");
   const [otpauth, setOtpauth] = useState("");
@@ -459,36 +457,6 @@ export function SecurityPage() {
               <div className="empty">No WebAuthn credentials yet. Register a key above (not from the login page).</div>
             ) : null}
           </div>
-          {manageHint ? (
-            <div className="card" style={{ marginTop: "1rem" }}>
-              <h3>Admin: enable WebAuthn</h3>
-              <p className="muted">
-                Registration happens here while signed in. Login only uses keys that are already registered.
-                Configure <span className="mono">auth.webauthn</span> in <span className="mono">server.yaml</span>, then restart the gateway.
-              </p>
-              <pre className="code">{`auth:
-  webauthn:
-    enabled: true
-    rp_display_name: "Orion Belt"
-    rp_id: "localhost"   # hostname only (no port)
-    origins:
-      - "http://localhost:8080"
-      - "http://localhost:5173"   # Vite UI during development
-      - "https://your-gateway.example.com"`}</pre>
-              <ul className="muted help-list">
-                <li>
-                  <strong>rp_id</strong> must match the browser hostname (e.g. <span className="mono">localhost</span>).
-                </li>
-                <li>
-                  Every UI origin you use (API port, Vite <span className="mono">:5173</span>, production HTTPS) must be listed under{" "}
-                  <span className="mono">origins</span>.
-                </li>
-                <li>
-                  After config, open Security → WebAuthn → <em>Register YubiKey / FIDO2</em>, then use “Sign in with YubiKey” on the login page.
-                </li>
-              </ul>
-            </div>
-          ) : null}
         </>
       ) : null}
 
