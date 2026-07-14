@@ -14,6 +14,8 @@ func TestBuildAgentInstallScriptDebian(t *testing.T) {
 		"https://packages.example.com",
 		"1.2.3",
 		"-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----",
+		"",
+		"",
 		map[string]string{"os": "debian", "env": "lab"},
 	)
 	checks := []string{
@@ -34,11 +36,31 @@ func TestBuildAgentInstallScriptDebian(t *testing.T) {
 }
 
 func TestBuildAgentInstallScriptAlpine(t *testing.T) {
-	script := buildAgentInstallScript("alpine", "a1", "10.0.0.1", 2222, "http://pkg", "0.4.0", "KEYDATA", nil)
+	script := buildAgentInstallScript("alpine", "a1", "10.0.0.1", 2222, "http://pkg", "0.4.0", "KEYDATA", "", "", nil)
 	if !strings.Contains(script, "apk add --allow-untrusted") {
 		t.Fatal("expected apk install path")
 	}
 	if !strings.Contains(script, "orion-belt-agent_${VERSION}_x86_64.apk") {
 		t.Fatal("expected apk package name")
+	}
+}
+
+func TestBuildAgentInstallScriptWithHostCert(t *testing.T) {
+	script := buildAgentInstallScript(
+		"debian", "web-01", "gw.example.com", 2222, "https://pkg", "1.0.0",
+		"-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----",
+		"ssh-ed25519-cert-v01@openssh.com AAAA cert-comment",
+		"ssh-ed25519 AAAA host-ca",
+		nil,
+	)
+	for _, c := range []string{
+		"ORION_AGENT_CERT",
+		"agent_key-cert.pub",
+		"host_ca_public_key:",
+		"ssh-ed25519-cert-v01@openssh.com",
+	} {
+		if !strings.Contains(script, c) {
+			t.Fatalf("script missing %q", c)
+		}
 	}
 }

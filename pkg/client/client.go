@@ -44,15 +44,11 @@ func (c *SSHClient) Connect(target string, username string) error {
 
 	c.logger.Info("Connecting to %s through Orion-Belt server", targetMachine)
 
-	// Load SSH key
-	keyData, err := os.ReadFile(c.config.Auth.KeyFile)
+	// Uses a short-lived SSH cert when the server has SSH CA enabled,
+	// transparently falling back to the raw static key otherwise.
+	signer, err := LoadSigner(c.config, "", c.logger)
 	if err != nil {
-		return fmt.Errorf("failed to read SSH key: %w", err)
-	}
-
-	signer, err := ssh.ParsePrivateKey(keyData)
-	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
+		return err
 	}
 
 	// Configure SSH client
@@ -67,6 +63,7 @@ func (c *SSHClient) Connect(target string, username string) error {
 	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
 		KnownHosts:            c.config.Auth.KnownHosts,
 		StrictHostKeyChecking: c.config.Auth.StrictHostKeyChecking,
+		HostCAPublicKey:       c.config.Auth.HostCAPublicKey,
 	}, c.logger)
 	if err != nil {
 		return fmt.Errorf("host key verification setup: %w", err)
@@ -315,32 +312,7 @@ func formatDuration(d time.Duration) string {
 
 // getAPIClient creates an API client for making REST requests
 func (c *SSHClient) getAPIClient() (*APIClient, error) {
-	// Get API endpoint from config, default to port 8080
-	apiEndpoint := c.config.Server.APIEndpoint
-	if apiEndpoint == "" {
-		apiEndpoint = fmt.Sprintf("http://%s:8080", c.config.Server.Host)
-	}
-
-	// Load SSH key for authentication
-	keyData, err := os.ReadFile(c.config.Auth.KeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read SSH key: %w", err)
-	}
-
-	signer, err := ssh.ParsePrivateKey(keyData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	username := c.config.Auth.User
-	if username == "" {
-		username = os.Getenv("USER")
-		if username == "" {
-			return nil, fmt.Errorf("username not configured")
-		}
-	}
-
-	return NewAPIClient(apiEndpoint, username, signer, c.logger)
+	return LoadAPIClient(c.config, "", c.logger)
 }
 
 // SCPClient represents an Orion-Belt SCP client
@@ -381,19 +353,15 @@ func (c *SCPClient) Copy(username, source, destination string, isUpload bool) er
 
 	localPath = expandLocalPath(localPath)
 
-	keyData, err := os.ReadFile(c.config.Auth.KeyFile)
+	signer, err := LoadSigner(c.config, "", c.logger)
 	if err != nil {
-		return fmt.Errorf("failed to read SSH key: %w", err)
-	}
-
-	signer, err := ssh.ParsePrivateKey(keyData)
-	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
+		return err
 	}
 
 	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
 		KnownHosts:            c.config.Auth.KnownHosts,
 		StrictHostKeyChecking: c.config.Auth.StrictHostKeyChecking,
+		HostCAPublicKey:       c.config.Auth.HostCAPublicKey,
 	}, c.logger)
 	if err != nil {
 		return fmt.Errorf("host key verification setup: %w", err)

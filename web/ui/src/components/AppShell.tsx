@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth, useRole } from "../auth/AuthContext";
 import { NAV } from "../lib/nav";
 import { CommandPalette } from "./CommandPalette";
+import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle, useTheme } from "./ThemeToggle";
 
 export function AppShell() {
@@ -50,6 +51,7 @@ export function AppShell() {
         <div className="topbar">
           <span>Privileged access console</span>
           <div className="topbar-right">
+            <NotificationBell />
             <ThemeToggle theme={theme} onToggle={toggle} />
             <kbd className="kbd-hint">⌘K</kbd>
             <span className="version-chip">{ver}</span>

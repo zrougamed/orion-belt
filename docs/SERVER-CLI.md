@@ -91,7 +91,23 @@ orion-belt-server agent register \
   --tags environment=production,role=database,tier=backend
 ```
 
-**Output:**
+**Output (SSH CA enabled):**
+```
+Agent registered with Host CA certificate:
+  Name:       machine-32
+  Machine ID: uuid-def-456
+  Hostname:   machine-32
+  Port:       22
+
+Write the agent private key to auth.key_file and place this cert beside it as <key_file>-cert.pub:
+
+ssh-ed25519-cert-v01@openssh.com AAAA...
+
+Set auth.host_ca_public_key in agent.yaml to:
+ssh-ed25519 AAAA...
+```
+
+**Output (CA off — legacy):**
 ```
 Agent registered successfully:
   Name:       machine-32
@@ -103,6 +119,8 @@ Agent registered successfully:
 Agent 'machine-32' can now connect to the server using:
   orion-belt-agent -c /path/to/agent.yaml
 ```
+
+See [SSH_CA.md](SSH_CA.md) for Host-cert renewal and trust distribution.
 
 ### List Agents
 

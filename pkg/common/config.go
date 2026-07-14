@@ -14,6 +14,7 @@ type Config struct {
 	Auth      AuthConfig                        `yaml:"auth,omitempty"`
 	Agent     AgentConfig                       `yaml:"agent,omitempty"`
 	Recording RecordingConfig                   `yaml:"recording,omitempty"`
+	SSHCA     SSHCAConfig                       `yaml:"ssh_ca,omitempty"`
 	Plugins   map[string]map[string]interface{} `yaml:"plugins"`
 }
 
@@ -47,6 +48,7 @@ type AuthConfig struct {
 	RateLimitPerMinute    int            `yaml:"rate_limit_per_minute,omitempty"` // API requests per user/IP; default 600
 	OpenFGA               OpenFGAConfig  `yaml:"openfga,omitempty"`
 	WebAuthn              WebAuthnConfig `yaml:"webauthn,omitempty"`
+	HostCAPublicKey       string         `yaml:"host_ca_public_key,omitempty"` // trusted Host CA pubkey (authorized_keys line); empty = pure TOFU
 }
 
 // WebAuthnConfig configures FIDO2/WebAuthn (YubiKey, etc.).
@@ -79,6 +81,35 @@ type RecordingConfig struct {
 	StoragePath   string `yaml:"storage_path"`
 	RetentionDays int    `yaml:"retention_days,omitempty"`
 	EncryptionKey string `yaml:"encryption_key,omitempty"` // 32-byte key, base64 or raw 32 chars
+}
+
+// SSHCAConfig configures the server-side SSH Certificate Authority: short-
+// lived signed user certs replacing static pubkey login, and a Host CA
+// signing the gateway's own host key plus agent identity certs.
+type SSHCAConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// MasterKey encrypts the CA private key material at rest (32-byte,
+	// base64 or raw). Required whenever Enabled is true: unlike
+	// Recording.EncryptionKey, there is no plaintext fallback here — the
+	// blast radius of a leaked CA private key (mint certs for any
+	// principal, indefinitely) is categorically worse than a leaked
+	// recording, so this is deliberately not optional.
+	MasterKey string `yaml:"master_key,omitempty"`
+	// UserCertTTLHours is the default lifetime of an issued user cert
+	// (12h when unset).
+	UserCertTTLHours int `yaml:"user_cert_ttl_hours,omitempty"`
+	// MaxUserCertTTLHours caps a caller-requested TTL.
+	MaxUserCertTTLHours int `yaml:"max_user_cert_ttl_hours,omitempty"`
+	// HostCertTTLHours is the lifetime of the gateway's own host cert and
+	// of agent identity certs. Long-lived by default; renewed
+	// automatically well before expiry (see pkg/ca RenewalMargin).
+	HostCertTTLHours int `yaml:"host_cert_ttl_hours,omitempty"`
+	// HostPrincipals lists the hostnames/IPs clients actually use to reach
+	// this gateway, embedded in its own host cert. server.host is often a
+	// bind-all address (0.0.0.0) and not meaningful here, so this is
+	// separate; defaults to [server.host] if left empty (fine for
+	// single-hostname deployments where server.host is a real address).
+	HostPrincipals []string `yaml:"host_principals,omitempty"`
 }
 
 // LoadConfig loads configuration from a YAML file

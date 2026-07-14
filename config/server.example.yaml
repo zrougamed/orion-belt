@@ -32,6 +32,29 @@ auth:
     model_id: ""
     api_token: ""
     relation: "can_access"
+  # host_ca_public_key is a client/agent-side setting (see
+  # config/client.example.yaml, config/agent.example.yaml) — the server
+  # itself never verifies a host key, so it doesn't apply here.
+
+# SSH Certificate Authority: short-lived signed SSH certs replacing static
+# pubkey login (User CA), plus a Host CA certifying the gateway's own host
+# key and each agent's identity. Both CA keypairs are generated
+# automatically on first boot once enabled — see docs/SSH_CA.md.
+ssh_ca:
+  enabled: false
+  # Encrypts the CA private key material at rest (32-byte, raw or base64).
+  # Required whenever enabled is true — there is no plaintext fallback,
+  # unlike recording.encryption_key: a leaked CA key lets an attacker mint
+  # certs for any principal indefinitely, a categorically worse blast
+  # radius than a leaked recording.
+  master_key: ""
+  user_cert_ttl_hours: 12       # default lifetime of an issued user cert
+  max_user_cert_ttl_hours: 24   # cap on a caller-requested TTL
+  host_cert_ttl_hours: 8760     # 1 year; gateway/agent certs auto-renew before this
+  # Hostnames/IPs clients actually use to reach this gateway, embedded in
+  # its own host cert. server.host above is often a bind-all address
+  # (0.0.0.0) and not meaningful here. Defaults to [server.host] if empty.
+  host_principals: []
 
 recording:
   enabled: true

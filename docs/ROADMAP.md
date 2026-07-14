@@ -2,8 +2,23 @@
 
 ## Current Status
 
-**Version:** Alpha v0.4 (MFA/WebAuthn, OpenSSH clients, web console, OpenFGA, recording encryption)
-**Status:** v0.4 merged on `master`; packaging / CVE / multi-distro lab in progress
+**Version:** Alpha v0.8.0 (SSH CA, challenge-response login, in-app notifications, plugins, packaging, MFA/UI)
+**Status:** v0.8.0 ready for release — SSH Certificate Authority + related auth/UX hardening
+
+## Pending / Next Up — 2026-07-14
+
+Consolidated view of everything still open, gathered from the checklists below so it doesn't have to be hunted across sections.
+
+**Notable open items:**
+- [ ] **Richer permission editor in UI** (partial credit: Permissions page got a table-migration + confirm-dialog pass in the 2026-07-13 audit, but a real editor is still open)
+- [ ] Recording compression
+- [ ] OpenTelemetry tracing, structured logs (Loki/ELK), alerting
+- [ ] Notification templates / per-user notification preferences
+- [ ] HashiCorp Vault integration
+- [ ] Richer agent remote management (reload config, drain, update — beyond current `ping`/`health`/`status`/`info`)
+- [ ] Tech debt: ~80% unit test coverage, integration test suites, perf benchmarks, ADRs, error/logging standardization, deployment hardening guide
+
+**Phase 2–4 (larger, not started):** HA clustering, JIT access, RBAC-on-ReBAC, live session monitoring, command filtering, LDAP/SAML/OIDC, SIEM/ticketing integrations, compliance reporting (SOC2/HIPAA/PCI), RDP/VNC/Kubernetes/DB proxies, SDKs.
 
 ## Audit Findings — 2026-07-13
 
@@ -17,7 +32,7 @@ All items below were found and fixed same-day (backend, docs, and web-console wo
 - [x] **CRITICAL — command injection in the web file browser, fixed.** `pkg/api/terminal.go`'s `filesList`/`filesDownload`/`filesUpload`/`filesMkdir`/`filesDelete` built shell command strings with Go's `%q` verb, which escapes Go-string syntax only — not shell metacharacters. `$(...)` command substitution still expanded inside the resulting double-quoted shell token, so a `path` like `/tmp/$(id>/tmp/pwned)` executed arbitrary commands on the target agent. All five handlers now use the existing `shellQuote()` POSIX single-quote escaper. Regression-tested in `pkg/api/terminal_test.go`.
 - [x] **`exec` requests now forward `remote_user` to the agent.** File ops and CLI `exec` previously always ran as the agent's own uid (root) regardless of the selected remote user — only the interactive `shell` request carried a `User` field. Added `User` to the exec payload on both the web-terminal-bridge path (`pkg/api/terminal.go` `execOnMachine`) and the CLI/gateway path (`pkg/server/server.go`); `pkg/agent/agent.go`'s `executeCommand` now impersonates that user via the same setuid/setgid machinery `buildShellCommand` uses for interactive shells (factored into shared `resolveUnixIdentity()`/`credentialForIdentity()` helpers), falling back to the agent's own identity when no user is specified (admin control commands, heartbeat).
 - [x] **Plugin hooks now have panic recovery and a bounded timeout.** `pkg/plugin/plugin.go`'s `TriggerHook` runs each plugin via `recover()`-guarded `callHook`, raced against a timeout (default 5s) so a panicking or hanging plugin (e.g. a webhook with no HTTP timeout) can no longer crash the server or stall every login/session. Covered in `pkg/plugin/plugin_test.go`.
-- [x] **Plugin config wiring no longer picks a plugin at random.** `pkg/plugin/plugin_loader.go`'s `LoadPlugin` now returns the just-loaded plugin's real name instead of `LoadPluginWithConfig` re-deriving "the" plugin via undefined map-iteration order over `loadedLibs`.
+- [x] **Plugin config wiring no longer picks a plugin at random.** `pkg/plugin/plugin_loader.go`'s `LoadPlugin` now returns the just-loaded plugin's real name instead of `LoadPluginWithConfig` re-deriving "the" plugin via undefined map-iteration order over `loadedLibs`. *(Superseded 2026-07-14 — `plugin_loader.go` and dynamic `.so` loading were removed entirely; see "Compiled-in plugin platform" below.)*
 - [x] **Expired HTTP sessions are now cleaned up.** `pkg/server/server.go` has a new `runSessionCleanupLoop` (hourly ticker, same shutdown-channel pattern as the recording retention loop) calling the previously-unwired `AuthService.CleanupExpiredSessions`.
 
 ### Documentation
@@ -103,7 +118,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ### v0.3 — Client Workflows & Plugins
 
-- [x] Dynamic `.so` plugin loader with lifecycle hooks
+- [x] Dynamic `.so` plugin loader with lifecycle hooks *(superseded 2026-07-14, see "Compiled-in plugin platform" below)*
 - [x] Slack notification plugin
 - [x] Audit-logger plugin
 - [x] Remote user specification (`user@machine`, `--user`, `remote_users`)
@@ -161,7 +176,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
   - [x] FIDO SSH public keys (`sk-ssh-ed25519@openssh.com`, etc.)
   - [x] OpenSSH agentless clients (`user+machine@gateway`)
   - [x] High-fidelity web console with roles, web terminal, file browser
-  - [ ] Certificate lifecycle / SSH CA
+  - [x] Certificate lifecycle / SSH CA (`docs/SSH_CA.md`)
 
 * **OpenFGA**
   - [x] Optional OpenFGA HTTP client (`auth.openfga`)
@@ -177,9 +192,33 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ---
 
+### Compiled-in plugin platform, ChatOps approvals & console theming (2026-07-14)
+
+* **Plugin platform**
+  - [x] Plugins compiled directly into the server binary, replacing dynamic `.so` loading — sidesteps Go plugin buildmode's CGO/same-toolchain/same-arch/same-libc constraints; server binary is static again
+  - [x] Plugin enable/configure state moved to the database (`plugin_settings` table), editable at runtime with no restart and no YAML
+  - [x] New admin API (`GET`/`PUT`/`POST /api/v1/admin/plugins...`) plus a Plugins settings page in the web console
+  - [x] Each plugin declares a `ConfigSchema()` so the UI renders real form fields (text/bool/int/nested groups); secret fields are partially revealed (e.g. `xoxb****9f2c`) and reconciled back to the stored secret on save instead of requiring full re-entry
+  - [x] `audit-logger` ships enabled and auto-configured by default; WebAuthn/FIDO2 enabled by default across Docker, qemu lab, and lab compose
+  - [x] Build pipeline (`make build-server`, qemu lab scripts, GoReleaser) always rebuilds the embedded web console before producing a server binary, so it can no longer ship a stale committed UI snapshot
+
+* **ChatOps**
+  - [x] New `chatops-access-request` plugin posts access requests to Slack, Discord, Microsoft Teams, and Rocket.Chat
+  - [x] Slack/Discord get native, signature-verified interactive Approve/Deny buttons; Teams/Rocket.Chat use signed magic links (documented limitation — no bot registration required)
+  - [x] Calls back into Orion Belt's own approve/reject API
+
+* **Console**
+  - [x] Dark and light themes, switchable from a toggle on the login page and app shell; defaults to light, remembers an explicit choice
+  - [x] Nav icons rewritten as inline SVG (currentColor + active-item glow) instead of static PNGs, so they follow either theme automatically
+
+* **Docs**
+  - [x] `docs/PLUGIN_DEVELOPMENT.md` rewritten for the compiled-in plugin model
+  - [x] `docs/SRS-UI.md` palette/typography notes updated for dark/light theming
+
+---
+
 ## Still open (post-v0.4)
 
-- [ ] Certificate lifecycle / SSH CA
 - [ ] HashiCorp Vault integration
 - [ ] Structured logs (Loki/ELK)
 - [ ] OpenTelemetry tracing
@@ -265,24 +304,26 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ## Version Milestones
 
-* **v0.1:** Core SSH proxy, recording, ReBAC
+* **v0.1:** Core SSH proxy, session recording, ReBAC
 * **v0.2:** REST API, API keys / session auth
-* **v0.3:** Plugins, remote users, client access workflow, oadmin
-* **v0.3.1:** Host key verification, JWT, rate limits, email/webhook plugins, agent commands, Prometheus metrics
-* **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients, role-aware `/ui` (terminal + files), OpenFGA optional authz, recording encryption + retention
-* **v0.5:** Native packages (deb/rpm/apk) + GPG-signed repos, 0-CVE CI gate, multi-distro QEMU/Compose lab, OpenAPI, UI sessions/audit/users + versioning; then HA, IdP integrations, live session monitoring, SSH CA
-* **v1.0:** Multi-protocol support, SDKs, compliance-ready
+* **v0.3:** Plugins (dynamic), remote users, client access workflow, `oadmin`
+* **v0.3.1:** Host key verification (TOFU), JWT, rate limits, email/webhook plugins, agent control commands, Prometheus metrics
+* **v0.4:** MFA (TOTP + WebAuthn/FIDO), OpenSSH agentless clients (`user+machine@gateway`), role-aware `/ui` (terminal + files), optional OpenFGA, recording encryption + retention
+* **v0.5:** Native packages (deb/rpm/apk) + GPG-signed repos, 0-CVE CI gate, multi-distro QEMU/Compose lab, React web console rebuild, web terminal session recording, setup wizard, OpenAPI + binary versioning, agent install-script UX
+* **v0.6:** Docker Compose quickstart (server/agent), Commons Clause license, security hardening (file-browser command injection fix, remote-user exec impersonation, plugin hook timeouts, session cleanup)
+* **v0.7:** Compiled-in plugin platform (replaced `.so` loading) with DB-backed live config + admin UI, `chatops-access-request` (Slack/Discord/Teams/Rocket.Chat), dark/light console theming, inline SVG nav
+* **v0.8:** SSH Certificate Authority (user/host certs, agent Host-cert identity, renewal, revoke), challenge-response pubkey API login, browser bootstrap codes, in-app notification bell — see `docs/SSH_CA.md` 
+* **v1.0 (planned):** Multi-protocol support, SDKs, compliance-ready reporting
 
 ---
 
 ## Contribution
 
-Open source — focus areas: IdP integrations, recording compression, HA, SSH CA, docs, and tests.
+Open source — focus areas: IdP integrations, recording compression, HA, docs, and tests.
 
 **High-priority contribution areas (next):**
 - Identity provider integrations (OIDC/SAML)
 - Live session monitoring
-- SSH certificate authority
 - Deployment / security hardening guides
 - Recording compression
 
@@ -290,7 +331,9 @@ Open source — focus areas: IdP integrations, recording compression, HA, SSH CA
 
 ## Notes
 
-This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.4** is on `master`; packaging/CVE/lab work targets the next cut.
+This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.8.0** adds SSH CA on top of packaging, plugins, and console theming already on `master`.
 
-**Last Updated:** 2026-07-13 (code/docs/UI audit — all 14 findings fixed same-day: agent shell spawn, file-browser command injection, exec remote-user impersonation, plugin hook hardening, plugin config wiring, session cleanup, OpenAPI/SETUP/SRS-UI docs, Permissions page UX + table migration, API key management UI, Setup page onboarding)  
+**Last Updated:** 2026-07-14 (v0.8.0: SSH CA + challenge login + notifications; docs/OpenAPI aligned)  
+Previously — 2026-07-14: compiled-in plugin platform, chatops, dark/light theming  
+Previously — 2026-07-13: code/docs/UI audit fixes  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

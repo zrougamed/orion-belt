@@ -1,102 +1,48 @@
 package recording
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
+	"github.com/zrougamed/orion-belt/pkg/cryptutil"
 )
-
-const encMagic = "OBENC1\n"
 
 // Crypto wraps AES-256-GCM for session recordings.
 type Crypto struct {
-	key    []byte
+	env    *cryptutil.Envelope
 	logger *common.Logger
 }
 
 // NewCrypto derives a 32-byte key from config (base64 or raw string).
 func NewCrypto(keyMaterial string, logger *common.Logger) (*Crypto, error) {
-	if strings.TrimSpace(keyMaterial) == "" {
-		return &Crypto{logger: logger}, nil
-	}
-	key, err := deriveKey(keyMaterial)
+	env, err := cryptutil.NewEnvelope(keyMaterial)
 	if err != nil {
 		return nil, err
 	}
-	return &Crypto{key: key, logger: logger}, nil
+	return &Crypto{env: env, logger: logger}, nil
 }
 
 // Enabled reports whether encryption is active.
 func (c *Crypto) Enabled() bool {
-	return c != nil && len(c.key) == 32
-}
-
-func deriveKey(material string) ([]byte, error) {
-	if decoded, err := base64.StdEncoding.DecodeString(material); err == nil && len(decoded) == 32 {
-		return decoded, nil
-	}
-	if len(material) == 32 {
-		return []byte(material), nil
-	}
-	sum := sha256.Sum256([]byte(material))
-	return sum[:], nil
+	return c != nil && c.env.Enabled()
 }
 
 // Encrypt seals plaintext with AES-GCM. Output is magic + nonce + ciphertext.
 func (c *Crypto) Encrypt(plain []byte) ([]byte, error) {
-	if !c.Enabled() {
-		return plain, nil
-	}
-	block, err := aes.NewCipher(c.key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-	out := append([]byte(encMagic), nonce...)
-	out = append(out, gcm.Seal(nil, nonce, plain, nil)...)
-	return out, nil
+	return c.env.Encrypt(plain)
 }
 
 // Decrypt opens an encrypted buffer (or returns as-is if not encrypted).
 func (c *Crypto) Decrypt(data []byte) ([]byte, error) {
-	if !strings.HasPrefix(string(data), encMagic) {
-		return data, nil // plaintext legacy
-	}
-	if !c.Enabled() {
+	out, err := c.env.Decrypt(data)
+	if err != nil && !c.Enabled() {
 		return nil, fmt.Errorf("recording is encrypted but encryption_key is not configured")
 	}
-	payload := data[len(encMagic):]
-	block, err := aes.NewCipher(c.key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	ns := gcm.NonceSize()
-	if len(payload) < ns {
-		return nil, fmt.Errorf("ciphertext too short")
-	}
-	nonce, ct := payload[:ns], payload[ns:]
-	return gcm.Open(nil, nonce, ct, nil)
+	return out, err
 }
 
 // DecryptFile reads and decrypts a recording file.

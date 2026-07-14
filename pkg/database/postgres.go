@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -190,6 +191,47 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_ssh_keys_user_id ON user_ssh_keys(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id)`,
+		`CREATE TABLE IF NOT EXISTS notifications (
+			id VARCHAR(36) PRIMARY KEY,
+			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			type VARCHAR(100) NOT NULL,
+			title VARCHAR(255) NOT NULL,
+			body TEXT NOT NULL DEFAULT '',
+			metadata JSONB,
+			read_at TIMESTAMP,
+			created_at TIMESTAMP NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at)`,
+		`CREATE TABLE IF NOT EXISTS ssh_ca_keys (
+			id VARCHAR(36) PRIMARY KEY,
+			ca_type VARCHAR(20) NOT NULL,
+			key_algo VARCHAR(20) NOT NULL DEFAULT 'ed25519',
+			public_key TEXT NOT NULL,
+			private_key_encrypted BYTEA NOT NULL,
+			fingerprint VARCHAR(255) NOT NULL,
+			active BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMP NOT NULL,
+			rotated_at TIMESTAMP
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_ssh_ca_keys_type_active ON ssh_ca_keys(ca_type) WHERE active = true`,
+		`CREATE TABLE IF NOT EXISTS ssh_certificates (
+			id VARCHAR(36) PRIMARY KEY,
+			serial VARCHAR(64) NOT NULL UNIQUE,
+			cert_type VARCHAR(20) NOT NULL,
+			subject_id VARCHAR(36),
+			key_id VARCHAR(255) NOT NULL,
+			principals TEXT[] NOT NULL,
+			public_key_fingerprint VARCHAR(255) NOT NULL,
+			issued_at TIMESTAMP NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			revoked_at TIMESTAMP,
+			revoked_by VARCHAR(36) REFERENCES users(id),
+			revoke_reason TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ssh_certificates_subject ON ssh_certificates(subject_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_ssh_certificates_expires_at ON ssh_certificates(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_ssh_certificates_revoked_at ON ssh_certificates(revoked_at)`,
 	}
 
 	for _, migration := range migrations {
@@ -688,12 +730,12 @@ func (s *PostgresStore) GetAccessRequest(ctx context.Context, id string) (*commo
 
 // UpdateAccessRequest updates an existing access request
 func (s *PostgresStore) UpdateAccessRequest(ctx context.Context, request *common.AccessRequest) error {
-	query := `UPDATE access_requests SET status = $1, reviewed_at = $2, reviewed_by = $3, expires_at = $4
-			  WHERE id = $5`
+	query := `UPDATE access_requests SET status = $1, reviewed_at = $2, reviewed_by = $3, expires_at = $4, duration = $5
+			  WHERE id = $6`
 
 	result, err := s.db.ExecContext(ctx, query,
 		request.Status, request.ReviewedAt, request.ReviewedBy,
-		request.ExpiresAt, request.ID)
+		request.ExpiresAt, request.Duration, request.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update access request: %w", err)
@@ -721,6 +763,33 @@ func (s *PostgresStore) ListPendingAccessRequests(ctx context.Context) ([]*commo
 	var remoteUsers pq.StringArray
 	for rows.Next() {
 		request := &common.AccessRequest{}
+		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
+			&request.Duration, &request.Status, &request.RequestedAt,
+			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
+			return nil, fmt.Errorf("failed to scan access request: %w", err)
+		}
+		request.RemoteUsers = []string(remoteUsers)
+		requests = append(requests, request)
+	}
+
+	return requests, nil
+}
+
+// ListAllAccessRequests lists access requests of any status, paginated.
+func (s *PostgresStore) ListAllAccessRequests(ctx context.Context, limit, offset int) ([]*common.AccessRequest, error) {
+	query := `SELECT id, user_id, machine_id, remote_users, reason, duration, status, requested_at, reviewed_at, reviewed_by, expires_at
+			  FROM access_requests ORDER BY requested_at DESC LIMIT $1 OFFSET $2`
+
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list access requests: %w", err)
+	}
+	defer rows.Close()
+
+	var requests []*common.AccessRequest
+	for rows.Next() {
+		request := &common.AccessRequest{}
+		var remoteUsers pq.StringArray
 		if err := rows.Scan(&request.ID, &request.UserID, &request.MachineID, &remoteUsers, &request.Reason,
 			&request.Duration, &request.Status, &request.RequestedAt,
 			&request.ReviewedAt, &request.ReviewedBy, &request.ExpiresAt); err != nil {
@@ -922,12 +991,34 @@ func (s *PostgresStore) CreateAuditLog(ctx context.Context, log *common.AuditLog
 	return nil
 }
 
-// ListAuditLogs lists audit logs with pagination and filters
+// ListAuditLogs lists audit logs with pagination and filters. Supported
+// filter keys: "user_id", "action", "resource".
 func (s *PostgresStore) ListAuditLogs(ctx context.Context, limit, offset int, filters map[string]interface{}) ([]*common.AuditLog, error) {
-	query := `SELECT id, user_id, action, resource, metadata, ip_address, timestamp
-			  FROM audit_logs ORDER BY timestamp DESC LIMIT $1 OFFSET $2`
+	query := `SELECT id, user_id, action, resource, metadata, ip_address, timestamp FROM audit_logs`
 
-	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	var (
+		conditions []string
+		args       []interface{}
+	)
+	for _, key := range []string{"user_id", "action", "resource"} {
+		v, ok := filters[key]
+		if !ok {
+			continue
+		}
+		strVal, ok := v.(string)
+		if !ok || strVal == "" {
+			continue
+		}
+		args = append(args, strVal)
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", key, len(args)))
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	args = append(args, limit, offset)
+	query += fmt.Sprintf(" ORDER BY timestamp DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list audit logs: %w", err)
 	}
@@ -946,6 +1037,82 @@ func (s *PostgresStore) ListAuditLogs(ctx context.Context, limit, offset int, fi
 	}
 
 	return logs, nil
+}
+
+// CreateNotification inserts a new in-app notification.
+func (s *PostgresStore) CreateNotification(ctx context.Context, n *common.Notification) error {
+	metadata, err := json.Marshal(n.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification metadata: %w", err)
+	}
+	query := `INSERT INTO notifications (id, user_id, type, title, body, metadata, read_at, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	_, err = s.db.ExecContext(ctx, query, n.ID, n.UserID, n.Type, n.Title, n.Body, metadata, n.ReadAt, n.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("failed to create notification: %w", err)
+	}
+	return nil
+}
+
+// ListUserNotifications lists a user's notifications, most recent first.
+func (s *PostgresStore) ListUserNotifications(ctx context.Context, userID string, limit, offset int) ([]*common.Notification, error) {
+	query := `SELECT id, user_id, type, title, body, metadata, read_at, created_at
+			  FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+
+	rows, err := s.db.QueryContext(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list notifications: %w", err)
+	}
+	defer rows.Close()
+
+	var notifications []*common.Notification
+	for rows.Next() {
+		n := &common.Notification{}
+		var metadata []byte
+		if err := rows.Scan(&n.ID, &n.UserID, &n.Type, &n.Title, &n.Body, &metadata, &n.ReadAt, &n.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan notification: %w", err)
+		}
+		if len(metadata) > 0 {
+			json.Unmarshal(metadata, &n.Metadata)
+		}
+		notifications = append(notifications, n)
+	}
+	return notifications, nil
+}
+
+// CountUnreadNotifications returns how many unread notifications a user has.
+func (s *PostgresStore) CountUnreadNotifications(ctx context.Context, userID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL`, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unread notifications: %w", err)
+	}
+	return count, nil
+}
+
+// MarkNotificationRead marks a single notification (scoped to userID) as read.
+func (s *PostgresStore) MarkNotificationRead(ctx context.Context, id, userID string) error {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2 AND read_at IS NULL`, id, userID)
+	if err != nil {
+		return fmt.Errorf("failed to mark notification read: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkAllNotificationsRead marks every unread notification for a user as read.
+func (s *PostgresStore) MarkAllNotificationsRead(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to mark all notifications read: %w", err)
+	}
+	return nil
 }
 
 // GetSessionDetails retrieves a session with user and machine names

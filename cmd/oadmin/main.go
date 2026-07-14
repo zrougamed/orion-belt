@@ -10,7 +10,6 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/client"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
-	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -51,6 +50,37 @@ var rejectCmd = &cobra.Command{
 	Run:   runReject,
 }
 
+var caCmd = &cobra.Command{
+	Use:   "ca",
+	Short: "Manage the SSH Certificate Authority",
+	Long:  `Export CA trust material and manage the lifecycle of issued SSH certificates.`,
+}
+
+var caExportCmd = &cobra.Command{
+	Use:   "export",
+	Short: "Export CA public keys for out-of-band trust distribution",
+	Long:  `Prints the User CA and Host CA public keys (authorized_keys format) an operator distributes to clients/agents as auth.host_ca_public_key.`,
+	Run:   runCAExport,
+}
+
+var caListCertsCmd = &cobra.Command{
+	Use:   "list-certs",
+	Short: "List issued SSH certificates",
+	Run:   runCAListCerts,
+}
+
+var caRevokeCmd = &cobra.Command{
+	Use:   "revoke [serial]",
+	Short: "Revoke an issued SSH certificate ahead of its TTL expiry",
+	Args:  cobra.ExactArgs(1),
+	Run:   runCARevoke,
+}
+
+var (
+	caListCertsType string
+	caRevokeReason  string
+)
+
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
 	rootCmd.PersistentFlags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
@@ -59,6 +89,13 @@ func init() {
 	requestsCmd.AddCommand(approveCmd)
 	requestsCmd.AddCommand(rejectCmd)
 	rootCmd.AddCommand(requestsCmd)
+
+	caListCertsCmd.Flags().StringVar(&caListCertsType, "type", "", "filter by certificate type (user|host)")
+	caRevokeCmd.Flags().StringVar(&caRevokeReason, "reason", "", "reason for revocation (recorded in the audit log)")
+	caCmd.AddCommand(caExportCmd)
+	caCmd.AddCommand(caListCertsCmd)
+	caCmd.AddCommand(caRevokeCmd)
+	rootCmd.AddCommand(caCmd)
 }
 
 func main() {
@@ -86,36 +123,7 @@ func getAPIClient() (*client.APIClient, error) {
 		}
 	}
 
-	// Get API endpoint
-	apiEndpoint := config.Server.APIEndpoint
-	if apiEndpoint == "" {
-		apiEndpoint = fmt.Sprintf("http://%s:8080", config.Server.Host)
-	}
-
-	// Load SSH key
-	keyData, err := os.ReadFile(config.Auth.KeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read SSH key: %w", err)
-	}
-
-	signer, err := ssh.ParsePrivateKey(keyData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	// Get username
-	user := username
-	if user == "" {
-		user = config.Auth.User
-		if user == "" {
-			user = os.Getenv("USER")
-			if user == "" {
-				return nil, fmt.Errorf("username not configured")
-			}
-		}
-	}
-
-	return client.NewAPIClient(apiEndpoint, user, signer, logger)
+	return client.LoadAPIClient(config, username, logger)
 }
 
 func runListRequests(cmd *cobra.Command, args []string) {
@@ -202,6 +210,81 @@ func runReject(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("✗ Access request %s rejected\n", requestID[:8]+"...")
+}
+
+func runCAExport(cmd *cobra.Command, args []string) {
+	apiClient, err := getAPIClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	ca, err := apiClient.ExportCA()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error exporting CA: %v\n", err)
+		os.Exit(1)
+	}
+	if !ca.Enabled {
+		fmt.Println("SSH Certificate Authority is not enabled on this server.")
+		return
+	}
+
+	fmt.Println("# User CA public key (not needed by clients; informational)")
+	fmt.Print(ca.UserCA)
+	fmt.Println("\n# Host CA public key — add to client/agent config as auth.host_ca_public_key")
+	fmt.Print(ca.HostCA)
+}
+
+func runCAListCerts(cmd *cobra.Command, args []string) {
+	apiClient, err := getAPIClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	certs, err := apiClient.ListSSHCertificates(caListCertsType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing certificates: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(certs) == 0 {
+		fmt.Println("No issued certificates.")
+		return
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "SERIAL\tTYPE\tKEY ID\tISSUED\tEXPIRES\tSTATUS")
+	fmt.Fprintln(w, "------\t----\t------\t------\t-------\t------")
+	for _, c := range certs {
+		status := "active"
+		if c.RevokedAt != nil {
+			status = "revoked"
+		} else if c.ExpiresAt.Before(time.Now()) {
+			status = "expired"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			c.Serial, c.CertType, c.KeyID,
+			c.IssuedAt.Format(time.RFC3339), c.ExpiresAt.Format(time.RFC3339), status)
+	}
+	w.Flush()
+}
+
+func runCARevoke(cmd *cobra.Command, args []string) {
+	serial := args[0]
+
+	apiClient, err := getAPIClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := apiClient.RevokeSSHCertificate(serial, caRevokeReason); err != nil {
+		fmt.Fprintf(os.Stderr, "Error revoking certificate: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Certificate %s revoked\n", serial)
 }
 
 func formatDuration(d time.Duration) string {

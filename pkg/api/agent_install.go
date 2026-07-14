@@ -11,6 +11,7 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
+	"golang.org/x/crypto/ssh"
 )
 
 // AgentInstallScriptRequest builds a one-shot install+join script for a new agent.
@@ -113,13 +114,6 @@ func (s *APIServer) generateAgentInstallScript(c *gin.Context) {
 	}
 	pubKey = strings.TrimSpace(pubKey)
 
-	agentUser := common.NewUser(name, fmt.Sprintf("%s@agent.orion-belt", name), pubKey, false)
-	if err := s.store.CreateUser(ctx, agentUser); err != nil {
-		s.logger.Error("Failed to create agent user: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
-		return
-	}
-
 	tags := req.Tags
 	if tags == nil {
 		tags = map[string]string{}
@@ -128,15 +122,54 @@ func (s *APIServer) generateAgentInstallScript(c *gin.Context) {
 		tags["os"] = osID
 	}
 	machine := common.NewMachine(name, hostname, port, tags)
-	machine.AgentID = agentUser.ID
-	if err := s.store.CreateMachine(ctx, machine); err != nil {
-		_ = s.store.DeleteUser(ctx, agentUser.ID)
-		s.logger.Error("Failed to create machine: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
-		return
+
+	var agentUserID string
+	var hostCertLine, hostCAPublicKey string
+
+	if s.ca != nil {
+		// SSH CA enabled: identify the agent by a Host-CA-signed cert
+		// instead of the legacy synthetic-user mechanism — no `users` row
+		// is created for it at all.
+		if err := s.store.CreateMachine(ctx, machine); err != nil {
+			s.logger.Error("Failed to create machine: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKey))
+		if err != nil {
+			_ = s.store.DeleteMachine(ctx, machine.ID)
+			s.logger.Error("Failed to parse generated agent key: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		hostCert, err := s.ca.IssueHostCert(ctx, machine.ID, []string{name}, pub, s.ca.HostCertTTL())
+		if err != nil {
+			_ = s.store.DeleteMachine(ctx, machine.ID)
+			s.logger.Error("Failed to issue agent host certificate: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		hostCertLine = string(ssh.MarshalAuthorizedKey(hostCert))
+		_, hostCAPublicKey = s.ca.ExportPublicKeys()
+	} else {
+		// Legacy path: unchanged synthetic "agent user" mechanism.
+		agentUser := common.NewUser(name, fmt.Sprintf("%s@agent.orion-belt", name), pubKey, false)
+		if err := s.store.CreateUser(ctx, agentUser); err != nil {
+			s.logger.Error("Failed to create agent user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		agentUserID = agentUser.ID
+		machine.AgentID = agentUser.ID
+		if err := s.store.CreateMachine(ctx, machine); err != nil {
+			_ = s.store.DeleteUser(ctx, agentUser.ID)
+			s.logger.Error("Failed to create machine: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
 	}
 
-	script := buildAgentInstallScript(osID, name, gwHost, gwPort, pkgBase, ver, privPEM, tags)
+	script := buildAgentInstallScript(osID, name, gwHost, gwPort, pkgBase, ver, privPEM, hostCertLine, hostCAPublicKey, tags)
 
 	uid, _ := c.Get("user_id")
 	uidStr, _ := uid.(string)
@@ -144,12 +177,13 @@ func (s *APIServer) generateAgentInstallScript(c *gin.Context) {
 		"agent_name": name,
 		"os":         osID,
 		"user_id":    uidStr,
+		"ssh_ca":     s.ca != nil,
 	})
 
 	c.JSON(http.StatusCreated, AgentInstallScriptResponse{
 		Script:    script,
 		MachineID: machine.ID,
-		UserID:    agentUser.ID,
+		UserID:    agentUserID,
 		AgentName: name,
 		PublicKey: pubKey,
 		Filename:  fmt.Sprintf("orion-belt-install-%s.sh", name),
@@ -157,7 +191,7 @@ func (s *APIServer) generateAgentInstallScript(c *gin.Context) {
 	})
 }
 
-func buildAgentInstallScript(osID, name, gwHost string, gwPort int, pkgBase, ver, privPEM string, tags map[string]string) string {
+func buildAgentInstallScript(osID, name, gwHost string, gwPort int, pkgBase, ver, privPEM, hostCertLine, hostCAPublicKey string, tags map[string]string) string {
 	var tagLines strings.Builder
 	wrote := false
 	for k, v := range tags {
@@ -173,17 +207,22 @@ func buildAgentInstallScript(osID, name, gwHost string, gwPort int, pkgBase, ver
 		tagLines.WriteString("    environment: \"production\"\n")
 	}
 
+	authBody := `auth:
+  key_file: "/etc/orion-belt/agent_key"
+  known_hosts: "/etc/orion-belt/known_hosts"
+  strict_host_key_checking: "ask"
+`
+	if hostCAPublicKey != "" {
+		authBody += fmt.Sprintf("  host_ca_public_key: %q\n", strings.TrimSpace(hostCAPublicKey))
+	}
+
 	yamlBody := fmt.Sprintf(`server:
   host: %q
   port: %d
 agent:
   name: %q
   tags:
-%sauth:
-  key_file: "/etc/orion-belt/agent_key"
-  known_hosts: "/etc/orion-belt/known_hosts"
-  strict_host_key_checking: "ask"
-`, gwHost, gwPort, name, tagLines.String())
+%s%s`, gwHost, gwPort, name, tagLines.String(), authBody)
 
 	var b strings.Builder
 	b.WriteString("#!/usr/bin/env bash\n")
@@ -277,7 +316,14 @@ chmod 0755 /usr/bin/orion-belt-agent
 	b.WriteString("cat > /etc/orion-belt/agent_key <<'ORION_AGENT_KEY'\n")
 	b.WriteString(strings.TrimSpace(privPEM))
 	b.WriteString("\nORION_AGENT_KEY\n")
-	b.WriteString("chmod 0600 /etc/orion-belt/agent_key\n\n")
+	b.WriteString("chmod 0600 /etc/orion-belt/agent_key\n")
+	if hostCertLine != "" {
+		b.WriteString("cat > /etc/orion-belt/agent_key-cert.pub <<'ORION_AGENT_CERT'\n")
+		b.WriteString(strings.TrimSpace(hostCertLine))
+		b.WriteString("\nORION_AGENT_CERT\n")
+		b.WriteString("chmod 0644 /etc/orion-belt/agent_key-cert.pub\n")
+	}
+	b.WriteString("\n")
 
 	b.WriteString(`echo "==> Starting orion-belt-agent"
 if command -v systemctl >/dev/null 2>&1 && [ -f /lib/systemd/system/orion-belt-agent.service ]; then

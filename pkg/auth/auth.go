@@ -252,8 +252,18 @@ func (a *AuthService) RequestTemporaryAccess(ctx context.Context, userID, machin
 	return request, nil
 }
 
-// ApproveAccessRequest approves a temporary access request
+// ApproveAccessRequest approves a temporary access request using the TTL
+// (in seconds) the request was created with. Use ApproveAccessRequestWithTTL
+// to let the approver override that TTL.
 func (a *AuthService) ApproveAccessRequest(ctx context.Context, requestID, reviewerID string) error {
+	return a.ApproveAccessRequestWithTTL(ctx, requestID, reviewerID, nil)
+}
+
+// ApproveAccessRequestWithTTL approves a temporary access request. If
+// durationOverride is non-nil, it replaces the requester's originally
+// requested duration (in seconds). A duration of 0 means unlimited (no
+// expiry), matching the JIT convention: default 30 minutes, 0 = unlimited.
+func (a *AuthService) ApproveAccessRequestWithTTL(ctx context.Context, requestID, reviewerID string, durationOverride *int) error {
 	request, err := a.store.GetAccessRequest(ctx, requestID)
 	if err != nil {
 		return fmt.Errorf("failed to get access request: %w", err)
@@ -263,25 +273,38 @@ func (a *AuthService) ApproveAccessRequest(ctx context.Context, requestID, revie
 		return fmt.Errorf("request is not pending")
 	}
 
+	durationSeconds := request.Duration
+	if durationOverride != nil {
+		durationSeconds = *durationOverride
+	}
+
 	// Update request status
 	now := time.Now()
-	expiresAt := now.Add(time.Duration(request.Duration) * time.Second)
+	var expiresAt *time.Time
+	var permDuration *time.Duration
+	if durationSeconds > 0 {
+		d := time.Duration(durationSeconds) * time.Second
+		t := now.Add(d)
+		expiresAt = &t
+		permDuration = &d
+	}
+	request.Duration = durationSeconds
 	request.Status = "approved"
 	request.ReviewedAt = &now
 	request.ReviewedBy = &reviewerID
-	request.ExpiresAt = &expiresAt
+	request.ExpiresAt = expiresAt
 
 	if err := a.store.UpdateAccessRequest(ctx, request); err != nil {
 		return fmt.Errorf("failed to update access request: %w", err)
 	}
 
-	// Grant temporary permission with the requested remote users
-	duration := time.Duration(request.Duration) * time.Second
-	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, "both", request.RemoteUsers, reviewerID, &duration); err != nil {
+	// Grant temporary permission with the requested remote users. A nil
+	// permDuration grants unlimited (no expiry) access.
+	if err := a.GrantPermission(ctx, request.UserID, request.MachineID, "both", request.RemoteUsers, reviewerID, permDuration); err != nil {
 		return fmt.Errorf("failed to grant permission: %w", err)
 	}
 
-	a.logger.Info("Access request approved: %s by %s", requestID, reviewerID)
+	a.logger.Info("Access request approved: %s by %s (ttl=%ds)", requestID, reviewerID, durationSeconds)
 	return nil
 }
 

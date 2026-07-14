@@ -28,6 +28,7 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 - Timed cast session playback (xterm), audit log browser, user/machine admin CRUD
 - **Add agent** install-script generator (OS-specific)
 - Visible **build version** so operators can confirm shipped features
+- In-app **notification bell** (access-request approvals and similar)
 - Production assets embedded via `go:embed` (`make build-ui` → `web/static`)
 
 ### Non-goals (deferred)
@@ -35,6 +36,7 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 - Fine-grained UI RBAC beyond role-gated nav (API still enforces ReBAC)
 - Live shared session watching / collaborative cursors
 - Full permission matrix editor UX (grants exist via API/`oadmin`)
+- SSH CA admin panel in the UI (export/list/revoke via `oadmin` / API today — see [SSH_CA.md](SSH_CA.md))
 - Heavy third-party admin kits (MUI/Ant) — prefer owned CSS tokens
 
 ---

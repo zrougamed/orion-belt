@@ -4,11 +4,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { AccessRequest, Machine, User } from "../lib/types";
 import { Badge } from "../components/Badge";
-import { fmtTime, shortId } from "../lib/format";
+import { fmtTime, fmtTTL, shortId } from "../lib/format";
 import { useAuth } from "../auth/AuthContext";
 import { canApprove } from "../lib/nav";
 import { useToast } from "../components/Toast";
 import { Pagination, SortTh, TableToolbar, useTableState } from "../components/DataTable";
+
+const DEFAULT_TTL_SECONDS = 30 * 60;
+
+const TTL_OPTIONS = [
+  { label: "15 minutes", value: 15 * 60 },
+  { label: "30 minutes (default)", value: 30 * 60 },
+  { label: "1 hour", value: 60 * 60 },
+  { label: "4 hours", value: 4 * 60 * 60 },
+  { label: "8 hours", value: 8 * 60 * 60 },
+  { label: "24 hours", value: 24 * 60 * 60 },
+  { label: "Unlimited", value: 0 },
+];
 
 export function RequestsPage() {
   const { user } = useAuth();
@@ -23,6 +35,8 @@ export function RequestsPage() {
   const [machineId, setMachineId] = useState("");
   const [reason, setReason] = useState("");
   const [remote, setRemote] = useState("root");
+  const [duration, setDuration] = useState(DEFAULT_TTL_SECONDS);
+  const [ttlByRequest, setTtlByRequest] = useState<Record<string, number>>({});
 
   const create = useMutation({
     mutationFn: () =>
@@ -32,7 +46,7 @@ export function RequestsPage() {
           machine_id: machineId,
           remote_users: [remote],
           reason,
-          duration: 3600,
+          duration,
         }),
       }),
     onSuccess: () => {
@@ -43,10 +57,26 @@ export function RequestsPage() {
     onError: (e: Error) => toast(e.message, "err"),
   });
 
-  function act(id: string, action: "approve" | "reject") {
-    void api(`/admin/access-requests/${id}/${action}`, { method: "POST" })
+  function ttlFor(r: AccessRequest): number {
+    return ttlByRequest[r.id] ?? r.duration ?? DEFAULT_TTL_SECONDS;
+  }
+
+  function approveRequest(r: AccessRequest) {
+    void api(`/admin/access-requests/${r.id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ duration: ttlFor(r) }),
+    })
       .then(() => {
-        toast(action === "approve" ? "Approved" : "Rejected");
+        toast("Approved");
+        void qc.invalidateQueries({ queryKey: ["requests"] });
+      })
+      .catch((e: Error) => toast(e.message, "err"));
+  }
+
+  function rejectRequest(id: string) {
+    void api(`/admin/access-requests/${id}/reject`, { method: "POST" })
+      .then(() => {
+        toast("Rejected");
         void qc.invalidateQueries({ queryKey: ["requests"] });
       })
       .catch((e: Error) => toast(e.message, "err"));
@@ -73,7 +103,7 @@ export function RequestsPage() {
         if (key === "user") return userName(r.user_id);
         if (key === "machine") return machineName(r.machine_id);
         if (key === "status") return r.status || "";
-        if (key === "created") return r.created_at ? new Date(r.created_at).getTime() : 0;
+        if (key === "created") return r.requested_at ? new Date(r.requested_at).getTime() : 0;
         return "";
       },
       (r) =>
@@ -111,6 +141,16 @@ export function RequestsPage() {
             <label className="field">Reason</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)} required />
           </div>
+          <div>
+            <label className="field">Access duration</label>
+            <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+              {TTL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <button className="btn sm" type="submit" style={{ marginTop: "0.75rem" }}>
           Submit
@@ -138,6 +178,7 @@ export function RequestsPage() {
               <SortTh label="Machine" col="machine" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
               <th>Remote</th>
               <SortTh label="Status" col="status" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
+              <th>TTL</th>
               <SortTh label="Created" col="created" sortKey={table.sortKey} sortDir={table.sortDir} onSort={table.toggleSort} />
               <th />
             </tr>
@@ -151,14 +192,28 @@ export function RequestsPage() {
                 <td>
                   <Badge status={r.status}>{r.status}</Badge>
                 </td>
-                <td className="mono">{fmtTime(r.created_at)}</td>
+                <td className="mono">
+                  {r.status === "approved" && r.expires_at ? `until ${fmtTime(r.expires_at)}` : fmtTTL(r.duration)}
+                </td>
+                <td className="mono">{fmtTime(r.requested_at)}</td>
                 <td>
                   {approve && r.status === "pending" ? (
                     <div className="row">
-                      <button type="button" className="btn sm" onClick={() => act(r.id, "approve")}>
+                      <select
+                        value={ttlFor(r)}
+                        onChange={(e) => setTtlByRequest((m) => ({ ...m, [r.id]: Number(e.target.value) }))}
+                        style={{ maxWidth: "9.5rem" }}
+                      >
+                        {TTL_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn sm" onClick={() => approveRequest(r)}>
                         Approve
                       </button>
-                      <button type="button" className="btn secondary sm" onClick={() => act(r.id, "reject")}>
+                      <button type="button" className="btn secondary sm" onClick={() => rejectRequest(r.id)}>
                         Reject
                       </button>
                     </div>

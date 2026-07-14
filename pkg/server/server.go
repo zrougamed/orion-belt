@@ -14,6 +14,7 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/api"
 	"github.com/zrougamed/orion-belt/pkg/auth"
 	"github.com/zrougamed/orion-belt/pkg/authz"
+	"github.com/zrougamed/orion-belt/pkg/ca"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
@@ -31,11 +32,15 @@ type Server struct {
 	pluginManager *plugin.Manager
 	logger        *common.Logger
 	sshConfig     *ssh.ServerConfig
+	sshConfigMu   sync.RWMutex
+	hostPrivate   ssh.Signer
+	hostCert      *ssh.Certificate
 	listener      net.Listener
 	apiServer     *api.APIServer
 	agents        map[string]*AgentConnection
 	agentsMu      sync.RWMutex
 	shutdown      chan struct{}
+	ca            *ca.Authority
 }
 
 // AgentConnection represents a connection from an agent
@@ -172,6 +177,16 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		}
 	}
 
+	// SSH Certificate Authority (optional; auto-bootstraps its User/Host CA
+	// keypairs on first enable, see pkg/ca).
+	caAuthority, err := ca.New(config.SSHCA, store, logger)
+	if err != nil {
+		return nil, fmt.Errorf("ssh ca: %w", err)
+	}
+	if caAuthority != nil {
+		logger.Info("SSH Certificate Authority enabled")
+	}
+
 	// Initialize API server
 	apiServer := api.NewAPIServer(store, authService, logger, api.Options{
 		JWTSecret:          config.Auth.JWTSecret,
@@ -183,6 +198,7 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		Recorder:           recorder,
 		WebAuthn:           wa,
 		RateLimitPerMinute: config.Auth.RateLimitPerMinute,
+		CA:                 caAuthority,
 	})
 
 	server := &Server{
@@ -195,6 +211,7 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		logger:        logger,
 		agents:        make(map[string]*AgentConnection),
 		shutdown:      make(chan struct{}),
+		ca:            caAuthority,
 	}
 
 	apiServer.SetAgentCommander(server)
@@ -210,29 +227,75 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 
 // setupSSHConfig sets up the SSH server configuration
 func (s *Server) setupSSHConfig() error {
-	s.sshConfig = &ssh.ServerConfig{
+	cfg := &ssh.ServerConfig{
 		PublicKeyCallback: s.handlePublicKeyAuth,
 		ServerVersion:     "SSH-2.0-OrionBelt",
 	}
 
 	// Load host key
-	if s.config.Server.SSHHostKey != "" {
-		privateBytes, err := os.ReadFile(s.config.Server.SSHHostKey)
-		if err != nil {
-			return fmt.Errorf("failed to read host key: %w", err)
-		}
-
-		private, err := ssh.ParsePrivateKey(privateBytes)
-		if err != nil {
-			return fmt.Errorf("failed to parse host key: %w", err)
-		}
-
-		s.sshConfig.AddHostKey(private)
-	} else {
+	if s.config.Server.SSHHostKey == "" {
 		return fmt.Errorf("SSH host key not configured")
 	}
+	privateBytes, err := os.ReadFile(s.config.Server.SSHHostKey)
+	if err != nil {
+		return fmt.Errorf("failed to read host key: %w", err)
+	}
 
+	private, err := ssh.ParsePrivateKey(privateBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse host key: %w", err)
+	}
+	s.hostPrivate = private
+	cfg.AddHostKey(private)
+
+	// Also present a Host-CA-signed cert for this same key, when SSH CA
+	// is enabled. Cert-aware clients (proposing a *-cert-v01@openssh.com
+	// algorithm during KEX) get the cert and verify it against the Host
+	// CA instead of TOFU; clients that don't negotiate a cert algorithm
+	// still get the raw key above — algorithm negotiation makes this
+	// fully backward compatible without any dual-mode config flag.
+	if s.ca != nil {
+		if err := s.attachGatewayHostCert(cfg); err != nil {
+			s.logger.Warn("failed to issue gateway host certificate: %v", err)
+		}
+	}
+
+	s.sshConfigMu.Lock()
+	s.sshConfig = cfg
+	s.sshConfigMu.Unlock()
 	return nil
+}
+
+// attachGatewayHostCert issues (or re-issues) the gateway Host cert and
+// adds it to cfg. Caller must not hold sshConfigMu for writes only when
+// swapping the whole config atomically via renewGatewayHostCert.
+func (s *Server) attachGatewayHostCert(cfg *ssh.ServerConfig) error {
+	if s.ca == nil || s.hostPrivate == nil {
+		return nil
+	}
+	principals := s.config.SSHCA.HostPrincipals
+	if len(principals) == 0 {
+		principals = []string{s.config.Server.Host}
+	}
+	hostCert, err := s.ca.IssueHostCert(context.Background(), "", principals, s.hostPrivate.PublicKey(), s.ca.HostCertTTL())
+	if err != nil {
+		return err
+	}
+	certSigner, err := ssh.NewCertSigner(hostCert, s.hostPrivate)
+	if err != nil {
+		return err
+	}
+	cfg.AddHostKey(certSigner)
+	s.hostCert = hostCert
+	s.logger.Info("SSH host certificate issued for %v (expires %s)", principals,
+		time.Unix(int64(hostCert.ValidBefore), 0).Format(time.RFC3339))
+	return nil
+}
+
+func (s *Server) currentSSHConfig() *ssh.ServerConfig {
+	s.sshConfigMu.RLock()
+	defer s.sshConfigMu.RUnlock()
+	return s.sshConfig
 }
 
 // Start starts the SSH server
@@ -270,6 +333,11 @@ func (s *Server) Start() error {
 	// Periodic expired HTTP session cleanup
 	go s.runSessionCleanupLoop()
 
+	if s.ca != nil {
+		go s.runCARevocationRefreshLoop()
+		go s.runGatewayHostCertRenewalLoop()
+	}
+
 	for {
 		select {
 		case <-s.shutdown:
@@ -294,11 +362,24 @@ func (s *Server) Start() error {
 // handleConnection handles a new TCP connection
 func (s *Server) handleConnection(tcpConn net.Conn) {
 	// Perform SSH handshake
-	sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, s.sshConfig)
+	sshConn, chans, reqs, err := ssh.NewServerConn(tcpConn, s.currentSSHConfig())
 	if err != nil {
 		s.logger.Debug("SSH handshake failed: %v", err)
 		tcpConn.Close()
 		return
+	}
+
+	// Host-CA-certified agents are identified by machine_id, set directly in
+	// handleAgentCertAuth — no synthetic "agent user" lookup needed for them.
+	if sshConn.Permissions.Extensions["cert_type"] == "host" {
+		machineID := sshConn.Permissions.Extensions["machine_id"]
+		if machine, err := s.store.GetMachine(context.Background(), machineID); err == nil {
+			s.logger.Info("Host-cert agent connection for machine: %s", machine.Name)
+			s.handleAgentConnection(sshConn, chans, reqs, machine)
+			return
+		} else {
+			s.logger.Warn("Host-cert auth succeeded but machine %s lookup failed: %v", machineID, err)
+		}
 	}
 
 	// Get authenticated user from connection metadata
@@ -307,7 +388,8 @@ func (s *Server) handleConnection(tcpConn net.Conn) {
 
 	s.logger.Info("New SSH connection from user: %s (ID: %s)", user, userID)
 
-	// Check if this is an agent connection
+	// Check if this is a legacy (non-cert) agent connection: a synthetic
+	// "agent user" row whose ID the target machine's agent_id points at.
 	ctx := context.Background()
 	machine, err := s.store.GetMachineByName(ctx, user)
 	if err == nil {
@@ -334,8 +416,108 @@ func (s *Server) handleConnection(tcpConn net.Conn) {
 	s.handleClientConnection(sshConn, chans, reqs, userID, user, sshUser)
 }
 
-// handlePublicKeyAuth handles SSH public key authentication
+// handlePublicKeyAuth dispatches SSH public-key authentication: a
+// Host-CA-signed cert identifies an agent, a User-CA-signed cert
+// identifies a human via short-lived credentials, and anything else falls
+// back to the legacy static-pubkey path (unchanged, so existing
+// deployments and not-yet-migrated agents keep working when SSH CA is
+// enabled). Host certs authenticating here — rather than via the usual
+// client-side HostKeyCallback — is intentionally non-standard SSH usage:
+// agent identity is anchored in the Host CA. ssh.CertChecker.Authenticate
+// refuses non-UserCert types by design, which is why this dispatches
+// manually instead of delegating to it.
 func (s *Server) handlePublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	if cert, ok := key.(*ssh.Certificate); ok {
+		if s.ca == nil {
+			return nil, fmt.Errorf("certificate authentication is not enabled on this server")
+		}
+		switch cert.CertType {
+		case ssh.UserCert:
+			return s.handleUserCertAuth(conn, cert)
+		case ssh.HostCert:
+			return s.handleAgentCertAuth(conn, cert)
+		default:
+			return nil, fmt.Errorf("unsupported certificate type %d", cert.CertType)
+		}
+	}
+	return s.handleLegacyPublicKeyAuth(conn, key)
+}
+
+// handleUserCertAuth verifies a User-CA-signed certificate and authenticates
+// the human it was issued to.
+func (s *Server) handleUserCertAuth(conn ssh.ConnMetadata, cert *ssh.Certificate) (*ssh.Permissions, error) {
+	authUser, _, _ := common.ParseGatewaySSHUser(conn.User())
+
+	checker := s.ca.CertChecker()
+	if !checker.IsUserAuthority(cert.SignatureKey) {
+		return nil, fmt.Errorf("certificate signed by unrecognized user authority")
+	}
+	if err := checker.CheckCert(authUser, cert); err != nil {
+		return nil, fmt.Errorf("certificate invalid: %w", err)
+	}
+
+	user, err := s.store.GetUserByUsername(context.Background(), authUser)
+	if err != nil {
+		s.logger.Warn("User cert auth: unknown user %s", authUser)
+		return nil, fmt.Errorf("authentication failed")
+	}
+	// Defense in depth: the cert's KeyId should always match the principal
+	// it was issued to (pkg/ca sets KeyId=username at issuance).
+	if user.Username != cert.KeyId {
+		s.logger.Warn("User cert auth: cert key_id %q does not match resolved user %q", cert.KeyId, user.Username)
+		return nil, fmt.Errorf("authentication failed")
+	}
+	if s.config.Auth.MFARequired && !user.MFAEnabled {
+		s.logger.Warn("SSH denied for %s: MFA enrollment required", authUser)
+		return nil, fmt.Errorf("mfa enrollment required")
+	}
+
+	perms := &ssh.Permissions{
+		Extensions: map[string]string{
+			"user":      user.Username,
+			"user_id":   user.ID,
+			"ssh_user":  conn.User(),
+			"cert_type": "user",
+		},
+	}
+
+	hookCtx := &plugin.HookContext{UserID: user.ID, Data: make(map[string]interface{})}
+	s.pluginManager.TriggerHook(context.Background(), plugin.HookPostAuth, hookCtx)
+
+	return perms, nil
+}
+
+// handleAgentCertAuth verifies a Host-CA-signed certificate presented by
+// an agent dialing in over the reverse tunnel, identifying it by machine
+// rather than through the legacy synthetic-user mechanism.
+func (s *Server) handleAgentCertAuth(conn ssh.ConnMetadata, cert *ssh.Certificate) (*ssh.Permissions, error) {
+	checker := s.ca.CertChecker()
+	if !checker.IsHostAuthority(cert.SignatureKey, "") {
+		return nil, fmt.Errorf("certificate signed by unrecognized host authority")
+	}
+	if err := checker.CheckCert(conn.User(), cert); err != nil {
+		return nil, fmt.Errorf("certificate invalid: %w", err)
+	}
+
+	machine, err := s.store.GetMachineByName(context.Background(), conn.User())
+	if err != nil {
+		s.logger.Warn("Agent cert auth: unknown machine %s", conn.User())
+		return nil, fmt.Errorf("authentication failed")
+	}
+
+	return &ssh.Permissions{
+		Extensions: map[string]string{
+			"cert_type":  "host",
+			"machine_id": machine.ID,
+			"pubkey_fp":  ssh.FingerprintSHA256(cert.Key),
+		},
+	}, nil
+}
+
+// handleLegacyPublicKeyAuth is the original, pre-CA static-pubkey auth
+// path: unchanged so existing deployments and not-yet-migrated agents
+// keep working whether or not SSH CA is enabled.
+func (s *Server) handleLegacyPublicKeyAuth(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	username := conn.User()
 
 	s.logger.Debug("Authentication attempt for user: %s", username)
@@ -399,12 +581,17 @@ func (s *Server) handleAgentConnection(sshConn *ssh.ServerConn, chans <-chan ssh
 
 	s.logger.Info("Agent registered: %s", machine.Name)
 
-	// Handle global requests (like keepalive)
+	// Handle global requests (keepalive + host-cert renewal)
 	go func() {
 		for req := range reqs {
 			s.logger.Debug("Agent global request: %s", req.Type)
-			if req.WantReply {
-				req.Reply(false, nil)
+			switch req.Type {
+			case ca.AgentCertRenewRequest:
+				s.handleAgentCertRenewal(req, machine, sshConn)
+			default:
+				if req.WantReply {
+					req.Reply(false, nil)
+				}
 			}
 		}
 	}()
@@ -925,6 +1112,94 @@ func (s *Server) GetStore() database.Store {
 // GetAuthService returns the auth service
 func (s *Server) GetAuthService() *auth.AuthService {
 	return s.authService
+}
+
+// handleAgentCertRenewal re-issues a Host-CA cert for an already-authenticated
+// agent. Request payload is the agent's public key in authorized_keys form
+// (must match the key that authenticated this connection).
+func (s *Server) handleAgentCertRenewal(req *ssh.Request, machine *common.Machine, sshConn *ssh.ServerConn) {
+	if !req.WantReply {
+		return
+	}
+	if s.ca == nil {
+		req.Reply(false, []byte("ssh ca disabled"))
+		return
+	}
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(req.Payload)
+	if err != nil {
+		req.Reply(false, []byte("invalid public key"))
+		return
+	}
+	if fp := sshConn.Permissions.Extensions["pubkey_fp"]; fp != "" && ssh.FingerprintSHA256(pub) != fp {
+		req.Reply(false, []byte("public key mismatch"))
+		return
+	}
+	cert, err := s.ca.IssueHostCert(context.Background(), machine.ID, []string{machine.Name}, pub, s.ca.HostCertTTL())
+	if err != nil {
+		s.logger.Warn("agent cert renewal for %s failed: %v", machine.Name, err)
+		req.Reply(false, []byte(err.Error()))
+		return
+	}
+	s.logger.Info("Renewed Host cert for agent %s (expires %s)", machine.Name,
+		time.Unix(int64(cert.ValidBefore), 0).Format(time.RFC3339))
+	req.Reply(true, ssh.MarshalAuthorizedKey(cert))
+}
+
+// runCARevocationRefreshLoop reloads revoked serials so multi-instance or
+// out-of-band DB revocations take effect without restart.
+func (s *Server) runCARevocationRefreshLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.shutdown:
+			return
+		case <-ticker.C:
+			if err := s.ca.RefreshRevocationCache(context.Background()); err != nil {
+				s.logger.Warn("CA revocation cache refresh: %v", err)
+			}
+		}
+	}
+}
+
+// runGatewayHostCertRenewalLoop re-issues the gateway's own Host cert before
+// expiry so clients using Host-CA trust keep verifying without downtime.
+func (s *Server) runGatewayHostCertRenewalLoop() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.shutdown:
+			return
+		case <-ticker.C:
+			s.renewGatewayHostCertIfNeeded()
+		}
+	}
+}
+
+func (s *Server) renewGatewayHostCertIfNeeded() {
+	if s.ca == nil || s.hostPrivate == nil || s.hostCert == nil {
+		return
+	}
+	ttl := time.Duration(s.hostCert.ValidBefore-s.hostCert.ValidAfter) * time.Second
+	expiresAt := time.Unix(int64(s.hostCert.ValidBefore), 0)
+	if !ca.NeedsRenewal(expiresAt, ttl) {
+		return
+	}
+	cfg := &ssh.ServerConfig{
+		PublicKeyCallback: s.handlePublicKeyAuth,
+		ServerVersion:     "SSH-2.0-OrionBelt",
+	}
+	cfg.AddHostKey(s.hostPrivate)
+	if err := s.attachGatewayHostCert(cfg); err != nil {
+		s.logger.Warn("gateway host cert renewal failed: %v", err)
+		return
+	}
+	s.sshConfigMu.Lock()
+	s.sshConfig = cfg
+	s.sshConfigMu.Unlock()
+	s.logger.Info("Gateway host certificate renewed (expires %s)",
+		time.Unix(int64(s.hostCert.ValidBefore), 0).Format(time.RFC3339))
 }
 
 // runSessionCleanupLoop periodically deletes expired HTTP sessions. Expiry is

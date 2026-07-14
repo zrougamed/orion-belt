@@ -79,6 +79,51 @@ type WebAuthnCredential struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+// CAKey is an SSH Certificate Authority signing keypair (User CA or Host
+// CA). The private key is never exposed here — it is stored encrypted at
+// rest and only ever loaded by pkg/ca into an in-memory ssh.Signer.
+type CAKey struct {
+	ID          string     `json:"id"`
+	CAType      string     `json:"ca_type"` // "user" | "host"
+	KeyAlgo     string     `json:"key_algo"`
+	PublicKey   string     `json:"public_key"` // authorized_keys-format CA pubkey line
+	Fingerprint string     `json:"fingerprint"`
+	Active      bool       `json:"active"`
+	CreatedAt   time.Time  `json:"created_at"`
+	RotatedAt   *time.Time `json:"rotated_at,omitempty"`
+}
+
+// CA type constants.
+const (
+	CATypeUser = "user"
+	CATypeHost = "host"
+)
+
+// SSHCertificate records the lifecycle of a certificate issued by an
+// Orion Belt CA: who/what it was issued to, when it expires, and whether
+// it has been explicitly revoked ahead of its natural TTL expiry.
+type SSHCertificate struct {
+	ID                   string     `json:"id"`
+	Serial               string     `json:"serial"`
+	CertType             string     `json:"cert_type"` // "user" | "host"
+	SubjectID            string     `json:"subject_id,omitempty"`
+	KeyID                string     `json:"key_id"`
+	Principals           []string   `json:"principals"`
+	PublicKeyFingerprint string     `json:"public_key_fingerprint"`
+	IssuedAt             time.Time  `json:"issued_at"`
+	ExpiresAt            time.Time  `json:"expires_at"`
+	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy            *string    `json:"revoked_by,omitempty"`
+	RevokeReason         string     `json:"revoke_reason,omitempty"`
+}
+
+// SSHCertFilter narrows ListSSHCertificates results.
+type SSHCertFilter struct {
+	CertType  string // "" = any
+	SubjectID string // "" = any
+	Active    *bool  // nil = any, true = not revoked and not expired, false = revoked or expired
+}
+
 // Machine represents a target machine
 type Machine struct {
 	ID         string            `json:"id"`
@@ -145,6 +190,32 @@ type AuditLog struct {
 	Timestamp time.Time              `json:"timestamp"`
 }
 
+// Notification represents an in-app (web) notification delivered to a
+// specific user, e.g. "your access request was approved".
+type Notification struct {
+	ID        string                 `json:"id"`
+	UserID    string                 `json:"user_id"`
+	Type      string                 `json:"type"` // e.g. "access_request.approved"
+	Title     string                 `json:"title"`
+	Body      string                 `json:"body"`
+	Metadata  map[string]interface{} `json:"metadata"`
+	ReadAt    *time.Time             `json:"read_at,omitempty"`
+	CreatedAt time.Time              `json:"created_at"`
+}
+
+// NewNotification creates a new unread notification for a user.
+func NewNotification(userID, notifType, title, body string, metadata map[string]interface{}) *Notification {
+	return &Notification{
+		ID:        uuid.New().String(),
+		UserID:    userID,
+		Type:      notifType,
+		Title:     title,
+		Body:      body,
+		Metadata:  metadata,
+		CreatedAt: time.Now(),
+	}
+}
+
 // APIKey represents an API key for authentication
 type APIKey struct {
 	ID         string     `json:"id"`
@@ -201,6 +272,37 @@ func NewMachine(name, hostname string, port int, tags map[string]string) *Machin
 		IsActive:  false,
 		CreatedAt: now,
 		UpdatedAt: now,
+	}
+}
+
+// NewCAKey creates a new CA keypair record. publicKey is the
+// authorized_keys-format line; the caller persists the encrypted private
+// key separately (pkg/ca owns that encoding, not this package).
+func NewCAKey(caType, keyAlgo, publicKey, fingerprint string) *CAKey {
+	return &CAKey{
+		ID:          uuid.New().String(),
+		CAType:      caType,
+		KeyAlgo:     keyAlgo,
+		PublicKey:   publicKey,
+		Fingerprint: fingerprint,
+		Active:      true,
+		CreatedAt:   time.Now(),
+	}
+}
+
+// NewSSHCertificate records a freshly-issued certificate for lifecycle
+// tracking (listing, revocation) independent of the cert bytes themselves.
+func NewSSHCertificate(serial, certType, subjectID, keyID string, principals []string, pubKeyFingerprint string, issuedAt, expiresAt time.Time) *SSHCertificate {
+	return &SSHCertificate{
+		ID:                   uuid.New().String(),
+		Serial:               serial,
+		CertType:             certType,
+		SubjectID:            subjectID,
+		KeyID:                keyID,
+		Principals:           principals,
+		PublicKeyFingerprint: pubKeyFingerprint,
+		IssuedAt:             issuedAt,
+		ExpiresAt:            expiresAt,
 	}
 }
 

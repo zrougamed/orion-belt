@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth, useHomePath } from "../auth/AuthContext";
 import { api } from "../lib/api";
 import { b64urlToBuf, bufToB64url } from "../lib/format";
@@ -35,26 +35,31 @@ export function LoginPage() {
   const home = useHomePath();
   const { toast } = useToast();
   const { theme, toggle } = useTheme();
+  const [searchParams] = useSearchParams();
   const [username, setUsername] = useState("admin");
-  const [publicKey, setPublicKey] = useState("");
-  const [totp, setTotp] = useState("");
+  const [code, setCode] = useState(searchParams.get("code") || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // A CLI-issued sign-in code arrives via ?code= when the user follows the
+  // link `osh login` prints. Redeem it immediately rather than making them
+  // click twice.
+  useEffect(() => {
+    const fromURL = searchParams.get("code");
+    if (fromURL) void redeemCode(fromURL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (ready && user) return <Navigate to={home} replace />;
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function redeemCode(value: string) {
+    if (!value.trim()) return;
     setError("");
     setBusy(true);
     try {
-      const data = await api<LoginResp>("/public/login", {
+      const data = await api<LoginResp>("/public/auth/browser-bootstrap/redeem", {
         method: "POST",
-        body: JSON.stringify({
-          username: username.trim(),
-          public_key: publicKey.trim(),
-          totp_code: totp.trim() || undefined,
-        }),
+        body: JSON.stringify({ code: value.trim() }),
       });
       login(data.session_token, data.user, data.access_token || "");
       toast("Signed in");
@@ -63,6 +68,11 @@ export function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmitCode(e: FormEvent) {
+    e.preventDefault();
+    await redeemCode(code);
   }
 
   async function onWebAuthn() {
@@ -112,7 +122,7 @@ export function LoginPage() {
       <div className="login-theme-toggle">
         <ThemeToggle theme={theme} onToggle={toggle} />
       </div>
-      <form className="card login-panel" onSubmit={onSubmit}>
+      <form className="card login-panel" onSubmit={onSubmitCode}>
         <h1 className="login-brand">
           Orion <em>Belt</em>
         </h1>
@@ -120,31 +130,31 @@ export function LoginPage() {
         <div className="muted mono" style={{ marginBottom: "1rem", fontSize: "0.75rem" }}>
           {ver}
         </div>
-        <label className="field">Username</label>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
-        <label className="field" style={{ marginTop: "0.75rem" }}>
-          SSH public key
-        </label>
-        <textarea
-          rows={4}
-          value={publicKey}
-          onChange={(e) => setPublicKey(e.target.value)}
-          placeholder="ssh-ed25519 AAAA… comment"
-          required
-        />
-        <label className="field" style={{ marginTop: "0.75rem" }}>
-          TOTP / backup code (if MFA enabled)
-        </label>
-        <input value={totp} onChange={(e) => setTotp(e.target.value)} autoComplete="one-time-code" />
-        {error ? <div className="err">{error}</div> : null}
-        <div className="row" style={{ marginTop: "1rem" }}>
-          <button className="btn block" type="submit" disabled={busy}>
-            Sign in
-          </button>
-        </div>
-        <button className="btn secondary block" type="button" style={{ marginTop: "0.55rem" }} disabled={busy} onClick={() => void onWebAuthn()}>
+
+        <label className="field">Username (for security key sign-in)</label>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+
+        <button className="btn block" type="button" style={{ marginTop: "0.75rem" }} disabled={busy} onClick={() => void onWebAuthn()}>
           Sign in with security key
         </button>
+
+        <div className="muted" style={{ margin: "1rem 0 0.5rem", fontSize: "0.8rem" }}>
+          No security key enrolled yet? Run <code>osh login</code> on your machine, then paste the code it prints:
+        </div>
+        <label className="field">Sign-in code</label>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="e.g. 7K4M9PQRXZ"
+          autoComplete="off"
+          className="mono"
+        />
+        {error ? <div className="err">{error}</div> : null}
+        <div className="row" style={{ marginTop: "1rem" }}>
+          <button className="btn secondary block" type="submit" disabled={busy || !code.trim()}>
+            Redeem code
+          </button>
+        </div>
       </form>
     </div>
   );

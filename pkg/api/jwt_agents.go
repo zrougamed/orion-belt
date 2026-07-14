@@ -77,9 +77,12 @@ func (s *APIServer) rateLimitMiddleware() gin.HandlerFunc {
 // loginJWT issues a JWT after verifying the user's SSH public key.
 func (s *APIServer) loginJWT(c *gin.Context) {
 	var req struct {
-		Username  string `json:"username" binding:"required"`
-		PublicKey string `json:"public_key" binding:"required"`
-		TOTPCode  string `json:"totp_code,omitempty"`
+		Username        string `json:"username" binding:"required"`
+		PublicKey       string `json:"public_key" binding:"required"`
+		Challenge       string `json:"challenge" binding:"required"`
+		SignatureFormat string `json:"signature_format" binding:"required"`
+		Signature       string `json:"signature" binding:"required"`
+		TOTPCode        string `json:"totp_code,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -111,6 +114,12 @@ func (s *APIServer) loginJWT(c *gin.Context) {
 	}
 	if string(storedKey.Marshal()) != string(presented.Marshal()) {
 		metrics.Default.IncAuthFailure()
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+	if err := s.verifyPossession(req.Username, req.Challenge, req.SignatureFormat, req.Signature, presented); err != nil {
+		metrics.Default.IncAuthFailure()
+		s.logger.Warn("Proof-of-possession failed for user %s: %v", req.Username, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
