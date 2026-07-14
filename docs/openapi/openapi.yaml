@@ -12,13 +12,14 @@ info:
     3. `Authorization: Bearer <JWT>`
 
     Pubkey login (`/public/login*`) requires a prior `POST /public/auth/challenge` and a signature proving possession of the private key.
+    Password login: `POST /public/login/password` (password + TOTP). Console also supports WebAuthn and `osh login` browser bootstrap.
 
     Optional **SSH CA** endpoints issue short-lived User certs and expose Host CA trust material (`docs/SSH_CA.md`).
 
     **Admin routes** (`/api/v1/admin/*`) additionally require role `admin` or `operator` (or `is_admin`).
 
     **Rate limit:** protected (non-admin) routes — default 600 req/min per user (`auth.rate_limit_per_minute`).
-  version: "0.8.0"
+  version: "0.8.1"
   contact:
     name: Orion Belt Maintainers
     url: https://github.com/zrougamed/orion-belt
@@ -205,6 +206,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/v1/public/login/password:
+    post:
+      tags: [Auth]
+      summary: Login with password + TOTP
+      description: |
+        Two-step (UI) or one-shot (CLI). Step 1: `username` + `password` returns
+        `{ need_totp: true, ticket }`. Step 2: resubmit with `totp_code` and `ticket`.
+        CLI may send password + TOTP together without a ticket. Never returns a
+        session on password alone. Requires an enrolled TOTP and a set password.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                totp_code: { type: string }
+                ticket: { type: string }
+      responses:
+        "200":
+          description: Authenticated, or password accepted pending TOTP
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/LoginResponse"
+                  - type: object
+                    properties:
+                      need_totp: { type: boolean }
+                      ticket: { type: string }
+                      message: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Password set but TOTP not enrolled
 
   /api/v1/public/auth/browser-bootstrap/redeem:
     post:
@@ -464,6 +505,7 @@ paths:
     post:
       tags: [MFA]
       summary: Disable MFA
+      description: Rejected with 409 while a password is set — clear the password first.
       requestBody:
         required: true
         content:
@@ -483,6 +525,64 @@ paths:
                 properties:
                   message: { type: string }
                   mfa_enabled: { type: boolean }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/auth/password:
+    post:
+      tags: [Auth]
+      summary: Set or change account password
+      description: |
+        Always requires a TOTP code. If MFA is not enabled yet, start `POST /mfa/enroll`
+        first; this call confirms enrollment atomically with the password set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, totp_code]
+              properties:
+                password: { type: string, format: password, minLength: 10 }
+                totp_code: { type: string }
+      responses:
+        "200":
+          description: Password saved; MFA enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  password_set: { type: boolean }
+                  mfa_enabled: { type: boolean }
+                  must_set_password: { type: boolean }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Auth]
+      summary: Clear account password
+      description: Requires a TOTP code. MFA may remain for other login paths.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totp_code]
+              properties:
+                totp_code: { type: string }
+      responses:
+        "200":
+          description: Password cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  password_set: { type: boolean }
+                  must_set_password: { type: boolean }
 
   /api/v1/mfa/status:
     get:
@@ -1839,6 +1939,10 @@ components:
           enum: [admin, operator, auditor, user]
         mfa_enabled: { type: boolean }
         webauthn_enabled: { type: boolean }
+        password_set: { type: boolean }
+        must_set_password:
+          type: boolean
+          description: True when password_hash is empty; UI should force password+TOTP setup
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     CreateUserRequest:

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth, useHomePath, useRole } from "./auth/AuthContext";
 import { AppShell } from "./components/AppShell";
 import { LoginPage } from "./pages/LoginPage";
+import { SetPasswordGate } from "./pages/SetPasswordGate";
 import { DashboardPage } from "./pages/DashboardPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SessionsPage } from "./pages/SessionsPage";
@@ -22,6 +23,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();
   if (!ready) return <p className="muted" style={{ padding: "2rem" }}>Loading…</p>;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.must_set_password) return <SetPasswordGate />;
   return children;
 }
 

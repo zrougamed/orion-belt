@@ -20,6 +20,7 @@ var (
 	listMachines   bool
 	remoteUser     string
 	printCodeOnly  bool
+	loginPassword  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,8 +35,11 @@ var rootCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Sign in to the web console",
-	Long: `Authenticates with your SSH key, then opens the browser to finish
-signing in. Use --code to print the one-time code instead of opening a browser.`,
+	Long: `Authenticates, then opens the browser to finish signing in.
+
+Default auth is your SSH private key. Use --password to authenticate with
+password + TOTP instead (useful when the key is unavailable). Use --code to
+print the one-time code instead of opening a browser.`,
 	Run: runLogin,
 }
 
@@ -48,6 +52,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&listMachines, "list", "l", false, "list available machines")
 	rootCmd.Flags().StringVar(&remoteUser, "remote-user", "", "UNIX user on the target host (optional; can also use user@machine)")
 	loginCmd.Flags().BoolVar(&printCodeOnly, "code", false, "print the sign-in code (and URL) instead of opening a browser")
+	loginCmd.Flags().BoolVar(&loginPassword, "password", false, "authenticate with password + TOTP instead of SSH key")
 
 	rootCmd.AddCommand(loginCmd)
 }
@@ -71,7 +76,12 @@ func runLogin(cmd *cobra.Command, args []string) {
 		logger.Fatal("%v", err)
 	}
 
-	apiClient, err := client.LoadAPIClient(config, user, logger)
+	var apiClient *client.APIClient
+	if loginPassword {
+		apiClient, err = loginWithPassword(config, user, logger)
+	} else {
+		apiClient, err = client.LoadAPIClient(config, user, logger)
+	}
 	if err != nil {
 		logger.Fatal("Login failed: %v", err)
 	}
@@ -97,6 +107,29 @@ func runLogin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("If nothing opens, run: osh login --code\n(expires %s)\n", code.ExpiresAt.Format("15:04:05 MST"))
+}
+
+func loginWithPassword(config *common.Config, user string, logger *common.Logger) (*client.APIClient, error) {
+	apiEndpoint := config.Server.APIEndpoint
+	if apiEndpoint == "" {
+		apiEndpoint = fmt.Sprintf("http://%s:8080", config.Server.Host)
+	}
+	password, err := cliflags.PromptSecret("Password: ")
+	if err != nil {
+		return nil, fmt.Errorf("read password: %w", err)
+	}
+	totp, err := cliflags.PromptSecret("TOTP code: ")
+	if err != nil {
+		return nil, fmt.Errorf("read totp: %w", err)
+	}
+	if password == "" || totp == "" {
+		return nil, fmt.Errorf("password and TOTP code are required")
+	}
+	c := client.NewUnauthenticatedAPIClient(apiEndpoint, logger)
+	if _, err := c.LoginWithPassword(user, password, totp); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func consoleOrigin(config *common.Config) string {

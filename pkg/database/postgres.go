@@ -160,6 +160,7 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes_hash TEXT DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_enabled BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT ''`,
 		// Repair admins created before role was persisted on INSERT (DEFAULT 'user' left them as role=user).
 		`UPDATE users SET role = 'admin' WHERE is_admin = true AND (role IS NULL OR role = '' OR role = 'user')`,
 		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'ssh'`,
@@ -272,14 +273,15 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*common.User, e
 	query := `SELECT id, username, email, public_key, is_admin,
 			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
 			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
-			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''),
+			  COALESCE(password_hash, ''), created_at, updated_at
 			  FROM users WHERE id = $1`
 
 	user := &common.User{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PublicKey,
 		&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
-		&user.TOTPSecret, &user.BackupCodesHash,
+		&user.TOTPSecret, &user.BackupCodesHash, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -296,14 +298,15 @@ func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) 
 	query := `SELECT id, username, email, public_key, is_admin,
 			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
 			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
-			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''),
+			  COALESCE(password_hash, ''), created_at, updated_at
 			  FROM users WHERE username = $1`
 
 	user := &common.User{}
 	err := s.db.QueryRowContext(ctx, query, username).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PublicKey,
 		&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
-		&user.TOTPSecret, &user.BackupCodesHash,
+		&user.TOTPSecret, &user.BackupCodesHash, &user.PasswordHash,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -318,13 +321,14 @@ func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) 
 // UpdateUser updates an existing user
 func (s *PostgresStore) UpdateUser(ctx context.Context, user *common.User) error {
 	query := `UPDATE users SET email = $1, public_key = $2, is_admin = $3, role = $4,
-			  mfa_enabled = $5, webauthn_enabled = $6, totp_secret = $7, backup_codes_hash = $8, updated_at = $9
-			  WHERE id = $10`
+			  mfa_enabled = $5, webauthn_enabled = $6, totp_secret = $7, backup_codes_hash = $8,
+			  password_hash = $9, updated_at = $10
+			  WHERE id = $11`
 
 	result, err := s.db.ExecContext(ctx, query,
 		user.Email, user.PublicKey, user.IsAdmin, user.Role,
 		user.MFAEnabled, user.WebAuthnEnabled, user.TOTPSecret, user.BackupCodesHash,
-		time.Now(), user.ID)
+		user.PasswordHash, time.Now(), user.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -358,7 +362,8 @@ func (s *PostgresStore) ListUsers(ctx context.Context, limit, offset int) ([]*co
 	query := `SELECT id, username, email, public_key, is_admin,
 			  COALESCE(role, CASE WHEN is_admin THEN 'admin' ELSE 'user' END),
 			  COALESCE(mfa_enabled, false), COALESCE(webauthn_enabled, false),
-			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''), created_at, updated_at
+			  COALESCE(totp_secret, ''), COALESCE(backup_codes_hash, ''),
+			  COALESCE(password_hash, ''), created_at, updated_at
 			  FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 
 	rows, err := s.db.QueryContext(ctx, query, limit, offset)
@@ -372,7 +377,7 @@ func (s *PostgresStore) ListUsers(ctx context.Context, limit, offset int) ([]*co
 		user := &common.User{}
 		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.PublicKey,
 			&user.IsAdmin, &user.Role, &user.MFAEnabled, &user.WebAuthnEnabled,
-			&user.TOTPSecret, &user.BackupCodesHash,
+			&user.TOTPSecret, &user.BackupCodesHash, &user.PasswordHash,
 			&user.CreatedAt, &user.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}

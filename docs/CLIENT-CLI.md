@@ -30,14 +30,22 @@ or `/health`). If the API is down you can abort or save anyway.
 ### `osh login`
 
 ```bash
-osh login              # opens the browser with a one-time bootstrap URL
-osh login --code       # print code + URL instead (CI / headless)
+osh login                 # SSH key auth → open browser with one-time code
+osh login --code          # print code + URL instead (CI / headless)
+osh login --password      # prompt for password + TOTP, then open browser
+osh login --password --code
 ```
+
+Password login requires an account password and enrolled TOTP (set once in the
+console under Security, or via the post-login setup gate). For hardware keys on
+SSH itself, use an `sk-*` identity (`-i ~/.ssh/id_ed25519_sk`); browser WebAuthn
+stays a console login method.
 
 ### Examples
 
 ```bash
 osh -c ./client.yaml -u admin --api-endpoint http://localhost:8080 login
+osh -u alice login --password
 osh -u alice --proxy bastion.example.com --proxy-port 2222 -i ~/.ssh/alice web-01
 ocp -u alice --insecure ./file web-01:/tmp/file
 oadmin -u admin --api-endpoint http://localhost:8080 requests list --json

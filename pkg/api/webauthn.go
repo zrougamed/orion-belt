@@ -287,11 +287,7 @@ func (s *APIServer) webauthnLoginFinish(c *gin.Context) {
 	resp := gin.H{
 		"session_token": rawToken,
 		"expires_at":    httpSession.ExpiresAt,
-		"user": gin.H{
-			"id": user.ID, "username": user.Username, "email": user.Email,
-			"is_admin": user.IsAdmin, "role": user.EffectiveRole(),
-			"mfa_enabled": user.MFAEnabled, "webauthn_enabled": user.WebAuthnEnabled,
-		},
+		"user":          enrichLoginUser(user),
 	}
 	if s.jwt != nil && s.jwt.Enabled() {
 		if token, exp, err := s.jwt.Issue(user.ID, user.Username, user.IsAdmin); err == nil {

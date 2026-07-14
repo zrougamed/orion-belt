@@ -41,6 +41,7 @@ type APIServer struct {
 	ca             *ca.Authority
 	challenges     *challengeStore
 	bootstrap      *bootstrapStore
+	passwordTickets *passwordTicketStore
 }
 
 // AgentCommander sends control commands to connected agents.
@@ -99,9 +100,10 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		recorder:       opt.Recorder,
 		webAuthn:       opt.WebAuthn,
 		terminalBridge: opt.TerminalBridge,
-		ca:             opt.CA,
-		challenges:     newChallengeStore(),
-		bootstrap:      newBootstrapStore(),
+		ca:              opt.CA,
+		challenges:      newChallengeStore(),
+		bootstrap:       newBootstrapStore(),
+		passwordTickets: newPasswordTicketStore(),
 	}
 
 	api.router.Use(gin.Recovery())
@@ -226,8 +228,9 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Browser session bootstrap (see `osh login`)
 		protected.POST("/auth/browser-bootstrap", s.issueBrowserBootstrap)
 
-		// MFA
+		// MFA + password+TOTP login
 		s.registerMFARoutes(protected)
+		s.registerPasswordRoutes(protected, public)
 
 		// WebAuthn / FIDO2, terminal, files, SSH keys
 		s.registerWebAuthnRoutes(protected, public)

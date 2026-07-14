@@ -153,12 +153,14 @@ type LoginResponse struct {
 	AccessToken  string    `json:"access_token,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         struct {
-		ID         string `json:"id"`
-		Username   string `json:"username"`
-		Email      string `json:"email"`
-		IsAdmin    bool   `json:"is_admin"`
-		Role       string `json:"role"`
-		MFAEnabled bool   `json:"mfa_enabled"`
+		ID              string `json:"id"`
+		Username        string `json:"username"`
+		Email           string `json:"email"`
+		IsAdmin         bool   `json:"is_admin"`
+		Role            string `json:"role"`
+		MFAEnabled      bool   `json:"mfa_enabled"`
+		PasswordSet     bool   `json:"password_set"`
+		MustSetPassword bool   `json:"must_set_password"`
 	} `json:"user"`
 }
 
@@ -228,6 +230,8 @@ func (s *APIServer) login(c *gin.Context) {
 	response.User.IsAdmin = user.IsAdmin || user.EffectiveRole() == common.RoleAdmin
 	response.User.Role = user.EffectiveRole()
 	response.User.MFAEnabled = user.MFAEnabled
+	response.User.PasswordSet = user.HasPassword()
+	response.User.MustSetPassword = !user.HasPassword()
 
 	if s.jwt != nil && s.jwt.Enabled() {
 		if token, exp, err := s.jwt.Issue(user.ID, user.Username, response.User.IsAdmin); err == nil {
@@ -286,15 +290,17 @@ func (s *APIServer) getCurrentUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":               user.ID,
-		"username":         user.Username,
-		"email":            user.Email,
-		"public_key":       user.PublicKey,
-		"is_admin":         user.IsAdmin || user.EffectiveRole() == common.RoleAdmin,
-		"role":             user.EffectiveRole(),
-		"mfa_enabled":      user.MFAEnabled,
-		"webauthn_enabled": user.WebAuthnEnabled,
-		"created_at":       user.CreatedAt,
-		"updated_at":       user.UpdatedAt,
+		"id":                user.ID,
+		"username":          user.Username,
+		"email":             user.Email,
+		"public_key":        user.PublicKey,
+		"is_admin":          user.IsAdmin || user.EffectiveRole() == common.RoleAdmin,
+		"role":              user.EffectiveRole(),
+		"mfa_enabled":       user.MFAEnabled,
+		"webauthn_enabled":  user.WebAuthnEnabled,
+		"password_set":      user.HasPassword(),
+		"must_set_password": !user.HasPassword(),
+		"created_at":        user.CreatedAt,
+		"updated_at":        user.UpdatedAt,
 	})
 }

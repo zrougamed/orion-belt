@@ -17,10 +17,11 @@ import (
 
 // APIClient handles REST API communication with the Orion-Belt server
 type APIClient struct {
-	baseURL    string
-	httpClient *http.Client
-	apiKey     string
-	logger     *common.Logger
+	baseURL      string
+	httpClient   *http.Client
+	apiKey       string
+	sessionToken string
+	logger       *common.Logger
 }
 
 // Machine represents a machine from the API
@@ -209,6 +210,8 @@ func (c *APIClient) doRequest(method, path string, body interface{}, result inte
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		req.Header.Set("X-API-Key", c.apiKey)
+	} else if c.sessionToken != "" {
+		req.Header.Set("X-Session-Token", c.sessionToken)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -391,6 +394,46 @@ func (c *APIClient) RevokeSSHCertificate(serial, reason string) error {
 type BootstrapCode struct {
 	Code      string    `json:"code"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// NewUnauthenticatedAPIClient builds a client that has not yet authenticated.
+// Use LoginWithPassword (or call authenticate via NewAPIClient) before protected routes.
+func NewUnauthenticatedAPIClient(baseURL string, logger *common.Logger) *APIClient {
+	return &APIClient{
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		logger:     logger,
+	}
+}
+
+// PasswordLoginResult is returned by LoginWithPassword.
+type PasswordLoginResult struct {
+	SessionToken string    `json:"session_token"`
+	AccessToken  string    `json:"access_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+// LoginWithPassword authenticates with username + password + TOTP in one shot
+// (CLI style). The client keeps the session token for subsequent API calls
+// such as RequestBrowserBootstrap.
+func (c *APIClient) LoginWithPassword(username, password, totpCode string) (*PasswordLoginResult, error) {
+	var resp PasswordLoginResult
+	body := map[string]string{
+		"username":  username,
+		"password":  password,
+		"totp_code": totpCode,
+	}
+	if err := c.doRequestNoAuth("POST", "/api/v1/public/login/password", body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.SessionToken == "" {
+		return nil, fmt.Errorf("no session returned from password login")
+	}
+	c.sessionToken = resp.SessionToken
+	if c.logger != nil {
+		c.logger.Info("Authenticated with password+TOTP (session expires %s)", resp.ExpiresAt.Format(time.RFC3339))
+	}
+	return &resp, nil
 }
 
 // RequestBrowserBootstrap asks the server for a one-time code the caller

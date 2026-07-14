@@ -130,6 +130,13 @@ func (s *APIServer) mfaDisable(c *gin.Context) {
 	}
 	_ = newHashes
 
+	if user.HasPassword() {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "cannot disable totp while a password is set; clear the password first",
+		})
+		return
+	}
+
 	user.MFAEnabled = false
 	user.TOTPSecret = ""
 	user.BackupCodesHash = ""

@@ -8,6 +8,8 @@ export type User = {
   role?: string;
   mfa_enabled?: boolean;
   webauthn_enabled?: boolean;
+  password_set?: boolean;
+  must_set_password?: boolean;
   public_key?: string;
 };
 

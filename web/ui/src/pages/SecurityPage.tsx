@@ -24,11 +24,14 @@ export function SecurityPage() {
   const { refreshMe, user } = useAuth();
   const manageHint = canApprove(user);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"mfa" | "webauthn" | "keys" | "api-keys">("mfa");
+  const [tab, setTab] = useState<"mfa" | "password" | "webauthn" | "keys" | "api-keys">("mfa");
   const [otpauth, setOtpauth] = useState("");
   const [secret, setSecret] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordTotp, setPasswordTotp] = useState("");
   const [keyName, setKeyName] = useState("");
   const [keyPub, setKeyPub] = useState("");
   const [waErr, setWaErr] = useState("");
@@ -90,6 +93,10 @@ export function SecurityPage() {
   }
 
   async function disableMfa() {
+    if (user?.password_set) {
+      toast("Clear your password first before disabling MFA", "err");
+      return;
+    }
     const c = prompt("Enter TOTP or backup code to disable MFA");
     if (!c) return;
     try {
@@ -97,6 +104,58 @@ export function SecurityPage() {
       toast("MFA disabled");
       await refreshMe();
       void qc.invalidateQueries({ queryKey: ["mfa"] });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  async function setAccountPassword(e: FormEvent) {
+    e.preventDefault();
+    if (newPassword.length < 10) {
+      toast("Password must be at least 10 characters", "err");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast("Passwords do not match", "err");
+      return;
+    }
+    try {
+      if (!(user?.mfa_enabled || mfaStatus.data?.mfa_enabled) && !secret) {
+        const data = await api<{ otpauth_url?: string; secret?: string; backup_codes?: string[] }>("/mfa/enroll", {
+          method: "POST",
+          body: "{}",
+        });
+        setOtpauth(data.otpauth_url || "");
+        setSecret(data.secret || "");
+        setBackupCodes(data.backup_codes || []);
+        toast("Scan the QR, then submit again with a TOTP code");
+        return;
+      }
+      await api("/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ password: newPassword, totp_code: passwordTotp.trim() }),
+      });
+      toast(user?.password_set ? "Password updated" : "Password set");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordTotp("");
+      setOtpauth("");
+      setSecret("");
+      setBackupCodes([]);
+      await refreshMe();
+      void qc.invalidateQueries({ queryKey: ["mfa"] });
+    } catch (ex) {
+      toast(ex instanceof Error ? ex.message : String(ex), "err");
+    }
+  }
+
+  async function clearAccountPassword() {
+    const c = prompt("Enter TOTP code to clear password login");
+    if (!c) return;
+    try {
+      await api("/auth/password", { method: "DELETE", body: JSON.stringify({ totp_code: c }) });
+      toast("Password cleared");
+      await refreshMe();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
     }
@@ -216,9 +275,17 @@ export function SecurityPage() {
         </div>
       </div>
       <div className="row" style={{ marginBottom: "1rem" }}>
-        {(["mfa", "webauthn", "keys", "api-keys"] as const).map((t) => (
+        {(["mfa", "password", "webauthn", "keys", "api-keys"] as const).map((t) => (
           <button key={t} type="button" className={`btn sm${tab === t ? "" : " secondary"}`} onClick={() => setTab(t)}>
-            {t === "mfa" ? "MFA" : t === "webauthn" ? "WebAuthn" : t === "keys" ? "SSH keys" : "API keys"}
+            {t === "mfa"
+              ? "MFA"
+              : t === "password"
+                ? "Password"
+                : t === "webauthn"
+                  ? "WebAuthn"
+                  : t === "keys"
+                    ? "SSH keys"
+                    : "API keys"}
           </button>
         ))}
       </div>
@@ -229,12 +296,19 @@ export function SecurityPage() {
           <p className="muted">
             Status: {mfaStatus.data?.mfa_enabled || user?.mfa_enabled ? "enabled" : "disabled"}
             {mfaStatus.data?.mfa_required ? " · organization requires MFA" : ""}
+            {user?.password_set ? " · required while a password is set" : ""}
           </p>
           <div className="row">
             <button type="button" className="btn sm" onClick={() => void enrollMfa()} disabled={!!(mfaStatus.data?.mfa_enabled || user?.mfa_enabled)}>
               Start enrollment
             </button>
-            <button type="button" className="btn danger sm" onClick={() => void disableMfa()} disabled={!(mfaStatus.data?.mfa_enabled || user?.mfa_enabled)}>
+            <button
+              type="button"
+              className="btn danger sm"
+              onClick={() => void disableMfa()}
+              disabled={!(mfaStatus.data?.mfa_enabled || user?.mfa_enabled) || !!user?.password_set}
+              title={user?.password_set ? "Clear password first" : undefined}
+            >
               Disable MFA
             </button>
           </div>
@@ -267,6 +341,75 @@ export function SecurityPage() {
               </form>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {tab === "password" ? (
+        <div className="card">
+          <h3>Password + TOTP login</h3>
+          <p className="muted">
+            Status: {user?.password_set ? "password set" : "no password"} · Console login always requires a TOTP
+            code after the password.
+          </p>
+          <form onSubmit={(e) => void setAccountPassword(e)}>
+            <label className="field">{user?.password_set ? "New password" : "Password"}</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={10}
+              required
+            />
+            <label className="field">Confirm</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={10}
+              required
+            />
+            {secret ? (
+              <div className="mfa-enroll" style={{ margin: "0.75rem 0" }}>
+                <p className="okmsg">Scan this authenticator QR, then enter a code below.</p>
+                {otpauth ? (
+                  <img
+                    className="mfa-qr"
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&ecc=M&data=${encodeURIComponent(otpauth)}`}
+                    alt="TOTP QR"
+                    width={180}
+                    height={180}
+                  />
+                ) : null}
+                <label className="field">Secret</label>
+                <input className="mono" readOnly value={secret} />
+                {backupCodes.length ? (
+                  <>
+                    <label className="field">Backup codes</label>
+                    <pre className="session">{backupCodes.join("\n")}</pre>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            <label className="field">Authenticator code</label>
+            <input
+              value={passwordTotp}
+              onChange={(e) => setPasswordTotp(e.target.value)}
+              autoComplete="one-time-code"
+              required
+            />
+            <div className="row" style={{ marginTop: "0.55rem" }}>
+              <button className="btn sm" type="submit">
+                {user?.password_set ? "Update password" : "Set password"}
+              </button>
+              {user?.password_set ? (
+                <button type="button" className="btn danger sm" onClick={() => void clearAccountPassword()}>
+                  Clear password
+                </button>
+              ) : null}
+            </div>
+          </form>
         </div>
       ) : null}
 

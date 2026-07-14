@@ -14,6 +14,8 @@ type LoginResp = {
   user: User;
 };
 
+type Method = "device" | "webauthn" | "password";
+
 function preparePublicKeyOptions(publicKey: Record<string, unknown>) {
   const pk = { ...publicKey } as Record<string, unknown>;
   if (typeof pk.challenge === "string") pk.challenge = b64urlToBuf(pk.challenge);
@@ -36,14 +38,16 @@ export function LoginPage() {
   const { toast } = useToast();
   const { theme, toggle } = useTheme();
   const [searchParams] = useSearchParams();
+  const [method, setMethod] = useState<Method>(searchParams.get("code") ? "device" : "password");
   const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState("");
+  const [ticket, setTicket] = useState("");
+  const [needTotp, setNeedTotp] = useState(false);
   const [code, setCode] = useState(searchParams.get("code") || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  // A CLI-issued sign-in code arrives via ?code= when the user follows the
-  // link `osh login` prints. Redeem it immediately rather than making them
-  // click twice.
   useEffect(() => {
     const fromURL = searchParams.get("code");
     if (fromURL) void redeemCode(fromURL);
@@ -115,6 +119,41 @@ export function LoginPage() {
     }
   }
 
+  async function onPassword(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const body: Record<string, string> = {
+        username: username.trim(),
+        password,
+      };
+      if (needTotp && ticket) {
+        body.ticket = ticket;
+        body.totp_code = totp.trim();
+      }
+      const data = await api<LoginResp & { need_totp?: boolean; ticket?: string }>("/public/login/password", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (data.need_totp && data.ticket) {
+        setTicket(data.ticket);
+        setNeedTotp(true);
+        toast("Enter your authenticator code");
+        return;
+      }
+      if (!data.session_token || !data.user) {
+        throw new Error("Unexpected login response");
+      }
+      login(data.session_token, data.user, data.access_token || "");
+      toast("Signed in");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ver = version?.display || version?.version || "…";
 
   return (
@@ -122,7 +161,7 @@ export function LoginPage() {
       <div className="login-theme-toggle">
         <ThemeToggle theme={theme} onToggle={toggle} />
       </div>
-      <form className="card login-panel" onSubmit={onSubmitCode}>
+      <div className="card login-panel">
         <h1 className="login-brand">
           Orion <em>Belt</em>
         </h1>
@@ -131,31 +170,95 @@ export function LoginPage() {
           {ver}
         </div>
 
-        <label className="field">Username</label>
-        <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-
-        <button className="btn block" type="button" style={{ marginTop: "0.75rem" }} disabled={busy} onClick={() => void onWebAuthn()}>
-          Sign in with security key
-        </button>
-
-        <div className="muted" style={{ margin: "1rem 0 0.5rem", fontSize: "0.8rem" }}>
-          Or run <code>osh login</code> on your laptop and paste the code:
+        <div className="row" style={{ marginBottom: "1rem", flexWrap: "wrap", gap: "0.4rem" }}>
+          {(
+            [
+              ["password", "Password"],
+              ["webauthn", "Security key"],
+              ["device", "Device code"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`btn sm${method === id ? "" : " secondary"}`}
+              onClick={() => {
+                setMethod(id);
+                setError("");
+                setNeedTotp(false);
+                setTicket("");
+                setTotp("");
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <label className="field">Sign-in code</label>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="e.g. 7K4M9PQRXZ"
-          autoComplete="off"
-          className="mono"
-        />
-        {error ? <div className="err">{error}</div> : null}
-        <div className="row" style={{ marginTop: "1rem" }}>
-          <button className="btn secondary block" type="submit" disabled={busy || !code.trim()}>
-            Redeem code
+
+        {method !== "device" ? (
+          <>
+            <label className="field">Username</label>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+          </>
+        ) : null}
+
+        {method === "webauthn" ? (
+          <button className="btn block" type="button" style={{ marginTop: "0.75rem" }} disabled={busy} onClick={() => void onWebAuthn()}>
+            Sign in with security key
           </button>
-        </div>
-      </form>
+        ) : null}
+
+        {method === "password" ? (
+          <form onSubmit={(e) => void onPassword(e)}>
+            <label className="field">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              disabled={needTotp}
+            />
+            {needTotp ? (
+              <>
+                <label className="field">Authenticator code</label>
+                <input
+                  value={totp}
+                  onChange={(e) => setTotp(e.target.value)}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  required
+                  autoFocus
+                />
+              </>
+            ) : null}
+            <button className="btn block" type="submit" disabled={busy} style={{ marginTop: "0.85rem" }}>
+              {needTotp ? "Verify and sign in" : "Continue"}
+            </button>
+          </form>
+        ) : null}
+
+        {method === "device" ? (
+          <form onSubmit={(e) => void onSubmitCode(e)}>
+            <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+              On your laptop run <code>osh login</code>, then paste the code (or open the printed URL).
+            </p>
+            <label className="field">Sign-in code</label>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. 7K4M9PQRXZ"
+              autoComplete="off"
+              className="mono"
+            />
+            <button className="btn block" type="submit" disabled={busy || !code.trim()} style={{ marginTop: "0.85rem" }}>
+              Redeem code
+            </button>
+          </form>
+        ) : null}
+
+        {error ? <div className="err">{error}</div> : null}
+      </div>
     </div>
   );
 }

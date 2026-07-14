@@ -144,6 +144,8 @@ func (s *APIServer) redeemBrowserBootstrap(c *gin.Context) {
 	response.User.IsAdmin = user.IsAdmin || user.EffectiveRole() == common.RoleAdmin
 	response.User.Role = user.EffectiveRole()
 	response.User.MFAEnabled = user.MFAEnabled
+	response.User.PasswordSet = user.HasPassword()
+	response.User.MustSetPassword = !user.HasPassword()
 
 	if s.jwt != nil && s.jwt.Enabled() {
 		if token, exp, err := s.jwt.Issue(user.ID, user.Username, response.User.IsAdmin); err == nil {

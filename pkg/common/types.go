@@ -20,8 +20,14 @@ type User struct {
 	WebAuthnEnabled bool      `json:"webauthn_enabled"`
 	TOTPSecret      string    `json:"-"`
 	BackupCodesHash string    `json:"-"`
+	PasswordHash    string    `json:"-"` // argon2id; empty = no password login
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// HasPassword reports whether a password has been set for password+TOTP login.
+func (u *User) HasPassword() bool {
+	return u != nil && u.PasswordHash != ""
 }
 
 // Role constants
