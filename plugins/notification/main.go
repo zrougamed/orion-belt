@@ -148,9 +148,14 @@ func (p *SlackPlugin) onAccessRequest(hookCtx *plugin.HookContext) error {
 }
 
 func (p *SlackPlugin) onAccessGranted(hookCtx *plugin.HookContext) error {
-	message := fmt.Sprintf("*Access Granted*\nUser: `%s`\nMachine: `%s`",
+	ttl := "unlimited"
+	if d, ok := hookCtx.Data["duration"].(int); ok && d > 0 {
+		ttl = (time.Duration(d) * time.Second).String()
+	}
+	message := fmt.Sprintf("*Access Granted*\nUser: `%s`\nMachine: `%s`\nTTL: %s",
 		hookCtx.UserID,
 		hookCtx.MachineID,
+		ttl,
 	)
 	return p.sendMessage(message, "good")
 }

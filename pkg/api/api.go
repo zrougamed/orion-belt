@@ -12,6 +12,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/zrougamed/orion-belt/docs/openapi"
 	"github.com/zrougamed/orion-belt/pkg/auth"
+	"github.com/zrougamed/orion-belt/pkg/ca"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
 	"github.com/zrougamed/orion-belt/pkg/metrics"
@@ -19,6 +20,7 @@ import (
 	"github.com/zrougamed/orion-belt/pkg/recording"
 	"github.com/zrougamed/orion-belt/pkg/version"
 	"github.com/zrougamed/orion-belt/web"
+	"golang.org/x/crypto/ssh"
 )
 
 // APIServer provides REST API endpoints
@@ -36,6 +38,9 @@ type APIServer struct {
 	recorder       *recording.Recorder
 	webAuthn       *webauthn.WebAuthn
 	terminalBridge TerminalBridge
+	ca             *ca.Authority
+	challenges     *challengeStore
+	bootstrap      *bootstrapStore
 }
 
 // AgentCommander sends control commands to connected agents.
@@ -58,6 +63,7 @@ type Options struct {
 	WebAuthn           *webauthn.WebAuthn
 	TerminalBridge     TerminalBridge
 	RateLimitPerMinute int
+	CA                 *ca.Authority
 }
 
 // NewAPIServer creates a new API server
@@ -93,6 +99,9 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 		recorder:       opt.Recorder,
 		webAuthn:       opt.WebAuthn,
 		terminalBridge: opt.TerminalBridge,
+		ca:             opt.CA,
+		challenges:     newChallengeStore(),
+		bootstrap:      newBootstrapStore(),
 	}
 
 	api.router.Use(gin.Recovery())
@@ -153,6 +162,8 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 	{
 		public.POST("/register/agent", s.registerAgent)
 		public.POST("/register/client", s.registerClient)
+		public.POST("/auth/challenge", s.issueChallenge)
+		public.POST("/auth/browser-bootstrap/redeem", s.redeemBrowserBootstrap)
 		public.POST("/login", s.login)
 		public.POST("/login/key", s.loginWithKey)
 		public.POST("/login/token", s.loginJWT)
@@ -191,7 +202,6 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 
 		// Access request management
 		protected.GET("/access-requests", s.listAccessRequests)
-		protected.GET("/access-requests/pending", s.listPendingAccessRequests)
 		protected.POST("/access-requests", s.createAccessRequest)
 		protected.GET("/access-requests/:id", s.getAccessRequest)
 
@@ -204,8 +214,17 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
 
+		// Notifications (in-app, scoped to the authenticated user)
+		protected.GET("/notifications", s.listNotifications)
+		protected.GET("/notifications/unread-count", s.unreadNotificationCount)
+		protected.POST("/notifications/:id/read", s.markNotificationRead)
+		protected.POST("/notifications/read-all", s.markAllNotificationsRead)
+
 		// First-run / operator setup checklist
 		protected.GET("/setup/status", s.setupStatus)
+
+		// Browser session bootstrap (see `osh login`)
+		protected.POST("/auth/browser-bootstrap", s.issueBrowserBootstrap)
 
 		// MFA
 		s.registerMFARoutes(protected)
@@ -235,6 +254,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		admin.DELETE("/permissions/:id", s.revokePermission)
 
 		// Access request management
+		admin.GET("/access-requests/pending", s.listPendingAccessRequests)
 		admin.POST("/access-requests/:id/approve", s.approveAccessRequest)
 		admin.POST("/access-requests/:id/reject", s.rejectAccessRequest)
 
@@ -250,6 +270,10 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		admin.POST("/agents/:machine_id/disconnect", s.disconnectAgent)
 		admin.POST("/agents/install-script", s.generateAgentInstallScript)
 	}
+
+	// SSH Certificate Authority (cert issuance/trust lookup on `protected`,
+	// lifecycle management on `admin`)
+	s.registerSSHCARoutes(protected, admin)
 }
 
 // RegisterAgentRequest represents an agent registration request
@@ -263,16 +287,21 @@ type RegisterAgentRequest struct {
 
 // RegisterAgentResponse represents an agent registration response
 type RegisterAgentResponse struct {
-	UserID    string `json:"user_id"`
-	MachineID string `json:"machine_id"`
-	Message   string `json:"message"`
+	UserID           string `json:"user_id,omitempty"`
+	MachineID        string `json:"machine_id"`
+	Message          string `json:"message"`
+	HostCertificate  string `json:"host_certificate,omitempty"`
+	HostCAPublicKey  string `json:"host_ca_public_key,omitempty"`
 }
 
 // LoginWithKeyRequest represents an API key login request
 type LoginWithKeyRequest struct {
-	Username  string `json:"username" binding:"required"`
-	PublicKey string `json:"public_key" binding:"required"`
-	TOTPCode  string `json:"totp_code,omitempty"`
+	Username        string `json:"username" binding:"required"`
+	PublicKey       string `json:"public_key" binding:"required"`
+	Challenge       string `json:"challenge" binding:"required"`
+	SignatureFormat string `json:"signature_format" binding:"required"`
+	Signature       string `json:"signature" binding:"required"`
+	TOTPCode        string `json:"totp_code,omitempty"`
 }
 
 // LoginWithKeyResponse represents an API key login response
@@ -317,9 +346,18 @@ func (s *APIServer) loginWithKey(c *gin.Context) {
 	// Verify the public key matches what's in the database
 	// The public key should be in OpenSSH format
 	if normalizeKey(user.PublicKey) != normalizeKey(req.PublicKey) {
-		s.logger.Info("user %s", user.PublicKey)
-		s.logger.Info("req %s", req.PublicKey)
 		s.logger.Warn("Public key mismatch for user: %s", req.Username)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+
+	presented, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public_key"})
+		return
+	}
+	if err := s.verifyPossession(req.Username, req.Challenge, req.SignatureFormat, req.Signature, presented); err != nil {
+		s.logger.Warn("Proof-of-possession failed for user %s: %v", req.Username, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -366,14 +404,45 @@ func (s *APIServer) registerAgent(c *gin.Context) {
 
 	ctx := context.Background()
 
-	// Check if agent already exists
 	existingMachine, _ := s.store.GetMachineByName(ctx, req.Name)
 	if existingMachine != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "agent already registered"})
 		return
 	}
 
-	// Create user account for agent
+	machine := common.NewMachine(req.Name, req.Hostname, req.Port, req.Tags)
+
+	if s.ca != nil {
+		if err := s.store.CreateMachine(ctx, machine); err != nil {
+			s.logger.Error("Failed to create machine: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))
+		if err != nil {
+			_ = s.store.DeleteMachine(ctx, machine.ID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public_key"})
+			return
+		}
+		hostCert, err := s.ca.IssueHostCert(ctx, machine.ID, []string{req.Name}, pub, s.ca.HostCertTTL())
+		if err != nil {
+			_ = s.store.DeleteMachine(ctx, machine.ID)
+			s.logger.Error("Failed to issue agent host certificate: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
+			return
+		}
+		_, hostCA := s.ca.ExportPublicKeys()
+		s.logger.Info("Agent registered with Host CA: %s (machine_id=%s)", req.Name, machine.ID)
+		c.JSON(http.StatusCreated, RegisterAgentResponse{
+			MachineID:       machine.ID,
+			HostCertificate: string(ssh.MarshalAuthorizedKey(hostCert)),
+			HostCAPublicKey: hostCA,
+			Message:         "Agent registered successfully (host certificate issued)",
+		})
+		return
+	}
+
+	// Legacy: synthetic agent user + machine
 	agentUser := common.NewUser(req.Name, fmt.Sprintf("%s@agent.orion-belt", req.Name), req.PublicKey, false)
 	if err := s.store.CreateUser(ctx, agentUser); err != nil {
 		s.logger.Error("Failed to create agent user: %v", err)
@@ -381,12 +450,9 @@ func (s *APIServer) registerAgent(c *gin.Context) {
 		return
 	}
 
-	// Create machine record
-	machine := common.NewMachine(req.Name, req.Hostname, req.Port, req.Tags)
 	machine.AgentID = agentUser.ID
 	if err := s.store.CreateMachine(ctx, machine); err != nil {
-		// Rollback user creation
-		s.store.DeleteUser(ctx, agentUser.ID)
+		_ = s.store.DeleteUser(ctx, agentUser.ID)
 		s.logger.Error("Failed to create machine: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register agent"})
 		return
@@ -448,12 +514,17 @@ func (s *APIServer) registerClient(c *gin.Context) {
 	})
 }
 
+// DefaultAccessRequestTTLSeconds is the JIT access TTL used when a request
+// doesn't specify a duration: 30 minutes. A duration of 0 means unlimited.
+const DefaultAccessRequestTTLSeconds = 30 * 60
+
 // CreateAccessRequestRequest represents an access request creation
 type CreateAccessRequestRequest struct {
 	MachineID   string   `json:"machine_id" binding:"required"`
 	RemoteUsers []string `json:"remote_users" binding:"required"`
 	Reason      string   `json:"reason" binding:"required"`
-	Duration    int      `json:"duration" binding:"required"` // in seconds
+	// Duration in seconds. Omitted -> DefaultAccessRequestTTLSeconds (30m). 0 -> unlimited.
+	Duration *int `json:"duration"`
 }
 
 // createAccessRequest handles access request creation
@@ -462,6 +533,15 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	duration := DefaultAccessRequestTTLSeconds
+	if req.Duration != nil {
+		if *req.Duration < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "duration must be >= 0 (0 = unlimited)"})
+			return
+		}
+		duration = *req.Duration
 	}
 
 	// Get user ID from context (set by auth middleware)
@@ -473,7 +553,7 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 		req.MachineID,
 		req.RemoteUsers,
 		req.Reason,
-		req.Duration,
+		duration,
 	)
 
 	if err := s.store.CreateAccessRequest(ctx, accessReq); err != nil {
@@ -490,7 +570,7 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 			MachineID: req.MachineID,
 			Data: map[string]interface{}{
 				"reason":     req.Reason,
-				"duration":   req.Duration,
+				"duration":   duration,
 				"request_id": accessReq.ID,
 			},
 		})
@@ -500,7 +580,7 @@ func (s *APIServer) createAccessRequest(c *gin.Context) {
 		accessReq.ID, userID, req.MachineID)
 	s.recordAudit(c, "access.request", "access_request:"+accessReq.ID, map[string]interface{}{
 		"machine_id": req.MachineID,
-		"duration":   req.Duration,
+		"duration":   duration,
 	})
 
 	c.JSON(http.StatusCreated, accessReq)
@@ -521,6 +601,13 @@ func (s *APIServer) getAccessRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get access request"})
 		return
 	}
+	if !isPrivilegedViewer(c) {
+		userID, _ := c.Get("user_id")
+		if uid, _ := userID.(string); request.UserID != uid {
+			c.JSON(http.StatusNotFound, gin.H{"error": "access request not found"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, request)
 }
@@ -528,6 +615,9 @@ func (s *APIServer) getAccessRequest(c *gin.Context) {
 // ApproveAccessRequestRequest represents an approval request
 type ApproveAccessRequestRequest struct {
 	ReviewerID string `json:"reviewer_id"` // optional; defaults to authenticated user
+	// Duration lets the approver override the requester's TTL (seconds).
+	// 0 = unlimited. Omitted = keep the originally requested duration.
+	Duration *int `json:"duration"`
 }
 
 // approveAccessRequest handles access request approval
@@ -547,10 +637,14 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "reviewer_id required"})
 		return
 	}
+	if req.Duration != nil && *req.Duration < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "duration must be >= 0 (0 = unlimited)"})
+		return
+	}
 
 	ctx := c.Request.Context()
 
-	if err := s.authService.ApproveAccessRequest(ctx, requestID, reviewerID); err != nil {
+	if err := s.authService.ApproveAccessRequestWithTTL(ctx, requestID, reviewerID, req.Duration); err != nil {
 		s.logger.Error("Failed to approve access request: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -566,7 +660,10 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 	s.recordAudit(c, "access.approve", "access_request:"+requestID, map[string]interface{}{
 		"user_id":    accessReq.UserID,
 		"machine_id": accessReq.MachineID,
+		"duration":   accessReq.Duration,
 	})
+
+	s.notifyAccessRequestApproved(ctx, accessReq)
 
 	if s.pluginManager != nil {
 		_ = s.pluginManager.TriggerHook(ctx, plugin.HookAccessGranted, &plugin.HookContext{
@@ -576,6 +673,7 @@ func (s *APIServer) approveAccessRequest(c *gin.Context) {
 				"request_id":  requestID,
 				"reviewer_id": reviewerID,
 				"status":      "approved",
+				"duration":    accessReq.Duration,
 			},
 		})
 	}
@@ -643,13 +741,28 @@ func (s *APIServer) listPendingAccessRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, requests)
 }
 
-// listAccessRequests lists access requests with pagination
+// listAccessRequests lists access requests with pagination. Privileged
+// roles (admin/operator/auditor) see every request; a plain user only sees
+// their own request history (all statuses).
 func (s *APIServer) listAccessRequests(c *gin.Context) {
 	ctx := context.Background()
-	requests, err := s.store.ListPendingAccessRequests(ctx)
+	var (
+		requests []*common.AccessRequest
+		err      error
+	)
+	if isPrivilegedViewer(c) {
+		requests, err = s.store.ListAllAccessRequests(ctx, 200, 0)
+	} else {
+		userID, _ := c.Get("user_id")
+		uid, _ := userID.(string)
+		requests, err = s.store.ListUserAccessRequests(ctx, uid, 200, 0)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if requests == nil {
+		requests = []*common.AccessRequest{}
 	}
 	c.JSON(http.StatusOK, requests)
 }
@@ -1029,9 +1142,24 @@ func (s *APIServer) revokePermission(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "permission revoked"})
 }
 
+// filterSessionsByUser keeps only sessions owned by userID (used to scope
+// non-privileged callers to their own session playback/history).
+func filterSessionsByUser(sessions []*common.Session, userID string) []*common.Session {
+	out := sessions[:0]
+	for _, sess := range sessions {
+		if sess.UserID == userID {
+			out = append(out, sess)
+		}
+	}
+	return out
+}
+
 func (s *APIServer) listSessions(c *gin.Context) {
 	ctx := c.Request.Context()
 	status := strings.TrimSpace(c.Query("status"))
+	privileged := isPrivilegedViewer(c)
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(string)
 
 	var (
 		sessions []*common.Session
@@ -1041,7 +1169,11 @@ func (s *APIServer) listSessions(c *gin.Context) {
 	case "active":
 		sessions, err = s.store.ListActiveSessions(ctx)
 	default:
-		sessions, err = s.store.ListSessions(ctx, 200, 0)
+		if privileged {
+			sessions, err = s.store.ListSessions(ctx, 200, 0)
+		} else {
+			sessions, err = s.store.ListUserSessions(ctx, uid, 200, 0)
+		}
 		if err == nil && status != "" {
 			filtered := sessions[:0]
 			for _, sess := range sessions {
@@ -1056,6 +1188,9 @@ func (s *APIServer) listSessions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !privileged {
+		sessions = filterSessionsByUser(sessions, uid)
+	}
 	if sessions == nil {
 		sessions = []*common.Session{}
 	}
@@ -1068,6 +1203,11 @@ func (s *APIServer) listActiveSessions(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if !isPrivilegedViewer(c) {
+		userID, _ := c.Get("user_id")
+		uid, _ := userID.(string)
+		sessions = filterSessionsByUser(sessions, uid)
 	}
 	if sessions == nil {
 		sessions = []*common.Session{}
@@ -1082,6 +1222,13 @@ func (s *APIServer) getSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
+	if !isPrivilegedViewer(c) {
+		userID, _ := c.Get("user_id")
+		if uid, _ := userID.(string); session.UserID != uid {
+			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			return
+		}
+	}
 	c.JSON(http.StatusOK, session)
 }
 
@@ -1091,6 +1238,13 @@ func (s *APIServer) getSessionContent(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
+	}
+	if !isPrivilegedViewer(c) {
+		userID, _ := c.Get("user_id")
+		if uid, _ := userID.(string); session.UserID != uid {
+			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			return
+		}
 	}
 
 	if session.RecordingPath == "" {
@@ -1137,7 +1291,12 @@ func (s *APIServer) listAuditLogs(c *gin.Context) {
 			}
 		}
 	}
-	logs, err := s.store.ListAuditLogs(ctx, limit, 0, nil)
+	var filters map[string]interface{}
+	if !isPrivilegedViewer(c) {
+		userID, _ := c.Get("user_id")
+		filters = map[string]interface{}{"user_id": userID}
+	}
+	logs, err := s.store.ListAuditLogs(ctx, limit, 0, filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

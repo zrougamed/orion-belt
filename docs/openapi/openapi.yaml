@@ -11,10 +11,14 @@ info:
     2. `X-Session-Token` header, `session_token` cookie, or `token` / `access_token` query (WebSocket)
     3. `Authorization: Bearer <JWT>`
 
+    Pubkey login (`/public/login*`) requires a prior `POST /public/auth/challenge` and a signature proving possession of the private key.
+
+    Optional **SSH CA** endpoints issue short-lived User certs and expose Host CA trust material (`docs/SSH_CA.md`).
+
     **Admin routes** (`/api/v1/admin/*`) additionally require role `admin` or `operator` (or `is_admin`).
 
     **Rate limit:** protected (non-admin) routes — default 600 req/min per user (`auth.rate_limit_per_minute`).
-  version: "0.6.0"
+  version: "0.8.0"
   contact:
     name: Orion Belt Maintainers
     url: https://github.com/zrougamed/orion-belt
@@ -51,6 +55,8 @@ tags:
   - name: Terminal
   - name: Files
   - name: SSH Keys
+  - name: SSH CA
+  - name: Notifications
 
 paths:
   /health:
@@ -92,10 +98,39 @@ paths:
               schema:
                 type: string
 
+  /api/v1/public/auth/challenge:
+    post:
+      tags: [Auth]
+      summary: Issue a single-use login challenge
+      description: |
+        First step of SSH-pubkey login. Sign the returned `challenge` bytes with the
+        private key corresponding to `public_key`, then pass `challenge`,
+        `signature_format`, and `signature` on `/login`, `/login/key`, or `/login/token`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+      responses:
+        "200":
+          description: Challenge issued (≈60s TTL, single-use)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge: { type: string }
+
   /api/v1/public/login:
     post:
       tags: [Auth]
       summary: Login with SSH public key (session + optional JWT)
+      description: Requires a fresh challenge + signature proving possession of the private key.
       security: []
       requestBody:
         required: true
@@ -125,6 +160,7 @@ paths:
     post:
       tags: [Auth]
       summary: Login exchanging pubkey for short-lived API key
+      description: Requires a fresh challenge + signature proving possession of the private key.
       security: []
       requestBody:
         required: true
@@ -148,6 +184,7 @@ paths:
     post:
       tags: [Auth]
       summary: Login exchanging pubkey for JWT only
+      description: Requires a fresh challenge + signature proving possession of the private key.
       security: []
       requestBody:
         required: true
@@ -168,6 +205,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/v1/public/auth/browser-bootstrap/redeem:
+    post:
+      tags: [Auth]
+      summary: Redeem a one-time browser bootstrap code
+      description: |
+        Exchanges a short-lived code (from `POST /auth/browser-bootstrap`) for a
+        browser session cookie/token so the web console can start without pasting keys.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          description: Rate limited
 
   /api/v1/public/register/agent:
     post:
@@ -762,10 +828,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/AccessRequest"
 
-  /api/v1/access-requests/pending:
+  /api/v1/admin/access-requests/pending:
     get:
       tags: [Access Requests]
-      summary: List pending access requests
+      summary: List pending access requests (admin/operator only)
       responses:
         "200":
           description: Pending requests
@@ -1282,6 +1348,196 @@ paths:
               schema:
                 $ref: "#/components/schemas/Message"
 
+  /api/v1/auth/browser-bootstrap:
+    post:
+      tags: [Auth]
+      summary: Issue a one-time browser bootstrap code
+      description: |
+        Authenticated CLI users call this to get a short-lived code that the browser
+        redeems via `POST /public/auth/browser-bootstrap/redeem`.
+      responses:
+        "200":
+          description: Bootstrap code issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string }
+                  expires_at: { type: string, format: date-time }
+
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications for the current user
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: Newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Unread notification count (bell badge)
+      responses:
+        "200":
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread: { type: integer }
+
+  /api/v1/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark one notification as read
+      parameters:
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: Marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /api/v1/ssh-cert/ca:
+    get:
+      tags: [SSH CA]
+      summary: Discover trusted User/Host CA public keys
+      description: |
+        Any authenticated client. Returns `{enabled:false}` when `ssh_ca.enabled` is off.
+        See `docs/SSH_CA.md`.
+      responses:
+        "200":
+          description: CA trust material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CAExport"
+
+  /api/v1/ssh-cert:
+    post:
+      tags: [SSH CA]
+      summary: Issue a short-lived User certificate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueUserCertRequest"
+      responses:
+        "200":
+          description: Certificate issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueUserCertResponse"
+        "404":
+          description: SSH CA not enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/admin/ca/export:
+    get:
+      tags: [SSH CA]
+      summary: Export User/Host CA public keys (admin)
+      responses:
+        "200":
+          description: Same payload as GET /ssh-cert/ca
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CAExport"
+
+  /api/v1/admin/ssh-certificates:
+    get:
+      tags: [SSH CA]
+      summary: List issued SSH certificates
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 500 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: type
+          in: query
+          schema: { type: string, enum: [user, host] }
+      responses:
+        "200":
+          description: Certificate lifecycle records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  certificates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SSHCertificateRecord"
+
+  /api/v1/admin/ssh-certificates/{serial}/revoke:
+    post:
+      tags: [SSH CA]
+      summary: Revoke an issued certificate by serial
+      parameters:
+        - name: serial
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          description: Unknown serial
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -1396,11 +1652,33 @@ components:
           $ref: "#/components/schemas/VersionInfo"
     LoginRequest:
       type: object
-      required: [username, public_key]
+      required: [username, public_key, challenge, signature_format, signature]
       properties:
         username: { type: string }
         public_key: { type: string }
+        challenge:
+          type: string
+          description: From POST /public/auth/challenge
+        signature_format:
+          type: string
+          description: SSH signature format (e.g. ssh-ed25519)
+        signature:
+          type: string
+          description: Base64 signature of the challenge bytes
         totp_code: { type: string, description: Required when MFA enrolled }
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        type: { type: string, example: access_request.approved }
+        title: { type: string }
+        body: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+        read_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
     LoginResponse:
       type: object
       properties:
@@ -1438,9 +1716,53 @@ components:
     RegisterAgentResponse:
       type: object
       properties:
-        user_id: { type: string }
+        user_id:
+          type: string
+          description: Synthetic agent user ID (legacy registration when SSH CA is off)
         machine_id: { type: string }
         message: { type: string }
+        host_certificate:
+          type: string
+          description: Host-CA-signed cert (authorized_keys line) when SSH CA is enabled
+        host_ca_public_key:
+          type: string
+          description: Host CA public key for agent config when SSH CA is enabled
+    CAExport:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        user_ca: { type: string }
+        host_ca: { type: string }
+    IssueUserCertRequest:
+      type: object
+      required: [public_key]
+      properties:
+        public_key:
+          type: string
+          description: authorized_keys-format public key line
+        ttl_hours:
+          type: integer
+          description: 0 = server default (ssh_ca.user_cert_ttl_hours)
+    IssueUserCertResponse:
+      type: object
+      properties:
+        certificate: { type: string }
+        serial: { type: string }
+        expires_at: { type: string, format: date-time }
+    SSHCertificateRecord:
+      type: object
+      properties:
+        serial: { type: string }
+        type: { type: string, enum: [user, host] }
+        subject: { type: string }
+        principals:
+          type: array
+          items: { type: string }
+        issued_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        revoked: { type: boolean }
+        revoked_at: { type: string, format: date-time }
+        revoke_reason: { type: string }
     AgentInstallScriptRequest:
       type: object
       required: [name, os, gateway_host, package_base_url]

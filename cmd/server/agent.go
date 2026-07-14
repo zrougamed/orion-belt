@@ -8,8 +8,10 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/zrougamed/orion-belt/pkg/ca"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/database"
+	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -55,15 +57,14 @@ func init() {
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentDeleteCmd)
 
-	// Register flags
 	agentRegisterCmd.Flags().StringVarP(&agentName, "name", "n", "", "agent name (required)")
 	agentRegisterCmd.Flags().StringVarP(&agentKey, "key", "k", "", "agent SSH public key (required)")
 	agentRegisterCmd.Flags().StringVarP(&agentHostname, "hostname", "H", "", "agent hostname (defaults to name)")
 	agentRegisterCmd.Flags().IntVarP(&agentPort, "port", "p", 22, "SSH port on the agent machine")
 	agentRegisterCmd.Flags().StringSliceVarP(&agentTags, "tags", "t", []string{}, "comma-separated key=value tags")
 
-	agentRegisterCmd.MarkFlagRequired("name")
-	agentRegisterCmd.MarkFlagRequired("key")
+	_ = agentRegisterCmd.MarkFlagRequired("name")
+	_ = agentRegisterCmd.MarkFlagRequired("key")
 }
 
 func runAgentRegister(cmd *cobra.Command, args []string) {
@@ -73,7 +74,6 @@ func runAgentRegister(cmd *cobra.Command, args []string) {
 		logger.Fatal("Failed to load config: %v", err)
 	}
 
-	// Initialize database
 	store, err := database.NewStore(config.Database.Driver, config.Database.ConnectionString)
 	if err != nil {
 		logger.Fatal("Failed to create database store: %v", err)
@@ -85,17 +85,14 @@ func runAgentRegister(cmd *cobra.Command, args []string) {
 	}
 	defer store.Close()
 
-	// Validate public key format
 	if !strings.HasPrefix(agentKey, "ssh-") {
 		logger.Fatal("Invalid SSH public key format. Key must start with ssh-rsa, ssh-ed25519, etc.")
 	}
 
-	// Use name as hostname if not provided
 	if agentHostname == "" {
 		agentHostname = agentName
 	}
 
-	// Parse tags
 	tagMap := make(map[string]string)
 	for _, tag := range agentTags {
 		parts := strings.SplitN(tag, "=", 2)
@@ -104,24 +101,56 @@ func runAgentRegister(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Check if agent already exists
 	existingMachine, _ := store.GetMachineByName(ctx, agentName)
 	if existingMachine != nil {
 		logger.Fatal("Agent with name '%s' already exists", agentName)
 	}
 
-	// Create user account for agent
+	authority, err := ca.New(config.SSHCA, store, logger)
+	if err != nil {
+		logger.Fatal("SSH CA: %v", err)
+	}
+
+	machine := common.NewMachine(agentName, agentHostname, agentPort, tagMap)
+
+	if authority != nil {
+		// SSH CA path: machine-only identity; Host-CA cert authenticates the agent.
+		if err := store.CreateMachine(ctx, machine); err != nil {
+			logger.Fatal("Failed to create machine: %v", err)
+		}
+		pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(agentKey))
+		if err != nil {
+			_ = store.DeleteMachine(ctx, machine.ID)
+			logger.Fatal("Invalid agent public key: %v", err)
+		}
+		hostCert, err := authority.IssueHostCert(ctx, machine.ID, []string{agentName}, pub, authority.HostCertTTL())
+		if err != nil {
+			_ = store.DeleteMachine(ctx, machine.ID)
+			logger.Fatal("Failed to issue agent host certificate: %v", err)
+		}
+		_, hostCALine := authority.ExportPublicKeys()
+
+		logger.Info("Agent registered with Host CA certificate:")
+		fmt.Printf("  Name:       %s\n", agentName)
+		fmt.Printf("  Machine ID: %s\n", machine.ID)
+		fmt.Printf("  Hostname:   %s\n", agentHostname)
+		fmt.Printf("  Port:       %d\n", agentPort)
+		fmt.Printf("\nWrite the agent private key to auth.key_file and place this cert beside it as <key_file>-cert.pub:\n\n")
+		fmt.Print(string(ssh.MarshalAuthorizedKey(hostCert)))
+		fmt.Printf("\nAlso set auth.host_ca_public_key in agent.yaml to:\n  %s\n", strings.TrimSpace(hostCALine))
+		fmt.Printf("\nThen start: orion-belt-agent -c /path/to/agent.yaml\n")
+		return
+	}
+
+	// Legacy: synthetic agent user + machine
 	agentUser := common.NewUser(agentName, fmt.Sprintf("%s@agent.orion-belt", agentName), agentKey, false)
 	if err := store.CreateUser(ctx, agentUser); err != nil {
 		logger.Fatal("Failed to create agent user: %v", err)
 	}
 
-	// Create machine record
-	machine := common.NewMachine(agentName, agentHostname, agentPort, tagMap)
 	machine.AgentID = agentUser.ID
 	if err := store.CreateMachine(ctx, machine); err != nil {
-		// Rollback user creation
-		store.DeleteUser(ctx, agentUser.ID)
+		_ = store.DeleteUser(ctx, agentUser.ID)
 		logger.Fatal("Failed to create machine: %v", err)
 	}
 
@@ -155,7 +184,6 @@ func runAgentList(cmd *cobra.Command, args []string) {
 		logger.Fatal("Failed to load config: %v", err)
 	}
 
-	// Initialize database
 	store, err := database.NewStore(config.Database.Driver, config.Database.ConnectionString)
 	if err != nil {
 		logger.Fatal("Failed to create database store: %v", err)
@@ -167,7 +195,6 @@ func runAgentList(cmd *cobra.Command, args []string) {
 	}
 	defer store.Close()
 
-	// List all machines
 	machines, err := store.ListMachines(ctx, 1000, 0)
 	if err != nil {
 		logger.Fatal("Failed to list machines: %v", err)
@@ -178,7 +205,6 @@ func runAgentList(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Print table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tHOSTNAME\tPORT\tSTATUS\tLAST SEEN\tTAGS")
 	fmt.Fprintln(w, "----\t--------\t----\t------\t---------\t----")
@@ -217,7 +243,6 @@ func runAgentDelete(cmd *cobra.Command, args []string) {
 		logger.Fatal("Failed to load config: %v", err)
 	}
 
-	// Initialize database
 	store, err := database.NewStore(config.Database.Driver, config.Database.ConnectionString)
 	if err != nil {
 		logger.Fatal("Failed to create database store: %v", err)
@@ -229,18 +254,15 @@ func runAgentDelete(cmd *cobra.Command, args []string) {
 	}
 	defer store.Close()
 
-	// Get machine
 	machine, err := store.GetMachineByName(ctx, agentName)
 	if err != nil {
 		logger.Fatal("Agent '%s' not found", agentName)
 	}
 
-	// Delete machine
 	if err := store.DeleteMachine(ctx, machine.ID); err != nil {
 		logger.Fatal("Failed to delete machine: %v", err)
 	}
 
-	// Delete associated user
 	if machine.AgentID != "" {
 		if err := store.DeleteUser(ctx, machine.AgentID); err != nil {
 			logger.Warn("Failed to delete agent user: %v", err)

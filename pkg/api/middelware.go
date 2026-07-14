@@ -114,6 +114,21 @@ func (s *APIServer) adminMiddleware() gin.HandlerFunc {
 	}
 }
 
+// isPrivilegedViewer reports whether the authenticated caller can see
+// other users' sessions/audit logs/access requests (admin, operator,
+// auditor). A plain "user" is scoped to their own records.
+func isPrivilegedViewer(c *gin.Context) bool {
+	role, _ := c.Get("role")
+	r, _ := role.(string)
+	switch r {
+	case common.RoleAdmin, common.RoleOperator, common.RoleAuditor:
+		return true
+	}
+	isAdmin, _ := c.Get("is_admin")
+	admin, _ := isAdmin.(bool)
+	return admin
+}
+
 // setAuthContext sets authentication context in the Gin context
 func (s *APIServer) setAuthContext(c *gin.Context, userID, username string, isAdmin bool, authMethod string) {
 	c.Set("user_id", userID)

@@ -41,6 +41,7 @@ type Store interface {
 	UpdateAccessRequest(ctx context.Context, request *common.AccessRequest) error
 	ListPendingAccessRequests(ctx context.Context) ([]*common.AccessRequest, error)
 	ListUserAccessRequests(ctx context.Context, userID string, limit, offset int) ([]*common.AccessRequest, error)
+	ListAllAccessRequests(ctx context.Context, limit, offset int) ([]*common.AccessRequest, error)
 
 	// Permission operations
 	CreatePermission(ctx context.Context, permission *common.Permission) error
@@ -54,6 +55,13 @@ type Store interface {
 	// Audit log operations
 	CreateAuditLog(ctx context.Context, log *common.AuditLog) error
 	ListAuditLogs(ctx context.Context, limit, offset int, filters map[string]interface{}) ([]*common.AuditLog, error)
+
+	// Notification operations (in-app / web notifications)
+	CreateNotification(ctx context.Context, n *common.Notification) error
+	ListUserNotifications(ctx context.Context, userID string, limit, offset int) ([]*common.Notification, error)
+	CountUnreadNotifications(ctx context.Context, userID string) (int, error)
+	MarkNotificationRead(ctx context.Context, id, userID string) error
+	MarkAllNotificationsRead(ctx context.Context, userID string) error
 
 	// API Key operations
 	CreateAPIKey(ctx context.Context, key *common.APIKey) error
@@ -88,6 +96,17 @@ type Store interface {
 	GetPluginSetting(ctx context.Context, name string) (*common.PluginSetting, error)
 	ListPluginSettings(ctx context.Context) ([]*common.PluginSetting, error)
 	UpsertPluginSetting(ctx context.Context, setting *common.PluginSetting) error
+
+	// SSH Certificate Authority
+	CreateCAKey(ctx context.Context, key *common.CAKey, privateKeyEncrypted []byte) error
+	GetActiveCAKey(ctx context.Context, caType string) (*common.CAKey, []byte, error)
+	ListCAKeys(ctx context.Context, caType string) ([]*common.CAKey, error)
+
+	CreateSSHCertificate(ctx context.Context, cert *common.SSHCertificate) error
+	GetSSHCertificateBySerial(ctx context.Context, serial string) (*common.SSHCertificate, error)
+	ListSSHCertificates(ctx context.Context, filter common.SSHCertFilter, limit, offset int) ([]*common.SSHCertificate, error)
+	ListRevokedCertSerials(ctx context.Context) ([]string, error)
+	RevokeSSHCertificate(ctx context.Context, serial, revokedBy, reason string) error
 
 	// Lifecycle
 	Connect(ctx context.Context) error

@@ -58,11 +58,31 @@ Host web-01.orion
 
 Then: `ssh web-01.orion`
 
+## Host CA trust (optional)
+
+When the gateway runs with `ssh_ca.enabled`, it presents a Host-CA-signed certificate for its SSH host key. Cert-aware clients can pin the Host CA instead of TOFU:
+
+1. `oadmin ca export` (or `GET /api/v1/admin/ca/export`) → copy `host_ca`
+2. Set `auth.host_ca_public_key` in client config, **or** for raw OpenSSH:
+
+```sshconfig
+Host orion-gateway.example.com
+  HostName orion-gateway.example.com
+  Port 2222
+  CertificateFile ~/.ssh/id_ed25519-cert.pub   # if using a User cert from POST /ssh-cert
+  # Trust the Orion Host CA for this gateway:
+  #   @cert-authority orion-gateway.example.com ssh-ed25519 AAAA...
+  # (add that line to ~/.ssh/known_hosts)
+```
+
+See [SSH_CA.md](SSH_CA.md).
+
 ## Notes
 
 - Agents still run on target hosts (reverse tunnel). “Agentless” refers to **clients**, not removing machine agents.
 - ProxyJump / `direct-tcpip` is not used; Orion opens a session on the agent instead.
 - SCP: prefer `ocp`, or `ssh alice@gw 'alice@web-01 scp -t /path'` style exec (same as `ocp`).
+- Vanilla OpenSSH does not auto-fetch User certs — use `osh`/`ocp`/`oadmin` for that, or request a cert via `POST /api/v1/ssh-cert` and point `CertificateFile` at it.
 
 ## Lab verification
 

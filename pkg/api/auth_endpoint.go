@@ -134,11 +134,17 @@ func (s *APIServer) deleteAPIKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "API key deleted successfully"})
 }
 
-// LoginRequest represents a login request (SSH public key required)
+// LoginRequest represents a login request (SSH public key required).
+// Challenge/Signature prove possession of the private key for PublicKey —
+// obtain Challenge from POST /public/auth/challenge first, then sign its
+// raw bytes with the same key and base64-encode the result as Signature.
 type LoginRequest struct {
-	Username  string `json:"username" binding:"required"`
-	PublicKey string `json:"public_key" binding:"required"`
-	TOTPCode  string `json:"totp_code,omitempty"`
+	Username        string `json:"username" binding:"required"`
+	PublicKey       string `json:"public_key" binding:"required"`
+	Challenge       string `json:"challenge" binding:"required"`
+	SignatureFormat string `json:"signature_format" binding:"required"`
+	Signature       string `json:"signature" binding:"required"`
+	TOTPCode        string `json:"totp_code,omitempty"`
 }
 
 // LoginResponse represents a login response
@@ -185,6 +191,12 @@ func (s *APIServer) login(c *gin.Context) {
 	}
 	if string(storedKey.Marshal()) != string(presented.Marshal()) {
 		metrics.Default.IncAuthFailure()
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+	if err := s.verifyPossession(req.Username, req.Challenge, req.SignatureFormat, req.Signature, presented); err != nil {
+		metrics.Default.IncAuthFailure()
+		s.logger.Warn("Proof-of-possession failed for user %s: %v", req.Username, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}

@@ -13,3 +13,9 @@ auth:
   key_file: "/etc/orion-belt/agent_key"
   known_hosts: "/etc/orion-belt/known_hosts"
   strict_host_key_checking: "ask"
+  # Trusted Host CA public key (authorized_keys-format line) — verifies the
+  # gateway's host cert instead of TOFU/known_hosts. Get this from
+  # `oadmin ca export` once the server has ssh_ca.enabled: true. Leave
+  # empty to keep using TOFU/known_hosts as above. Populated automatically
+  # by the generated install script when SSH CA is enabled at install time.
+  host_ca_public_key: ""

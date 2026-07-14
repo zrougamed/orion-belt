@@ -2,10 +2,13 @@ package client
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/zrougamed/orion-belt/pkg/common"
@@ -65,15 +68,65 @@ func NewAPIClient(baseURL, username string, signer ssh.Signer, logger *common.Lo
 	return client, nil
 }
 
-// authenticate obtains an API key using SSH public key authentication
+// LoadAPIClient builds an authenticated APIClient from a loaded config,
+// resolving the API endpoint, signing key, and username the same way
+// osh/ocp/oadmin each used to do independently. usernameOverride wins over
+// config/environment when non-empty (e.g. a CLI's -u/--user flag).
+func LoadAPIClient(cfg *common.Config, usernameOverride string, logger *common.Logger) (*APIClient, error) {
+	apiEndpoint := cfg.Server.APIEndpoint
+	if apiEndpoint == "" {
+		apiEndpoint = fmt.Sprintf("http://%s:8080", cfg.Server.Host)
+	}
+
+	keyData, err := os.ReadFile(cfg.Auth.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SSH key: %w", err)
+	}
+	signer, err := ssh.ParsePrivateKey(keyData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	username := usernameOverride
+	if username == "" {
+		username = cfg.Auth.User
+	}
+	if username == "" {
+		username = os.Getenv("USER")
+	}
+	if username == "" {
+		return nil, fmt.Errorf("username not configured")
+	}
+
+	return NewAPIClient(apiEndpoint, username, signer, logger)
+}
+
+// authenticate obtains an API key using SSH public key authentication. It
+// proves possession of the private key by signing a server-issued,
+// single-use challenge — a bare public key is not a secret (it's often
+// public on GitHub, in server logs, etc.), so /login/key requires this
+// signature, not just a matching key string.
 func (c *APIClient) authenticate(username string, signer ssh.Signer) error {
-	// Get the public key in OpenSSH authorized_keys format
 	publicKey := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
 
-	// Send login request with public key
+	var challengeResp struct {
+		Challenge string `json:"challenge"`
+	}
+	if err := c.doRequestNoAuth("POST", "/api/v1/public/auth/challenge", map[string]string{"username": username}, &challengeResp); err != nil {
+		return fmt.Errorf("failed to obtain login challenge: %w", err)
+	}
+
+	sig, err := signer.Sign(rand.Reader, []byte(challengeResp.Challenge))
+	if err != nil {
+		return fmt.Errorf("failed to sign login challenge: %w", err)
+	}
+
 	loginReq := map[string]interface{}{
-		"username":   username,
-		"public_key": publicKey,
+		"username":         username,
+		"public_key":       publicKey,
+		"challenge":        challengeResp.Challenge,
+		"signature_format": sig.Format,
+		"signature":        base64.StdEncoding.EncodeToString(sig.Blob),
 	}
 
 	var loginResp struct {
@@ -228,7 +281,7 @@ func (c *APIClient) GetAccessRequest(requestID string) (*AccessRequest, error) {
 // ListPendingAccessRequests retrieves all pending access requests (admin only)
 func (c *APIClient) ListPendingAccessRequests() ([]AccessRequest, error) {
 	var requests []AccessRequest
-	if err := c.doRequest("GET", "/api/v1/access-requests/pending", nil, &requests); err != nil {
+	if err := c.doRequest("GET", "/api/v1/admin/access-requests/pending", nil, &requests); err != nil {
 		return nil, err
 	}
 	return requests, nil
@@ -244,4 +297,113 @@ func (c *APIClient) ApproveAccessRequest(requestID, reviewerID string) error {
 func (c *APIClient) RejectAccessRequest(requestID, reviewerID string) error {
 	req := map[string]string{"reviewer_id": reviewerID}
 	return c.doRequest("POST", fmt.Sprintf("/api/v1/admin/access-requests/%s/reject", requestID), req, nil)
+}
+
+// TrustedCA is the SSH CA public-key material a client needs to trust the
+// gateway's Host CA and (if requesting one) User CA-issued certs.
+type TrustedCA struct {
+	Enabled bool   `json:"enabled"`
+	UserCA  string `json:"user_ca"`
+	HostCA  string `json:"host_ca"`
+}
+
+// GetTrustedCA discovers whether the server has SSH CA enabled, and if so
+// returns its CA public keys. Any authenticated client can call this —
+// it's how osh/ocp/oadmin auto-detect server capability instead of
+// requiring a local opt-in flag.
+func (c *APIClient) GetTrustedCA() (*TrustedCA, error) {
+	var ca TrustedCA
+	if err := c.doRequest("GET", "/api/v1/ssh-cert/ca", nil, &ca); err != nil {
+		return nil, err
+	}
+	return &ca, nil
+}
+
+// IssuedCert is the response from requesting a fresh user certificate.
+type IssuedCert struct {
+	Certificate string    `json:"certificate"` // authorized_keys-format cert line
+	Serial      string    `json:"serial"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// IssueUserCert requests a short-lived signed SSH certificate for pub
+// (authorized_keys format). ttlHours of 0 uses the server's default TTL.
+func (c *APIClient) IssueUserCert(pub string, ttlHours int) (*IssuedCert, error) {
+	req := map[string]interface{}{"public_key": pub, "ttl_hours": ttlHours}
+	var cert IssuedCert
+	if err := c.doRequest("POST", "/api/v1/ssh-cert", req, &cert); err != nil {
+		return nil, err
+	}
+	return &cert, nil
+}
+
+// ExportCA fetches CA trust material via the admin export endpoint for
+// out-of-band distribution to clients/agents (admin only).
+func (c *APIClient) ExportCA() (*TrustedCA, error) {
+	var ca TrustedCA
+	if err := c.doRequest("GET", "/api/v1/admin/ca/export", nil, &ca); err != nil {
+		return nil, err
+	}
+	return &ca, nil
+}
+
+// IssuedSSHCertificate is a certificate lifecycle record as returned by
+// the admin certificate-listing endpoint.
+type IssuedSSHCertificate struct {
+	ID                   string     `json:"id"`
+	Serial               string     `json:"serial"`
+	CertType             string     `json:"cert_type"`
+	SubjectID            string     `json:"subject_id,omitempty"`
+	KeyID                string     `json:"key_id"`
+	Principals           []string   `json:"principals"`
+	PublicKeyFingerprint string     `json:"public_key_fingerprint"`
+	IssuedAt             time.Time  `json:"issued_at"`
+	ExpiresAt            time.Time  `json:"expires_at"`
+	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy            *string    `json:"revoked_by,omitempty"`
+	RevokeReason         string     `json:"revoke_reason,omitempty"`
+}
+
+// ListSSHCertificates lists issued-certificate lifecycle records (admin only).
+func (c *APIClient) ListSSHCertificates(certType string) ([]IssuedSSHCertificate, error) {
+	path := "/api/v1/admin/ssh-certificates"
+	if certType != "" {
+		path += "?cert_type=" + certType
+	}
+	var resp struct {
+		Certificates []IssuedSSHCertificate `json:"certificates"`
+	}
+	if err := c.doRequest("GET", path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Certificates, nil
+}
+
+// RevokeSSHCertificate revokes a certificate ahead of its TTL expiry (admin only).
+func (c *APIClient) RevokeSSHCertificate(serial, reason string) error {
+	req := map[string]string{"reason": reason}
+	return c.doRequest("POST", fmt.Sprintf("/api/v1/admin/ssh-certificates/%s/revoke", serial), req, nil)
+}
+
+// BootstrapCode is a short-lived, single-use code for bootstrapping a
+// browser session from an already-authenticated CLI identity — see
+// RequestBrowserBootstrap and `osh login`.
+type BootstrapCode struct {
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// RequestBrowserBootstrap asks the server for a one-time code the caller
+// can redeem in a browser to get a signed-in session, without the browser
+// ever needing to prove possession of an SSH private key itself (which it
+// structurally cannot do). This is the CLI-driven replacement for the web
+// console's old "paste your public key" login form: the CLI already
+// proved identity via real SSH-signature login (see authenticate above),
+// so it can vouch for a short-lived browser session instead.
+func (c *APIClient) RequestBrowserBootstrap() (*BootstrapCode, error) {
+	var code BootstrapCode
+	if err := c.doRequest("POST", "/api/v1/auth/browser-bootstrap", nil, &code); err != nil {
+		return nil, err
+	}
+	return &code, nil
 }

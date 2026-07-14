@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zrougamed/orion-belt/pkg/client"
@@ -28,6 +29,16 @@ var rootCmd = &cobra.Command{
 	Run:     runSSH,
 }
 
+var loginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Sign in to the web console",
+	Long: `Authenticates with the gateway using your real SSH private key, then mints a
+short-lived, single-use code you redeem in the web console to get a session
+— the web console can't prove possession of an arbitrary SSH private key
+itself, so it relies on the CLI to vouch for it instead.`,
+	Run: runLogin,
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
 	rootCmd.Flags().BoolVarP(&requestAccess, "request-access", "r", false, "request temporary access")
@@ -35,6 +46,8 @@ func init() {
 	rootCmd.Flags().StringVar(&accessReason, "reason", "", "reason for access request")
 	rootCmd.Flags().BoolVarP(&listMachines, "list", "l", false, "list available machines")
 	rootCmd.Flags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
+
+	rootCmd.AddCommand(loginCmd)
 }
 
 func main() {
@@ -42,6 +55,45 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runLogin(cmd *cobra.Command, args []string) {
+	logger := common.NewLogger(common.INFO)
+
+	config, err := common.LoadConfig(configFile)
+	if err != nil {
+		config = &common.Config{
+			Server: common.ServerConfig{Host: "localhost", Port: 2222},
+			Auth:   common.AuthConfig{KeyFile: os.ExpandEnv("$HOME/.ssh/id_rsa")},
+		}
+	}
+
+	apiClient, err := client.LoadAPIClient(config, username, logger)
+	if err != nil {
+		logger.Fatal("Login failed: %v", err)
+	}
+
+	code, err := apiClient.RequestBrowserBootstrap()
+	if err != nil {
+		logger.Fatal("Failed to obtain a browser sign-in code: %v", err)
+	}
+
+	consoleURL := consoleOrigin(config)
+	fmt.Println("Signed in. To finish signing in to the web console:")
+	fmt.Printf("\n  %s/ui/bootstrap?code=%s\n\n", consoleURL, code.Code)
+	fmt.Printf("Or open %s/ui/ and enter this code manually: %s\n", consoleURL, code.Code)
+	fmt.Printf("(expires at %s)\n", code.ExpiresAt.Format("15:04:05 MST"))
+}
+
+// consoleOrigin derives the web console's base URL from the configured
+// API endpoint (served from the same origin, e.g. "http://host:8080/api"
+// -> "http://host:8080").
+func consoleOrigin(config *common.Config) string {
+	endpoint := config.Server.APIEndpoint
+	if endpoint == "" {
+		return fmt.Sprintf("http://%s:8080", config.Server.Host)
+	}
+	return strings.TrimSuffix(strings.TrimSuffix(endpoint, "/"), "/api")
 }
 
 func runSSH(cmd *cobra.Command, args []string) {

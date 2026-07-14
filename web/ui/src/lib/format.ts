@@ -3,6 +3,14 @@ export function shortId(id?: string): string {
   return id.length > 8 ? id.slice(0, 8) : id;
 }
 
+// JIT access TTL in seconds. 0 (or undefined) means unlimited.
+export function fmtTTL(seconds?: number): string {
+  if (!seconds) return "Unlimited";
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
 export function fmtTime(t?: string | null): string {
   if (!t) return "—";
   try {

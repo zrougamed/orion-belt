@@ -51,8 +51,8 @@ export function SetupPage() {
       title: "2. Admin account",
       body: (
         <>
-          Bootstrap an admin (lab script or first-run). Confirm you can sign in at <span className="mono">/ui/login</span> with an SSH
-          public key.
+          Bootstrap an admin (lab script or first-run). Confirm you can sign in: run <span className="mono">osh login</span> and redeem
+          the printed code at <span className="mono">/ui/login</span>, or enroll a security key for WebAuthn sign-in.
         </>
       ),
       done: !!statusSteps?.admin_exists,

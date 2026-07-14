@@ -22,6 +22,8 @@ place these are documented:
 - `auth.mfa_required` — block SSH/API access until a user has enrolled MFA (TOTP or WebAuthn)
 - `auth.rate_limit_per_minute` — per-user/IP request cap on protected API routes (default `600`)
 - `auth.openfga.*` — optional ReBAC via an external OpenFGA server instead of the built-in permission tables
+- `ssh_ca.enabled` / `ssh_ca.master_key` — internal SSH CA (user + host certs); see [SSH_CA.md](SSH_CA.md). `master_key` is required when enabled (encrypts CA keys at rest)
+- `ssh_ca.host_principals` — hostnames/IPs clients use to reach the gateway (embedded in the gateway Host cert)
 - `recording.encryption_key` — AES-256-GCM key for session recordings at rest; leave empty only if you accept plaintext recordings
 - `recording.retention_days` — how long recordings are kept before the retention loop deletes them
 
@@ -76,7 +78,9 @@ On each target host:
 
 1. Install `orion-belt-agent` (see [PACKAGING.md](PACKAGING.md) for apt/dnf/apk/Arch).
 2. Edit `/etc/orion-belt/agent.yaml` — gateway host and port **2222**.
-3. Generate a key (`ssh-keygen -t ed25519 -f /etc/orion-belt/agent_key -N ""`) and register the **public** key (`POST /api/v1/public/register/agent` or CLI).
+3. Generate a key (`ssh-keygen -t ed25519 -f /etc/orion-belt/agent_key -N ""`) and register the **public** key (`POST /api/v1/public/register/agent` or `orion-belt-server agent register`).
+   - With **SSH CA** enabled, registration returns a Host certificate — write it to `/etc/orion-belt/agent_key-cert.pub` and set `auth.host_ca_public_key` from `oadmin ca export` (see [SSH_CA.md](SSH_CA.md)).
+   - Without CA, registration creates a synthetic agent user (legacy path).
 4. `systemctl enable --now orion-belt-agent`
 
 Connected tunnels appear under **Agents**.

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/zrougamed/orion-belt/pkg/ca"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
 	gossh "golang.org/x/crypto/ssh"
@@ -30,6 +31,9 @@ type Agent struct {
 	sshClient *gossh.Client
 	sshConn   gossh.Conn
 	machineID string
+	privKey   gossh.Signer
+	hostCert  *gossh.Certificate
+	certPath  string
 }
 
 // New creates a new agent
@@ -56,6 +60,9 @@ func (a *Agent) Start() error {
 	for {
 		select {
 		case <-ticker.C:
+			if err := a.maybeRenewHostCert(); err != nil {
+				a.logger.Warn("Host cert renewal: %v", err)
+			}
 			if err := a.sendHeartbeat(); err != nil {
 				a.logger.Error("Heartbeat failed: %v", err)
 				// Attempt to reconnect
@@ -79,6 +86,31 @@ func (a *Agent) connectToServer() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse private key: %w", err)
 	}
+	a.privKey = key
+
+	// If a Host-CA-signed cert has been provisioned for this agent (see
+	// cmd/server/agent.go's CA-aware registration branch), present it
+	// instead of the raw key — this is what lets handleAgentCertAuth on
+	// the gateway identify the agent by machine rather than through the
+	// legacy synthetic-user mechanism. No cert file present -> unchanged
+	// raw-key behavior, so already-registered agents keep working as-is.
+	authMethod := gossh.PublicKeys(key)
+	a.certPath = a.config.Auth.KeyFile + "-cert.pub"
+	a.hostCert = nil
+	if certBytes, err := os.ReadFile(a.certPath); err == nil {
+		if pub, _, _, _, err := gossh.ParseAuthorizedKey(certBytes); err == nil {
+			if cert, ok := pub.(*gossh.Certificate); ok {
+				if certSigner, err := gossh.NewCertSigner(cert, key); err == nil {
+					authMethod = gossh.PublicKeys(certSigner)
+					a.hostCert = cert
+					a.logger.Info("Using Host-CA-signed certificate for agent identity (expires %s)",
+						time.Unix(int64(cert.ValidBefore), 0).Format(time.RFC3339))
+				} else {
+					a.logger.Warn("Failed to use cached agent certificate, falling back to raw key: %v", err)
+				}
+			}
+		}
+	}
 
 	a.logger.Info("Attempting to authenticate as user: %s", a.config.Agent.Name)
 	a.logger.Debug("Using key file: %s", a.config.Auth.KeyFile)
@@ -86,21 +118,20 @@ func (a *Agent) connectToServer() error {
 	hostKeyCallback, err := common.NewHostKeyCallback(common.HostKeyConfig{
 		KnownHosts:            a.config.Auth.KnownHosts,
 		StrictHostKeyChecking: a.config.Auth.StrictHostKeyChecking,
+		HostCAPublicKey:       a.config.Auth.HostCAPublicKey,
 	}, a.logger)
 	if err != nil {
 		return fmt.Errorf("host key verification setup: %w", err)
 	}
 
 	config := &gossh.ClientConfig{
-		User: a.config.Agent.Name,
-		Auth: []gossh.AuthMethod{
-			gossh.PublicKeys(key),
-		},
+		User:            a.config.Agent.Name,
+		Auth:            []gossh.AuthMethod{authMethod},
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 
-	serverAddr := fmt.Sprintf("%s:%d", a.config.Server.Host, a.config.Server.Port)
+	serverAddr := net.JoinHostPort(a.config.Server.Host, strconv.Itoa(a.config.Server.Port))
 	a.logger.Info("Connecting to server: %s", serverAddr)
 
 	// Dial with custom connection to handle incoming channels
@@ -691,6 +722,55 @@ func (a *Agent) sendHeartbeat() error {
 		return fmt.Errorf("heartbeat request rejected")
 	}
 
+	return nil
+}
+
+// maybeRenewHostCert asks the gateway for a fresh Host-CA cert when the
+// cached one is inside the renewal window. The new cert is written atomically
+// next to the private key and used on the next reconnect.
+func (a *Agent) maybeRenewHostCert() error {
+	if a.sshConn == nil || a.privKey == nil || a.hostCert == nil || a.certPath == "" {
+		return nil
+	}
+	ttl := time.Duration(a.hostCert.ValidBefore-a.hostCert.ValidAfter) * time.Second
+	expiresAt := time.Unix(int64(a.hostCert.ValidBefore), 0)
+	if !ca.NeedsRenewal(expiresAt, ttl) {
+		return nil
+	}
+
+	pubLine := gossh.MarshalAuthorizedKey(a.privKey.PublicKey())
+	ok, payload, err := a.sshConn.SendRequest(ca.AgentCertRenewRequest, true, pubLine)
+	if err != nil {
+		return fmt.Errorf("renew request: %w", err)
+	}
+	if !ok {
+		msg := strings.TrimSpace(string(payload))
+		if msg == "" {
+			msg = "rejected"
+		}
+		return fmt.Errorf("renew rejected: %s", msg)
+	}
+
+	pub, _, _, _, err := gossh.ParseAuthorizedKey(payload)
+	if err != nil {
+		return fmt.Errorf("parse renewed cert: %w", err)
+	}
+	cert, okCert := pub.(*gossh.Certificate)
+	if !okCert {
+		return fmt.Errorf("renewed payload is not an SSH certificate")
+	}
+
+	tmp := a.certPath + ".tmp"
+	if err := os.WriteFile(tmp, payload, 0644); err != nil {
+		return fmt.Errorf("write renewed cert: %w", err)
+	}
+	if err := os.Rename(tmp, a.certPath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("install renewed cert: %w", err)
+	}
+	a.hostCert = cert
+	a.logger.Info("Renewed Host-CA identity cert (expires %s); reconnect to present it",
+		time.Unix(int64(cert.ValidBefore), 0).Format(time.RFC3339))
 	return nil
 }
 

@@ -1,12 +1,21 @@
 # Orion-Belt
 
-**Orion-Belt** is an open-source, secure SSH/SCP bastion system designed for **controlled access to infrastructure without exposing networks**.
+[![Website](https://img.shields.io/badge/website-orion--belt.dev-0B3D5C?style=flat-square)](https://orion-belt.dev)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%2B%20Commons%20Clause-blue?style=flat-square)](LICENSE)
+[![Go](https://img.shields.io/github/go-mod/go-version/zrougamed/orion-belt?style=flat-square)](go.mod)
+[![Release](https://img.shields.io/github/v/release/zrougamed/orion-belt?include_prereleases&style=flat-square)](https://github.com/zrougamed/orion-belt/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/zrougamed/orion-belt/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/zrougamed/orion-belt/actions)
 
-It provides **reverse SSH tunneling**, **relationship-based access control (ReBAC)**, **temporary access workflows**, and **full session recording**, making it ideal for teams that need **auditable, time-bound, and approval-based access** to servers behind firewalls.
 
-Think of it as a lightweight, self-hosted alternative to traditional bastion hosts or commercial access gateways — built with simplicity, auditability, and extensibility in mind.
+**Enterprise-grade privileged access — open source and self-hosted.**
 
-> Status: **Alpha v0.7+** — plugin platform with live UI config, chatops approvals (Slack/Discord/Teams/Rocket.Chat), MFA/WebAuthn, OpenSSH clients, role-aware web console with dark/light themes, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
+**Orion-Belt** is an open-source SSH/SCP bastion and PAM gateway that gives teams the capabilities usually locked behind commercial products: **SSH Certificate Authority**, **session recording & replay**, **ReBAC / OpenFGA authorization**, **MFA (TOTP + WebAuthn)**, **JIT temporary access with approvals** (including ChatOps), and a **role-aware web console** — without exposing target networks.
+
+Agents dial **out** over reverse SSH, so you eliminate inbound firewall holes. You keep control of data and deployment; the community gets the full source.
+
+> Free to use, modify, and self-host — including for internal commercial use — under [Apache 2.0 + Commons Clause](LICENSE). The Clause withholds only the right to **sell** Orion Belt (or a hosted service whose value derives substantially from it) as a product. See [orion-belt.dev](https://orion-belt.dev).
+
+> Status: **Alpha v0.8.0** — SSH Certificate Authority, challenge-response key login, in-app notifications, plugin platform with live UI config, chatops approvals (Slack/Discord/Teams/Rocket.Chat), MFA/WebAuthn, OpenSSH clients, role-aware web console with dark/light themes, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
 
 ![Orion-Belt](assets/banner-2.png)
 
@@ -19,13 +28,15 @@ Traditional SSH and VPN-based access have limitations:
 - No native approval workflow
 - Limited auditability
 - Broad network access instead of per-machine access
+- Enterprise PAM features trapped in proprietary licensing and SaaS lock-in
 
 Orion-Belt solves this by:
 - Eliminating inbound firewall rules using **reverse SSH tunnels**
 - Enforcing **fine-grained, relationship-based access control**
-- Supporting **temporary, approval-based access**
+- Supporting **temporary, approval-based access** (API, UI, and ChatOps)
 - Recording **every session for audit and replay**
-- Acting as a single, centralized access gateway
+- Issuing **short-lived SSH certificates** instead of standing keys (optional SSH CA)
+- Acting as a single, centralized access gateway you **run yourself**
 
 ## Orion-Belt in Action
 
@@ -41,10 +52,11 @@ Orion-Belt solves this by:
 - **Temporary Access**: Request-based temporary access with admin approval
 - **Session Recording**: Complete session recording and audit trails (optional AES-at-rest + retention)
 - **Plugin System**: Built-in plugins (audit logger, Slack/email/webhook notifications, chatops access-request approvals for Slack/Discord/Teams/Rocket.Chat) — enable and configure live from the web console, no restart or YAML editing
-- **Host Key Verification**: TOFU / known_hosts for clients and agents
-- **API Auth**: API keys, session tokens, and JWT bearer tokens
+- **Host Key Verification**: TOFU / known_hosts, or Host-CA trust when SSH CA is enabled
+- **SSH CA**: Short-lived User certs for operators + Host certs for gateway/agents — [docs/SSH_CA.md](docs/SSH_CA.md)
+- **API Auth**: API keys, session tokens, JWT; pubkey login requires challenge-response proof-of-possession
 - **MFA**: TOTP + YubiKey/FIDO2 (WebAuthn) for the web console; FIDO SSH keys (`sk-*`)
-- **Web console**: Role-aware `/ui` with live terminal, files, sessions playback, audit, users/machines (see [SRS-UI.md](docs/SRS-UI.md))
+- **Web console**: Role-aware `/ui` with live terminal, files, sessions playback, audit, users/machines, notification bell (see [SRS-UI.md](docs/SRS-UI.md))
 - **OpenAPI**: Full HTTP/WS spec — [docs/openapi/openapi.yaml](docs/openapi/openapi.yaml) / `GET /api/v1/openapi.yaml`
 - **Versioning**: `orion-belt-server --version`, `/health`, `/api/v1/version`, UI chrome
 - **OpenFGA**: Optional external authorization with ReBAC fallback
@@ -54,32 +66,32 @@ Orion-Belt solves this by:
 
 ## Architecture
 
-```
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  osh / ocp   │  │ OpenSSH ssh  │  │  Web /ui     │
-│  oadmin CLI  │  │ user+host@gw │  │  terminal    │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                  │
-       └────────────┬────┴──────────────────┘
-                    │ SSH :2222  /  HTTP :8080
-                    ▼
-             ┌──────────────┐
-             │    Gateway   │──► Session recording, ReBAC/OpenFGA, MFA
-             └──────┬───────┘
-                    │ reverse SSH (agents)
-                    ▼
-             ┌──────────────┐
-             │ Target agent │
-             └──────────────┘
+```mermaid
+flowchart TB
+  subgraph Clients
+    CLI["osh / ocp / oadmin"]
+    OpenSSH["OpenSSH ssh<br/>user+host@gw"]
+    UI["Web /ui<br/>terminal"]
+  end
+
+  GW["Gateway<br/>SSH :2222 · HTTP :8080"]
+  Rec["Session recording · ReBAC/OpenFGA · MFA · SSH CA"]
+  Agent["Target agent"]
+
+  CLI --> GW
+  OpenSSH --> GW
+  UI --> GW
+  GW --> Rec
+  GW -->|"reverse SSH (agents)"| Agent
 ```
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.4** is on `master` (PR #7). Packaging / CVE gate / multi-distro lab work lands next.
+**Current Status:** Alpha **v0.8.0** — SSH CA, challenge-response API login, in-app notifications (on top of packaging, plugins, console theming, MFA/UI).
 
-**Shipped (through v0.4):** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins, remote users, host-key verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console (terminal + files), optional OpenFGA.
+**Shipped:** SSH proxy, ReBAC, recording (+ encryption/retention), REST API, JWT/API keys, plugins (compiled-in + live UI config), chatops approvals, remote users, host-key / Host-CA verification, metrics, TOTP + WebAuthn/FIDO, OpenSSH agentless clients, role-aware web console, optional OpenFGA, native packages + GPG-signed repos, OpenAPI, SSH Certificate Authority.
 
-**Next:** Ship packaging/CVE/lab/OpenAPI as v0.5; then HA, IdP (OIDC/SAML), live session monitoring, SSH CA, recording compression.
+**Next:** HA clustering, IdP (OIDC/SAML), live session monitoring, recording compression.
 
 ## Packaging & labs
 
@@ -322,11 +334,12 @@ To switch databases, update the configuration and implement the `database.Store`
 
 ## License
 
-Apache License 2.0 with the [Commons Clause](https://commonsclause.com/) – see
-[LICENSE](LICENSE) for details. In short: free to use, modify, self-host, and
-contribute back, including for internal commercial use — the one thing withheld
-is selling the software itself, or a hosted/managed service whose value derives
-substantially from it, as a product.
+Apache License 2.0 with the [Commons Clause](https://commonsclause.com/) — see
+[LICENSE](LICENSE). Orion Belt ships **enterprise PAM capabilities as open source**
+you can audit and self-host. You may use, modify, and run it internally (including
+commercially); the Clause only withholds selling Orion Belt itself, or a hosted
+service whose value derives substantially from it, as a product. Details and positioning:
+[orion-belt.dev](https://orion-belt.dev).
 
 ## Architecture
 

@@ -46,10 +46,10 @@
 ## How It Works
 
 ### 1. Agent Registration & Connection
-Agents establish persistent SSH connections to the gateway. Each agent authenticates with SSH keys and registers its machine. The gateway keeps reverse tunnels so targets need no inbound firewall rules.
+Agents establish persistent SSH connections to the gateway. With **SSH CA** enabled, new agents authenticate with Host-CA-signed certificates (no synthetic user row); otherwise they use SSH keys tied to a synthetic agent user. The gateway keeps reverse tunnels so targets need no inbound firewall rules. See [SSH_CA.md](SSH_CA.md).
 
 ### 2. Client Authentication
-Clients authenticate with SSH public keys (including FIDO `sk-*` keys). Gateway identity may be encoded as `alice+web-01` for OpenSSH agentless interactive sessions. HTTP/API clients use API keys, session tokens, JWT, and optional TOTP/WebAuthn.
+Clients authenticate with SSH public keys (including FIDO `sk-*` keys) or short-lived **User certificates** from the internal SSH CA. Gateway identity may be encoded as `alice+web-01` for OpenSSH agentless interactive sessions. HTTP/API clients use API keys, session tokens, JWT, challenge-response key login, and optional TOTP/WebAuthn. When CA is enabled, the gateway presents a Host certificate for cert-aware client verification.
 
 ### 3. Connection Flow
 1. Authenticate gateway user  
@@ -103,6 +103,7 @@ OpenSSH: ssh alice+web-01@gateway
 | [SRS-UI.md](SRS-UI.md) | Web console SRS (as implemented) |
 | [openapi/openapi.yaml](openapi/openapi.yaml) | OpenAPI 3.0 (also `GET /api/v1/openapi.yaml`) |
 | [API/README.md](API/README.md) | Swagger/Postman how-to |
+| [SSH_CA.md](SSH_CA.md) | Internal SSH CA (user/host certs, renewal, revoke) |
 | [PACKAGING.md](PACKAGING.md) | deb/rpm/apk + GPG-signed repos |
 | [ROADMAP.md](ROADMAP.md) | Current |
 | [SETUP.md](SETUP.md) | First-run |

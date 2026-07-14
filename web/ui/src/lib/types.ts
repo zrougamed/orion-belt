@@ -42,7 +42,9 @@ export type AccessRequest = {
   reason?: string;
   status?: string;
   duration?: number;
+  requested_at?: string;
   created_at?: string;
+  expires_at?: string | null;
 };
 
 export type AuditLog = {
@@ -93,6 +95,17 @@ export type Permission = {
   granted_by?: string;
   granted_at?: string;
   expires_at?: string | null;
+};
+
+export type Notification = {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body?: string;
+  metadata?: Record<string, unknown>;
+  read_at?: string | null;
+  created_at?: string;
 };
 
 export class ApiError extends Error {

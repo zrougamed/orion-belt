@@ -19,11 +19,46 @@ type HostKeyConfig struct {
 	KnownHosts string
 	// StrictHostKeyChecking: "yes" (reject unknown), "ask"/"" (TOFU — trust on first use), "no" (insecure).
 	StrictHostKeyChecking string
+	// HostCAPublicKey, if set (authorized_keys-format line), trusts the
+	// gateway's Host CA: a host presenting a cert signed by this key is
+	// verified via ssh.CertChecker instead of TOFU/known_hosts. Hosts that
+	// aren't (yet) presenting a cert still fall back to the TOFU/strict/
+	// insecure behavior below, so this is fully opt-in and backward
+	// compatible with deployments that haven't enabled SSH CA.
+	HostCAPublicKey string
 }
 
-// NewHostKeyCallback returns an ssh.HostKeyCallback based on config.
-// Empty StrictHostKeyChecking defaults to TOFU ("ask").
+// NewHostKeyCallback returns an ssh.HostKeyCallback based on config. When
+// cfg.HostCAPublicKey is set, cert-presenting hosts are verified against
+// that CA; any other host (or when it's unset) uses the TOFU/strict/
+// insecure behavior described by StrictHostKeyChecking.
 func NewHostKeyCallback(cfg HostKeyConfig, logger *Logger) (ssh.HostKeyCallback, error) {
+	legacy, err := buildLegacyHostKeyCallback(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.HostCAPublicKey == "" {
+		return legacy, nil
+	}
+
+	caPub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(cfg.HostCAPublicKey))
+	if err != nil {
+		return nil, fmt.Errorf("parse auth.host_ca_public_key: %w", err)
+	}
+	checker := &ssh.CertChecker{
+		IsHostAuthority: func(auth ssh.PublicKey, _ string) bool {
+			return string(auth.Marshal()) == string(caPub.Marshal())
+		},
+		HostKeyFallback: legacy,
+	}
+	return checker.CheckHostKey, nil
+}
+
+// buildLegacyHostKeyCallback is the pre-CA TOFU/strict/insecure
+// known_hosts verification, unchanged — used directly when no Host CA is
+// configured, and as the ssh.CertChecker.HostKeyFallback for hosts that
+// present a raw key instead of a cert when one is.
+func buildLegacyHostKeyCallback(cfg HostKeyConfig, logger *Logger) (ssh.HostKeyCallback, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.StrictHostKeyChecking))
 	if mode == "" {
 		mode = "ask"
