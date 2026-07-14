@@ -22,7 +22,7 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 ### Goals
 
 - Vite + React 19 + TypeScript console with role-aware navigation
-- High-contrast, brand-led dark console (Instrument Sans + JetBrains Mono)
+- High-contrast console with dark and light themes (Inter/Space Grotesk + JetBrains Mono)
 - First-class login with SSH pubkey, optional TOTP, and WebAuthn/FIDO2
 - Live PTY terminal over WebSocket with session recording (`source=web`)
 - Timed cast session playback (xterm), audit log browser, user/machine admin CRUD
@@ -35,7 +35,6 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 - Fine-grained UI RBAC beyond role-gated nav (API still enforces ReBAC)
 - Live shared session watching / collaborative cursors
 - Full permission matrix editor UX (grants exist via API/`oadmin`)
-- Light theme
 - Heavy third-party admin kits (MUI/Ant) — prefer owned CSS tokens
 
 ---
@@ -83,8 +82,8 @@ Role uses `EffectiveRole`: explicit `admin`/`operator`/`auditor`, else `is_admin
 
 - **Brand first:** Login hero is “Orion *Belt*” at display size; tagline secondary; version under tagline.
 - **One composition:** Login is a centered stage (not a dashboard). App shell is nav + workspace.
-- **Atmosphere:** Deep teal/charcoal base with grid + radial washes.
-- **Accent:** Amber `#e8a54b`; teal `#2dd4bf` for secondary signals.
+- **Atmosphere:** dark navy (or light) base with a subtle grid + radial washes.
+- **Accent:** Blue `#146ef5`, with a lighter `#33b8ff` for secondary/glow signals.
 
 ### 5.2 Tokens
 

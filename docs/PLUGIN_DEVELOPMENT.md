@@ -2,11 +2,22 @@
 
 ## Overview
 
-Orion-Belt supports dynamic plugin loading using Go's native `plugin` package. Plugins are compiled as `.so` (shared object) files and loaded at runtime by the server.
+Orion-Belt plugins are **compiled directly into the server binary** — regular
+importable Go packages, not dynamically loaded `.so` files. This sidesteps Go
+plugin buildmode's CGO requirement and its strict same-toolchain /
+same-dependency-versions / same-arch / same-libc constraints, so
+`orion-belt-server` stays a single static binary.
+
+Enable, disable, and reconfigure any plugin at runtime from the **Plugins**
+page in the web console (or the admin REST API) — no restart, no editing
+`server.yaml`. Config is stored in the database (`plugin_settings` table).
 
 ## Plugin Architecture
 
-Plugins implement the `Plugin` interface and optionally the `HookPlugin` interface to respond to system events:
+Plugins implement `Plugin`, and optionally `HookPlugin` (react to system
+events), `ConfigurablePlugin` (describe config fields so the UI renders a real
+form instead of raw JSON), and `HTTPPlugin` (receive inbound webhooks, e.g.
+chat-platform callbacks):
 
 ```go
 type Plugin interface {
@@ -19,6 +30,16 @@ type Plugin interface {
 type HookPlugin interface {
     Plugin
     OnHook(ctx context.Context, hook Hook, hookCtx *HookContext) error
+}
+
+type ConfigurablePlugin interface {
+    Plugin
+    ConfigSchema() []ConfigField
+}
+
+type HTTPPlugin interface {
+    Plugin
+    Handler() http.Handler // mounted at /api/v1/public/plugins/{name}/, unauthenticated
 }
 ```
 
@@ -37,24 +58,25 @@ type HookPlugin interface {
 
 ## Creating a Plugin
 
-### Step 1: Create Plugin Directory Structure
+### Step 1: Create the package
 
 ```bash
 mkdir -p plugins/my-plugin
 cd plugins/my-plugin
 ```
 
-### Step 2: Implement the Plugin
+### Step 2: Implement the plugin
 
-Create `main.go`:
+Create `main.go` (the package name just needs to be a valid, unique Go
+identifier — it's imported like any other package, not built standalone):
 
 ```go
-package main
+package myplugin
 
 import (
     "context"
     "log"
-    
+
     "github.com/zrougamed/orion-belt/pkg/plugin"
 )
 
@@ -64,7 +86,9 @@ type MyPlugin struct {
     config  map[string]interface{}
 }
 
-// NewPlugin is the required entry point - MUST be exported
+// NewPlugin is the entry point registerBuiltinPlugins calls — no export
+// magic required since this is a normal function call, not a dlopen symbol
+// lookup.
 func NewPlugin() plugin.Plugin {
     return &MyPlugin{
         name:    "my-plugin",
@@ -72,12 +96,15 @@ func NewPlugin() plugin.Plugin {
     }
 }
 
-func (p *MyPlugin) Name() string {
-    return p.name
-}
+func (p *MyPlugin) Name() string    { return p.name }
+func (p *MyPlugin) Version() string { return p.version }
 
-func (p *MyPlugin) Version() string {
-    return p.version
+func (p *MyPlugin) ConfigSchema() []plugin.ConfigField {
+    return []plugin.ConfigField{
+        {Key: "setting1", Label: "Setting one", Type: "string", Required: true},
+        {Key: "setting2", Label: "Setting two", Type: "int"},
+        {Key: "api_token", Label: "API token", Type: "string", Secret: true},
+    }
 }
 
 func (p *MyPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {
@@ -91,73 +118,76 @@ func (p *MyPlugin) Shutdown(ctx context.Context) error {
     return nil
 }
 
-// Implement HookPlugin interface
+// Implement HookPlugin
 func (p *MyPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
     switch hook {
     case plugin.HookSessionStart:
-        log.Printf("[%s] Session started: user=%s, machine=%s", 
-            p.name, hookCtx.UserID, hookCtx.MachineID)
+        log.Printf("[%s] Session started: user=%s, machine=%s", p.name, hookCtx.UserID, hookCtx.MachineID)
     case plugin.HookSessionEnd:
-        log.Printf("[%s] Session ended: user=%s, machine=%s", 
-            p.name, hookCtx.UserID, hookCtx.MachineID)
+        log.Printf("[%s] Session ended: user=%s, machine=%s", p.name, hookCtx.UserID, hookCtx.MachineID)
     }
     return nil
 }
 
-// Verify interface implementation at compile time
 var _ plugin.Plugin = (*MyPlugin)(nil)
 var _ plugin.HookPlugin = (*MyPlugin)(nil)
+var _ plugin.ConfigurablePlugin = (*MyPlugin)(nil)
 ```
 
-### Step 3: Build the Plugin
+`Secret: true` fields are partially redacted wherever config leaves the
+process (e.g. `xoxb****9f2c`) — see `plugin.MaskSecretValue` — and the admin
+API safely reconciles an unchanged masked value back to the real secret on
+save, so the UI never has to force a full retype of every credential just to
+change one field.
 
-```bash
-# From the plugin directory
-go build -buildmode=plugin -o my-plugin.so main.go
+### Step 3: Register it
 
-# Or use the Makefile
-cd ../..
-make plugins
-```
-
-### Step 4: Install the Plugin
-
-```bash
-# Copy to plugin directory
-sudo mkdir -p /etc/orion-belt/plugins
-sudo cp my-plugin.so /etc/orion-belt/plugins/
-```
-
-### Step 5: Configure the Plugin
-
-Add configuration to `server.yaml`:
-
-```yaml
-server:
-  plugin_dir: "/etc/orion-belt/plugins"
-
-plugins:
-  my-plugin:
-    setting1: "value1"
-    setting2: 42
-    enabled: true
-```
-
-## Plugin Development Best Practices
-
-### 1. Always Export NewPlugin Function
-
-The plugin loader looks for a `NewPlugin() plugin.Plugin` function. This MUST be exported (capital N).
+Add it to `registerBuiltinPlugins` in `pkg/server/plugins_builtin.go`:
 
 ```go
-func NewPlugin() plugin.Plugin {
-    return &MyPlugin{}
+import myplugin "github.com/zrougamed/orion-belt/plugins/my-plugin"
+
+func registerBuiltinPlugins(m *plugin.Manager) error {
+    for _, p := range []plugin.Plugin{
+        auditlogger.NewPlugin(),
+        // ...
+        myplugin.NewPlugin(),
+    } {
+        if err := m.Register(p); err != nil {
+            return err
+        }
+    }
+    return nil
 }
 ```
 
-### 2. Handle Configuration Safely
+That's it — `go build ./cmd/server` now ships it. It shows up in the Plugins
+page automatically, `enabled` by default (manager-level) but inert until
+someone gives it valid config, exactly like the shipped plugins.
 
-Always check types when accessing config values:
+### Step 4: Configure it
+
+From the web console: **Plugins → *my-plugin* → Edit config**. Or via the API:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/admin/plugins/my-plugin/config \
+  -H "X-API-Key: $ADMIN_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"enabled": true, "config": {"setting1": "value1", "setting2": 42}}'
+```
+
+`server.yaml`'s `plugins:` block still works, but only as a one-time seed on
+a deployment's first boot — after that, the database (edited via the UI/API)
+is the source of truth.
+
+## Plugin Development Best Practices
+
+### 1. Handle configuration safely
+
+Always check types when accessing config values — config arrives as
+`map[string]interface{}` from JSON, so nested objects come through as
+`map[string]interface{}` too, not typed structs (see
+`plugins/chatops-access-request/config.go` for a marshal/unmarshal-through-JSON
+pattern that handles nesting cleanly):
 
 ```go
 func (p *MyPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {
@@ -170,155 +200,68 @@ func (p *MyPlugin) Initialize(ctx context.Context, config map[string]interface{}
 }
 ```
 
-### 3. Filter Hooks in OnHook
-
-Not all hooks may be relevant to your plugin. Filter in `OnHook`:
+### 2. Filter hooks in OnHook
 
 ```go
 func (p *MyPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
-    // Only handle specific hooks
     switch hook {
     case plugin.HookSessionStart, plugin.HookSessionEnd:
-        // Handle these hooks
         return p.handleSession(hookCtx)
     default:
-        // Ignore others
         return nil
     }
 }
 ```
 
-### 4. Error Handling
+### 3. Error handling
 
-If a plugin returns an error from `OnHook`, the hook execution stops and the error is logged. Use this wisely:
+If a plugin returns an error from `OnHook`, the manager logs it and — for
+that hook — stops calling any hook plugins after it in the chain. Don't let
+one non-critical failure (a notification webhook being down, say) block
+other plugins: log-and-continue internally rather than returning an error,
+unless the failure is genuinely something that should halt the hook chain.
 
 ```go
 func (p *MyPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
-    // Critical error - block operation
     if !p.validateUser(hookCtx.UserID) {
-        return fmt.Errorf("user validation failed")
+        return fmt.Errorf("user validation failed") // critical — block
     }
-    
-    // Non-critical - just log
     if err := p.sendNotification(); err != nil {
-        log.Printf("Failed to send notification: %v", err)
-        // Don't return error - allow operation to continue
+        log.Printf("Failed to send notification: %v", err) // non-critical — log only
     }
-    
     return nil
 }
 ```
 
-### 5. Resource Cleanup
-
-Always clean up resources in `Shutdown`:
+### 4. Resource cleanup
 
 ```go
 func (p *MyPlugin) Shutdown(ctx context.Context) error {
     if p.connection != nil {
         p.connection.Close()
     }
-    if p.logFile != nil {
-        p.logFile.Close()
-    }
     return nil
 }
 ```
 
-## Plugin Examples
-
-### Shipped plugins
+## Shipped plugins
 
 | Plugin directory | Name (`Name()`) | Purpose |
 |------------------|-----------------|---------|
+| `plugins/audit-logger` | `audit-logger` | File-based audit trail (enabled and configured out of the box — no credentials needed) |
 | `plugins/notification` | `slack-notifications` | Slack Incoming Webhooks |
 | `plugins/email-notifications` | `email-notifications` | SMTP email alerts |
 | `plugins/webhook-notifications` | `webhook-notifications` | Generic JSON webhooks |
-| `plugins/audit-logger` | `audit-logger` | File-based audit trail |
+| `plugins/chatops-access-request` | `chatops-access-request` | Access-request approvals via Slack/Discord (native interactive buttons) and Teams/Rocket.Chat (signed magic links); implements `HTTPPlugin` for the inbound callbacks |
 
-Build with `make plugins`. Configure under the `plugins:` map in server YAML using the plugin **name**.
+## Testing plugins
 
-### Example 1: Audit Logger Plugin
-
-Logs all events to a file:
-
-```go
-type AuditPlugin struct {
-    logFile *os.File
-}
-
-func (p *AuditPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
-    logLine := fmt.Sprintf("[%s] %s - User: %s, Machine: %s\n",
-        time.Now().Format(time.RFC3339),
-        hook,
-        hookCtx.UserID,
-        hookCtx.MachineID,
-    )
-    p.logFile.WriteString(logLine)
-    return nil
-}
-```
-
-### Example 2: Slack Notification Plugin
-
-Sends notifications to Slack:
+Since plugins are regular Go packages now, they're unit-testable the normal
+way — no `.so` build step required for tests (see
+`plugins/chatops-access-request/*_test.go`):
 
 ```go
-type SlackPlugin struct {
-    webhookURL string
-}
-
-func (p *SlackPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
-    if hook == plugin.HookAccessRequest {
-        message := fmt.Sprintf("Access request: User %s → Machine %s",
-            hookCtx.UserID, hookCtx.MachineID)
-        return p.sendToSlack(message)
-    }
-    return nil
-}
-```
-
-### Example 3: Rate Limiting Plugin
-
-Prevents abuse by rate limiting:
-
-```go
-type RateLimitPlugin struct {
-    limits map[string]*rate.Limiter
-    mu     sync.RWMutex
-}
-
-func (p *RateLimitPlugin) OnHook(ctx context.Context, hook plugin.Hook, hookCtx *plugin.HookContext) error {
-    if hook == plugin.HookPreAuth {
-        if !p.checkRateLimit(hookCtx.UserID) {
-            return fmt.Errorf("rate limit exceeded")
-        }
-    }
-    return nil
-}
-```
-
-## Testing Plugins
-
-### Manual Testing
-
-```bash
-# Build plugin
-go build -buildmode=plugin -o test-plugin.so main.go
-
-# Start server with plugin directory
-orion-belt-server --config server.yaml
-
-# Check logs for plugin loading
-tail -f /var/log/orion-belt/server.log | grep plugin
-```
-
-### Unit Testing
-
-While `.so` plugins can't be unit tested directly, you can test the plugin logic:
-
-```go
-package main
+package myplugin
 
 import (
     "context"
@@ -327,73 +270,48 @@ import (
 
 func TestPluginInitialize(t *testing.T) {
     p := NewPlugin().(*MyPlugin)
-    
-    config := map[string]interface{}{
-        "setting": "value",
-    }
-    
+    config := map[string]interface{}{"setting1": "value"}
     if err := p.Initialize(context.Background(), config); err != nil {
         t.Fatalf("Initialize failed: %v", err)
     }
 }
 ```
 
-## Important Limitations
-
-### 1. Plugin Versioning
-
-Plugins MUST be compiled with the exact same Go version as the server. Mismatched versions will fail to load.
-
-### 2. Cannot Unload Plugins
-
-Go plugins cannot be unloaded from memory once loaded. Restarting the server is required to update plugins.
-
-### 3. Platform Specific
-
-Go plugins only work on Linux and macOS. Windows is not supported.
-
-### 4. Dependency Compatibility
-
-Plugins must use compatible versions of shared dependencies with the server.
+For a manual end-to-end check: `go build ./cmd/server`, run it, and watch
+`server.log` for `Registered plugin: <name>` / `Configured plugin: <name>` at
+startup, or hit `GET /api/v1/admin/plugins` to see its live state.
 
 ## Troubleshooting
 
-### Plugin Not Loading
+### Plugin not showing up
 
-Check:
-- Plugin file has `.so` extension
-- Plugin is in configured `plugin_dir`
-- `NewPlugin()` function is exported
-- Plugin compiled with same Go version as server
-- Check server logs for specific error
+- Is it actually added to `registerBuiltinPlugins` in `pkg/server/plugins_builtin.go`?
+- Does `Register` return an error (duplicate name)? Check server startup logs.
 
-### Plugin Crashes Server
+### Plugin registered but inert
 
-- Ensure plugin doesn't panic
-- Add recover() in critical sections
-- Test plugin thoroughly before deployment
+- Check `GET /api/v1/admin/plugins` — `configured: false` with a `last_error`
+  means `Initialize` rejected the current config (often just "not configured
+  yet" on a fresh install for anything needing credentials).
 
-### Hook Not Firing
+### Hook not firing
 
-- Verify plugin implements `HookPlugin` interface
-- Check `OnHook` method signature is correct
-- Ensure plugin is registered successfully (check logs)
+- Verify the plugin implements `HookPlugin` (not just `Plugin`).
+- Check the manager-level `enabled` switch (Plugins page, or
+  `GET /api/v1/admin/plugins`) — a disabled plugin's `OnHook` is never called.
+- `TriggerHook` recovers panics and enforces a timeout (`defaultHookTimeout`,
+  5s) per plugin — a slow or panicking plugin shows up as a logged error, not
+  a crashed server.
 
-## Distribution
+## Security considerations
 
-When distributing plugins:
-
-1. Document required Go version
-2. Provide installation instructions
-3. Include example configuration
-4. Document required dependencies
-5. Provide version compatibility matrix
-
-## Security Considerations
-
-1. **Validate all inputs** from config and hooks
-2. **Sanitize data** before using in external systems
-3. **Handle credentials securely** (use environment variables or key management)
-4. **Log security events** appropriately
-5. **Test error paths** thoroughly
-
+1. **Validate all inputs** from config and hooks.
+2. **Mark credentials `Secret: true`** in `ConfigSchema()` so they're redacted
+   in API responses and the UI.
+3. **Sanitize data** before using in external systems.
+4. **Verify inbound webhook callers** yourself if implementing `HTTPPlugin` —
+   the mount point is intentionally unauthenticated at the HTTP layer (chat
+   platforms can't send your session/API credentials), so the plugin must
+   verify the request itself (see `plugins/chatops-access-request/slack.go`'s
+   HMAC signature check and `discord.go`'s Ed25519 check for real examples).
+5. **Log security-relevant events** appropriately.

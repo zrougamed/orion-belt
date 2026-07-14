@@ -1,29 +1,48 @@
 :root {
-  --bg-deep: #0a1214;
-  --bg: #0e181c;
-  --bg-elev: #152226;
-  --bg-panel: #1a2a30;
-  --bg-hover: #213438;
-  --line: #2a3f46;
-  --line-soft: rgba(42, 63, 70, 0.55);
-  --text: #e8f0f2;
-  --muted: #8aa0a8;
-  --faint: #5e747c;
-  --accent: #e8a54b;
-  --accent-soft: rgba(232, 165, 75, 0.14);
-  --accent-glow: rgba(232, 165, 75, 0.28);
-  --teal: #2dd4bf;
-  --teal-dim: #0f766e;
-  --ok: #34d399;
-  --warn: #fbbf24;
-  --danger: #f87171;
+  /* Palette tokens — see docs/SRS-UI.md */
+  --bg-deep: #08111f;
+  --bg: #0a1526;
+  --bg-elev: #101b2c;
+  --bg-panel: #101b2c;
+  --bg-hover: #16223a;
+  --line: #22324a;
+  --line-soft: rgba(34, 50, 74, 0.6);
+  --text: #f4f8fc;
+  --muted: #64748b;
+  --faint: #4b5a70;
+  --accent: #146ef5;
+  --accent-electric: #33b8ff;
+  --accent-soft: rgba(20, 110, 245, 0.14);
+  --accent-glow: rgba(20, 110, 245, 0.32);
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --danger: #ef4444;
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-  --font: "Instrument Sans", system-ui, sans-serif;
+  --font: "Inter", system-ui, sans-serif;
+  --font-head: "Space Grotesk", var(--font);
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --nav-w: 240px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Light mode (default) — toggled via ThemeToggle, which stamps data-theme
+   on <html>; see ThemeToggle.tsx. */
+:root[data-theme="light"] {
+  --bg-deep: #f4f8fc;
+  --bg: #ffffff;
+  --bg-elev: #ffffff;
+  --bg-panel: #eef3f9;
+  --bg-hover: #e4ecf7;
+  --line: #d7e1ee;
+  --line-soft: rgba(34, 50, 74, 0.14);
+  --text: #08111f;
+  --muted: #56657b;
+  --faint: #8393a8;
+  --accent-soft: rgba(20, 110, 245, 0.09);
+  --accent-glow: rgba(20, 110, 245, 0.22);
+  --shadow: 0 10px 30px rgba(8, 17, 31, 0.08);
 }
 
 * { box-sizing: border-box; }
@@ -34,15 +53,25 @@ body {
   color: var(--text);
   background-color: var(--bg-deep);
   background-image:
-    linear-gradient(rgba(45, 212, 191, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px),
-    radial-gradient(1100px 700px at 8% -15%, rgba(15, 118, 110, 0.35), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, rgba(232, 165, 75, 0.08), transparent 50%),
-    radial-gradient(800px 600px at 50% 120%, rgba(14, 24, 28, 0.9), transparent 60%),
+    linear-gradient(rgba(51, 184, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 184, 255, 0.035) 1px, transparent 1px),
+    radial-gradient(1100px 700px at 8% -15%, rgba(20, 110, 245, 0.28), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(51, 184, 255, 0.1), transparent 50%),
+    radial-gradient(800px 600px at 50% 120%, rgba(8, 17, 31, 0.9), transparent 60%),
     var(--bg);
   background-size: 48px 48px, 48px 48px, auto, auto, auto, auto;
   -webkit-font-smoothing: antialiased;
 }
+:root[data-theme="light"] body {
+  background-image:
+    linear-gradient(rgba(20, 110, 245, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 110, 245, 0.04) 1px, transparent 1px),
+    radial-gradient(1100px 700px at 8% -15%, rgba(20, 110, 245, 0.07), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(51, 184, 255, 0.06), transparent 50%),
+    var(--bg);
+  background-size: 48px 48px, 48px 48px, auto, auto, auto;
+}
+h1, h2, .nav-brand, .login-brand, .card h3 { font-family: var(--font-head); letter-spacing: -0.01em; }
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: var(--accent); }
 .mono { font-family: var(--mono); font-size: 0.84rem; }
@@ -58,7 +87,7 @@ a { color: var(--accent); }
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  color: #1a1208;
+  color: #ffffff;
   font-weight: 600;
   padding: 0.55rem 0.95rem;
   cursor: pointer;
@@ -72,7 +101,7 @@ a { color: var(--accent); }
   color: var(--text);
 }
 .btn.secondary:hover { background: var(--bg-hover); }
-.btn.danger { background: var(--danger); color: #1a0a0a; }
+.btn.danger { background: var(--danger); color: #ffffff; }
 .btn.sm { padding: 0.3rem 0.65rem; font-size: 0.85rem; font-weight: 500; }
 .btn.block { width: 100%; }
 
@@ -177,12 +206,16 @@ nav.side {
   flex-direction: column;
   gap: 0.2rem;
 }
+:root[data-theme="light"] nav.side { background: rgba(244, 248, 252, 0.78); }
 .nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 1.15rem;
   font-weight: 650;
   padding: 0.35rem 0.55rem 1rem;
 }
-.nav-brand span { color: var(--accent); font-style: italic; }
+.nav-brand span { color: var(--accent); }
 .nav-section {
   color: var(--faint);
   font-size: 0.7rem;
@@ -231,11 +264,10 @@ nav.side button.nav-item.active {
 .nav-ico {
   width: 18px;
   height: 18px;
-  object-fit: contain;
-  opacity: 0.9;
   flex-shrink: 0;
+  color: inherit;
 }
-.nav-item.active .nav-ico { opacity: 1; filter: brightness(1.1); }
+.nav-item.active .nav-ico { filter: drop-shadow(0 0 4px var(--accent-glow)); }
 .nav-foot { margin-top: auto; padding-top: 1rem; }
 .who { padding: 0.55rem; }
 .role-pill {
@@ -279,13 +311,19 @@ nav.side button.nav-item.active {
   position: relative;
   overflow: hidden;
 }
+.login-theme-toggle {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 1;
+}
 .login-stage::before {
   content: "";
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(600px 400px at 30% 40%, rgba(15, 118, 110, 0.28), transparent 60%),
-    radial-gradient(500px 360px at 70% 30%, rgba(232, 165, 75, 0.12), transparent 55%);
+    radial-gradient(600px 400px at 30% 40%, rgba(20, 110, 245, 0.28), transparent 60%),
+    radial-gradient(500px 360px at 70% 30%, rgba(51, 184, 255, 0.14), transparent 55%);
   animation: drift 18s ease-in-out infinite alternate;
   pointer-events: none;
 }
@@ -299,12 +337,15 @@ nav.side button.nav-item.active {
   padding: 1.75rem 1.5rem 1.5rem;
 }
 .login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-size: clamp(2.2rem, 5vw, 2.8rem);
   font-weight: 650;
   margin: 0 0 0.35rem;
   letter-spacing: -0.02em;
 }
-.login-brand em { color: var(--accent); font-style: italic; font-weight: 600; }
+.login-brand em { color: var(--accent); font-style: normal; font-weight: 600; }
 .login-tag { color: var(--muted); margin: 0 0 1.25rem; }
 
 .os-picker {
@@ -522,6 +563,7 @@ pre.code, pre.session {
   align-items: center;
   gap: 0.65rem;
 }
+.theme-toggle { padding: 0.4rem; line-height: 0; }
 .kbd-hint {
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -532,6 +574,7 @@ pre.code, pre.session {
   background: var(--bg-panel);
 }
 
+:root[data-theme="light"] .palette-backdrop { background: rgba(8, 17, 31, 0.35); }
 .palette-backdrop {
   position: fixed;
   inset: 0;

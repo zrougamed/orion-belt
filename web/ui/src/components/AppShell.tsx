@@ -2,12 +2,14 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth, useRole } from "../auth/AuthContext";
 import { NAV } from "../lib/nav";
 import { CommandPalette } from "./CommandPalette";
+import { ThemeToggle, useTheme } from "./ThemeToggle";
 
 export function AppShell() {
   const { user, version, logout } = useAuth();
   const role = useRole();
   const items = NAV[role] || NAV.user;
   const ver = version?.display || version?.version || "…";
+  const { theme, toggle } = useTheme();
 
   return (
     <div className="app-shell">
@@ -24,7 +26,7 @@ export function AppShell() {
             className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
             style={{ textDecoration: "none" }}
           >
-            <img className="nav-ico" src={n.icon} alt="" width={18} height={18} />
+            <n.icon className="nav-ico" width={18} height={18} />
             {n.label}
           </NavLink>
         ))}
@@ -48,6 +50,7 @@ export function AppShell() {
         <div className="topbar">
           <span>Privileged access console</span>
           <div className="topbar-right">
+            <ThemeToggle theme={theme} onToggle={toggle} />
             <kbd className="kbd-hint">⌘K</kbd>
             <span className="version-chip">{ver}</span>
           </div>

@@ -6,9 +6,9 @@ It provides **reverse SSH tunneling**, **relationship-based access control (ReBA
 
 Think of it as a lightweight, self-hosted alternative to traditional bastion hosts or commercial access gateways — built with simplicity, auditability, and extensibility in mind.
 
-> Status: **Alpha v0.4+** — MFA/WebAuthn, OpenSSH clients, role-aware web console, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
+> Status: **Alpha v0.7+** — plugin platform with live UI config, chatops approvals (Slack/Discord/Teams/Rocket.Chat), MFA/WebAuthn, OpenSSH clients, role-aware web console with dark/light themes, OpenFGA, recording encryption, native packages, OpenAPI, GPG-signed repos
 
-![Orion-Belt banner](assets/banner.png)
+![Orion-Belt](assets/banner-2.png)
 
 
 ## Why Orion-Belt?
@@ -40,7 +40,7 @@ Orion-Belt solves this by:
 - **ReBAC**: Relationship-based access control for authorized users
 - **Temporary Access**: Request-based temporary access with admin approval
 - **Session Recording**: Complete session recording and audit trails (optional AES-at-rest + retention)
-- **Plugin System**: Dynamic plugins (Slack, email, webhooks, audit logger)
+- **Plugin System**: Built-in plugins (audit logger, Slack/email/webhook notifications, chatops access-request approvals for Slack/Discord/Teams/Rocket.Chat) — enable and configure live from the web console, no restart or YAML editing
 - **Host Key Verification**: TOFU / known_hosts for clients and agents
 - **API Auth**: API keys, session tokens, and JWT bearer tokens
 - **MFA**: TOTP + YubiKey/FIDO2 (WebAuthn) for the web console; FIDO SSH keys (`sk-*`)
@@ -289,7 +289,7 @@ orion-belt/
 │   ├── SRS-UI.md     # Web console requirements (as implemented)
 │   └── API/          # Postman + Swagger how-to
 ├── packaging/        # nfpm configs, systemd, GPG keys (public)
-├── plugins/          # Slack, email, webhook, audit-logger
+├── plugins/          # Slack, email, webhook, audit-logger, chatops-access-request
 ├── lab/              # Compose + QEMU multi-distro labs
 ├── config/           # example YAML
 └── docker/           # Compose + images

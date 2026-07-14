@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { b64urlToBuf, bufToB64url } from "../lib/format";
 import type { User } from "../lib/types";
 import { useToast } from "../components/Toast";
+import { ThemeToggle, useTheme } from "../components/ThemeToggle";
 
 type LoginResp = {
   session_token: string;
@@ -33,6 +34,7 @@ export function LoginPage() {
   const { user, version, login, ready } = useAuth();
   const home = useHomePath();
   const { toast } = useToast();
+  const { theme, toggle } = useTheme();
   const [username, setUsername] = useState("admin");
   const [publicKey, setPublicKey] = useState("");
   const [totp, setTotp] = useState("");
@@ -107,6 +109,9 @@ export function LoginPage() {
 
   return (
     <div className="login-stage">
+      <div className="login-theme-toggle">
+        <ThemeToggle theme={theme} onToggle={toggle} />
+      </div>
       <form className="card login-panel" onSubmit={onSubmit}>
         <h1 className="login-brand">
           Orion <em>Belt</em>

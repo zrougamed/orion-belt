@@ -7,11 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <script type="module" crossorigin src="/ui/assets/index-BFMJ14Fq.js"></script>
-    <link rel="stylesheet" crossorigin href="/ui/assets/index-C8Ey5J5K.css">
+    <script>
+      // Applied synchronously, before first paint, so there's no flash of
+      // the wrong theme on load — same storage key and default (light) as
+      // ThemeToggle.tsx.
+      (function () {
+        var stored = localStorage.getItem("ob_theme");
+        document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
+      })();
+    </script>
+    <script type="module" crossorigin src="/ui/assets/index-BipZ9ec6.js"></script>
+    <link rel="stylesheet" crossorigin href="/ui/assets/index-C1ODRLEI.css">
   </head>
   <body>
     <div id="root"></div>
