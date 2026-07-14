@@ -2,7 +2,7 @@
 FROM golang:1.26.5-alpine AS builder
 
 # Go tools + Node (React console → web/static, embedded via go:embed)
-RUN apk add --no-cache git make gcc musl-dev nodejs npm
+RUN apk add --no-cache git make nodejs npm
 
 # Set working directory
 WORKDIR /build
@@ -16,7 +16,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# build-ui then binaries; UI lands in web/static and is compiled into the server
+# build-ui then binaries; UI lands in web/static and is compiled into the server.
+# Plugins (audit-logger, slack/email/webhook notifications, chatops-access-request)
+# are compiled directly into orion-belt-server — no separate build step.
 RUN make build
 
 # Server image

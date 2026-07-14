@@ -15,6 +15,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { FilesPage } from "./pages/FilesPage";
 import { SecurityPage } from "./pages/SecurityPage";
 import { PermissionsPage } from "./pages/PermissionsPage";
+import { PluginsPage } from "./pages/PluginsPage";
 import { NAV } from "./lib/nav";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -158,6 +159,14 @@ export default function App() {
           element={
             <RoleGate id="security">
               <SecurityPage />
+            </RoleGate>
+          }
+        />
+        <Route
+          path="plugins"
+          element={
+            <RoleGate id="plugins">
+              <PluginsPage />
             </RoleGate>
           }
         />

@@ -31,7 +31,6 @@ server:
   port: 2222
   api_port: 8080
   ssh_host_key: "${HOST_KEY}"
-  plugin_dir: "/etc/orion-belt/plugins"
   metrics_enabled: true
 
 database:
@@ -46,7 +45,7 @@ auth:
   mfa_required: ${ORION_MFA_REQUIRED:-false}
   rate_limit_per_minute: ${ORION_RATE_LIMIT_PER_MINUTE:-600}
   webauthn:
-    enabled: ${ORION_WEBAUTHN_ENABLED:-false}
+    enabled: ${ORION_WEBAUTHN_ENABLED:-true}
     rp_display_name: "${ORION_WEBAUTHN_RP_NAME:-Orion Belt}"
     rp_id: "${ORION_PUBLIC_HOST:-localhost}"
     origins:

@@ -4,7 +4,6 @@ server:
   api_port: 8080
   ssh_host_key: "/etc/orion-belt/ssh_host_key"
   api_endpoint: "http://localhost:8080/api"
-  plugin_dir: "/etc/orion-belt/plugins"
   metrics_enabled: true
 
 database:
@@ -19,6 +18,13 @@ auth:
   mfa_required: false
   rate_limit_per_minute: 600
   strict_host_key_checking: "no"
+  webauthn:
+    enabled: true
+    rp_display_name: "Orion Belt Lab"
+    rp_id: "localhost"
+    origins:
+      - "http://localhost:8080"
+      - "https://localhost:8080"
 
 recording:
   enabled: true

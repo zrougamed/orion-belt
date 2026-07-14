@@ -1,4 +1,4 @@
-.PHONY: build build-server build-client build-agent build-ui test clean install plugins \
+.PHONY: build build-server build-client build-agent build-ui test clean install \
         docker-build docker-build-server docker-build-agent docker-build-client \
         docker-push docker-up docker-down docker-logs docker-agent-up docker-agent-down \
         cve packages repos packaging-key sign-artifacts lab-compose-up lab-compose-down lab-bootstrap-admin \
@@ -9,9 +9,6 @@
 # Build variables
 BINARY_NAME=orion-belt
 BUILD_DIR=bin
-PLUGIN_DIR=plugins
-BUILD_DIR_PLUGINS=bin/plugins
-PLUGINS := audit-logger notification email-notifications webhook-notifications
 GO=go
 GOFLAGS=-v
 NODE_BIN ?= $(CURDIR)/.tools/node/bin
@@ -49,8 +46,10 @@ build-ui:
 	@command -v npm >/dev/null || { echo "npm not found — install Node.js or set NODE_BIN=$(NODE_BIN)"; exit 1; }
 	cd web/ui && npm install --no-fund --no-audit && npm run build
 
-# Build server
-build-server:
+# Build server. Depends on build-ui so the embedded web/static (go:embed)
+# is never a stale, previously-committed snapshot — the UI ships with
+# whatever's actually in web/ui/src, every time.
+build-server: build-ui
 	@echo "Building server $(VERSION) ($(COMMIT))..."
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-server ./cmd/server
@@ -119,17 +118,6 @@ update-deps:
 	$(GO) get -u ./...
 	$(GO) mod tidy
 
-# plugins section
-plugins: $(BUILD_DIR_PLUGINS)
-	@echo "Building plugins..."
-	@for plugin in $(PLUGINS); do \
-		echo "Building $$plugin.so..."; \
-		$(GO) build -buildmode=plugin -o $(BUILD_DIR_PLUGINS)/$$plugin.so $(PLUGIN_DIR)/$$plugin/main.go || exit 1; \
-	done
-	@echo "Plugins built successfully"
-
-$(BUILD_DIR_PLUGINS):
-	@mkdir -p $(BUILD_DIR_PLUGINS)
 
 # ────────────────────────────────────────────────────────────
 # Docker targets

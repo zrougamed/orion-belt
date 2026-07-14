@@ -24,7 +24,6 @@ type ServerConfig struct {
 	APIPort        int    `yaml:"api_port,omitempty"`
 	SSHHostKey     string `yaml:"ssh_host_key,omitempty"`
 	APIEndpoint    string `yaml:"api_endpoint,omitempty"`
-	PluginDir      string `yaml:"plugin_dir"`
 	MetricsEnabled bool   `yaml:"metrics_enabled,omitempty"`
 }
 
@@ -36,12 +35,12 @@ type DatabaseConfig struct {
 
 // AuthConfig contains authentication configuration
 type AuthConfig struct {
-	KeyFile               string `yaml:"key_file,omitempty"`
-	User                  string `yaml:"user,omitempty"`
-	ReBACEnabled          bool   `yaml:"rebac_enabled,omitempty"`
-	AllowTempAccess       bool   `yaml:"allow_temp_access,omitempty"`
-	KnownHosts            string `yaml:"known_hosts,omitempty"`
-	StrictHostKeyChecking string `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
+	KeyFile               string         `yaml:"key_file,omitempty"`
+	User                  string         `yaml:"user,omitempty"`
+	ReBACEnabled          bool           `yaml:"rebac_enabled,omitempty"`
+	AllowTempAccess       bool           `yaml:"allow_temp_access,omitempty"`
+	KnownHosts            string         `yaml:"known_hosts,omitempty"`
+	StrictHostKeyChecking string         `yaml:"strict_host_key_checking,omitempty"` // yes | ask | no
 	JWTSecret             string         `yaml:"jwt_secret,omitempty"`
 	JWTExpiryHours        int            `yaml:"jwt_expiry_hours,omitempty"`
 	MFARequired           bool           `yaml:"mfa_required,omitempty"`
@@ -52,10 +51,10 @@ type AuthConfig struct {
 
 // WebAuthnConfig configures FIDO2/WebAuthn (YubiKey, etc.).
 type WebAuthnConfig struct {
-	Enabled    bool     `yaml:"enabled"`
-	RPDisplay  string   `yaml:"rp_display_name"` // e.g. Orion Belt
-	RPID       string   `yaml:"rp_id"`           // e.g. orion.example.com
-	Origins    []string `yaml:"origins"`         // e.g. https://orion.example.com
+	Enabled   bool     `yaml:"enabled"`
+	RPDisplay string   `yaml:"rp_display_name"` // e.g. Orion Belt
+	RPID      string   `yaml:"rp_id"`           // e.g. orion.example.com
+	Origins   []string `yaml:"origins"`         // e.g. https://orion.example.com
 }
 
 // OpenFGAConfig configures optional OpenFGA authorization.

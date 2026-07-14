@@ -74,8 +74,8 @@ fi
 run_root() {
   if [ -z "\$ASROOT" ]; then "\$@"; else \$ASROOT "\$@"; fi
 }
+trap 'run_root rm -f /tmp/${src_name}' EXIT
 run_root install -m 0755 /tmp/${src_name} ${dest_path}
-rm -f /tmp/${src_name}
 echo "installed ${dest_path}"
 REMOTE
 }
@@ -161,6 +161,8 @@ mkdir -p "$ROOT/dist" "$RUN_DIR/logs"
 if [[ "${SKIP_BUILD:-0}" == "1" ]]; then
   echo "==> SKIP_BUILD=1 — using existing dist/ binaries"
 else
+  echo "==> Building web UI → web/static (embedded in the server binary)"
+  (cd "$ROOT" && make build-ui)
   echo "==> Building linux/amd64 server + agent → dist/"
   (
     cd "$ROOT"

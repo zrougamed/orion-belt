@@ -121,27 +121,54 @@ func New(config *common.Config, logger *common.Logger) (*Server, error) {
 		logger.Info("WebAuthn/FIDO2 enabled (rp_id=%s)", rpid)
 	}
 
-	// Initialize plugin manager
+	// Initialize plugin manager and register all bundled plugins — compiled
+	// directly into this binary (see plugins_builtin.go), not dynamically
+	// loaded .so files.
 	pluginManager := plugin.NewManager(logger)
-	pluginDir := resolveDirWithCreate(
-		config.Server.PluginDir,
-		"/etc/orion-belt/plugins",
-		logger,
-	)
-	pluginManager.SetPluginDirectory(pluginDir)
-
-	// Load all plugins from the directory
-	if err := pluginManager.LoadPlugins(ctx); err != nil {
-		logger.Warn("Failed to load plugins: %v", err)
-		// log and continue on failure
+	if err := registerBuiltinPlugins(pluginManager); err != nil {
+		logger.Warn("Failed to register built-in plugins: %v", err)
 	}
 
-	// Initialize loaded plugins with their configs
-	if len(config.Plugins) > 0 {
-		if failed := pluginManager.InitializeAll(ctx, config.Plugins); failed != nil {
-			for name, err := range failed {
-				logger.Warn("plugin %s failed: %v", name, err)
-			}
+	// Plugin config lives in the database so it can be edited from the UI
+	// without a restart. server.yaml's `plugins:` block and the zero-config
+	// defaults only seed the DB on a deployment's first boot; after that the
+	// DB wins.
+	pluginSettings, err := store.ListPluginSettings(ctx)
+	if err != nil {
+		logger.Warn("Failed to load plugin settings: %v", err)
+	}
+	settingsByName := make(map[string]*common.PluginSetting, len(pluginSettings))
+	for _, s := range pluginSettings {
+		settingsByName[s.Name] = s
+	}
+	for name, cfg := range defaultPluginConfigs {
+		if _, seeded := settingsByName[name]; seeded {
+			continue
+		}
+		seed := &common.PluginSetting{Name: name, Enabled: true, Config: cfg, UpdatedAt: time.Now()}
+		if err := store.UpsertPluginSetting(ctx, seed); err != nil {
+			logger.Warn("Failed to seed default plugin setting %s: %v", name, err)
+			continue
+		}
+		settingsByName[name] = seed
+	}
+	for name, cfg := range config.Plugins {
+		if _, seeded := settingsByName[name]; seeded {
+			continue
+		}
+		seed := &common.PluginSetting{Name: name, Enabled: true, Config: cfg, UpdatedAt: time.Now()}
+		if err := store.UpsertPluginSetting(ctx, seed); err != nil {
+			logger.Warn("Failed to seed plugin setting %s from server.yaml: %v", name, err)
+			continue
+		}
+		settingsByName[name] = seed
+	}
+	for name, setting := range settingsByName {
+		if err := pluginManager.Configure(ctx, name, setting.Config); err != nil {
+			logger.Warn("plugin %s failed to configure: %v", name, err)
+		}
+		if err := pluginManager.SetEnabled(name, setting.Enabled); err != nil {
+			logger.Warn("plugin %s: %v", name, err)
 		}
 	}
 

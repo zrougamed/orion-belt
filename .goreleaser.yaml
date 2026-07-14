@@ -6,6 +6,10 @@ project_name: orion-belt
 before:
   hooks:
     - go mod tidy
+    # Rebuild web/static (go:embed'd into the server) every release — it's
+    # committed to git as a convenience for plain `go build`, but a release
+    # must never ship whatever snapshot happened to be last committed.
+    - make build-ui
 
 builds:
   - id: server

@@ -13,6 +13,7 @@ import iconAgents from "../assets/icons/agents.png";
 import iconAddAgent from "../assets/icons/add-agent.png";
 import iconAudit from "../assets/icons/audit.png";
 import iconSecurity from "../assets/icons/security.png";
+import iconPlugins from "../assets/icons/plugins.png";
 
 export function roleOf(user: { role?: string; is_admin?: boolean } | null | undefined): Role {
   if (!user) return "user";
@@ -44,6 +45,7 @@ const BASE: NavItem[] = [
   { id: "add-agent", label: "Add agent", icon: iconAddAgent, path: "/add-agent" },
   { id: "audit", label: "Audit", icon: iconAudit, path: "/audit" },
   { id: "security", label: "Security", icon: iconSecurity, path: "/security" },
+  { id: "plugins", label: "Plugins", icon: iconPlugins, path: "/plugins" },
 ];
 
 function pick(...ids: string[]): NavItem[] {

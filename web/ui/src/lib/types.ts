@@ -55,6 +55,28 @@ export type AuditLog = {
   metadata?: Record<string, unknown>;
 };
 
+export type PluginConfigField = {
+  key: string;
+  label: string;
+  type: "string" | "bool" | "int" | "object";
+  secret?: boolean;
+  required?: boolean;
+  placeholder?: string;
+  help?: string;
+  fields?: PluginConfigField[]; // present when type === "object"
+};
+
+export type PluginInfo = {
+  name: string;
+  version: string;
+  enabled: boolean;
+  configured: boolean;
+  last_error?: string;
+  config: Record<string, unknown>;
+  has_webhook: boolean;
+  schema?: PluginConfigField[];
+};
+
 export type VersionInfo = {
   version?: string;
   commit?: string;

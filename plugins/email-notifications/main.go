@@ -1,4 +1,4 @@
-package main
+package emailnotifications
 
 import (
 	"context"
@@ -34,6 +34,25 @@ func NewPlugin() plugin.Plugin {
 
 func (p *EmailPlugin) Name() string    { return p.name }
 func (p *EmailPlugin) Version() string { return p.version }
+
+func (p *EmailPlugin) ConfigSchema() []plugin.ConfigField {
+	return []plugin.ConfigField{
+		{Key: "smtp_host", Label: "SMTP host", Type: "string", Required: true, Placeholder: "smtp.example.com"},
+		{Key: "smtp_port", Label: "SMTP port", Type: "int", Placeholder: "587"},
+		{Key: "username", Label: "Username", Type: "string"},
+		{Key: "password", Label: "Password", Type: "string", Secret: true},
+		{Key: "from", Label: "From address", Type: "string", Placeholder: "orion-belt@example.com"},
+		{
+			Key:         "to",
+			Label:       "Recipients",
+			Type:        "string",
+			Required:    true,
+			Placeholder: "admins@example.com, security@example.com",
+			Help:        "Comma-separated list of recipient addresses.",
+		},
+		{Key: "enabled", Label: "Enabled", Type: "bool"},
+	}
+}
 
 func (p *EmailPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {
 	if host, ok := config["smtp_host"].(string); ok {

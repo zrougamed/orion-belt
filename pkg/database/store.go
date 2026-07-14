@@ -84,6 +84,11 @@ type Store interface {
 	UpdateWebAuthnCredential(ctx context.Context, cred *common.WebAuthnCredential) error
 	DeleteWebAuthnCredential(ctx context.Context, id string) error
 
+	// Plugin settings (enabled state + dynamic config, editable from the UI)
+	GetPluginSetting(ctx context.Context, name string) (*common.PluginSetting, error)
+	ListPluginSettings(ctx context.Context) ([]*common.PluginSetting, error)
+	UpsertPluginSetting(ctx context.Context, setting *common.PluginSetting) error
+
 	// Lifecycle
 	Connect(ctx context.Context) error
 	Close() error

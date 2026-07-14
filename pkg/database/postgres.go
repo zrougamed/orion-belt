@@ -170,6 +170,12 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 			key_type VARCHAR(100) NOT NULL,
 			created_at TIMESTAMP NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS plugin_settings (
+			name VARCHAR(255) PRIMARY KEY,
+			enabled BOOLEAN NOT NULL DEFAULT FALSE,
+			config JSONB NOT NULL DEFAULT '{}',
+			updated_at TIMESTAMP NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS webauthn_credentials (
 			id VARCHAR(36) PRIMARY KEY,
 			user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1292,4 +1298,62 @@ func (s *PostgresStore) DeleteWebAuthnCredential(ctx context.Context, id string)
 		return ErrNotFound
 	}
 	return nil
+}
+
+// GetPluginSetting retrieves the stored enabled/config state for a plugin.
+func (s *PostgresStore) GetPluginSetting(ctx context.Context, name string) (*common.PluginSetting, error) {
+	setting := &common.PluginSetting{Name: name}
+	var config []byte
+	err := s.db.QueryRowContext(ctx,
+		`SELECT enabled, config, updated_at FROM plugin_settings WHERE name=$1`, name).
+		Scan(&setting.Enabled, &config, &setting.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(config, &setting.Config); err != nil {
+		return nil, err
+	}
+	return setting, nil
+}
+
+// ListPluginSettings returns the stored state for every plugin that has ever
+// been configured or toggled.
+func (s *PostgresStore) ListPluginSettings(ctx context.Context) ([]*common.PluginSetting, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, enabled, config, updated_at FROM plugin_settings ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*common.PluginSetting
+	for rows.Next() {
+		setting := &common.PluginSetting{}
+		var config []byte
+		if err := rows.Scan(&setting.Name, &setting.Enabled, &config, &setting.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(config, &setting.Config); err != nil {
+			return nil, err
+		}
+		out = append(out, setting)
+	}
+	return out, rows.Err()
+}
+
+// UpsertPluginSetting persists a plugin's enabled state and config, creating
+// or replacing the row for that plugin name.
+func (s *PostgresStore) UpsertPluginSetting(ctx context.Context, setting *common.PluginSetting) error {
+	config, err := json.Marshal(setting.Config)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO plugin_settings (name, enabled, config, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (name) DO UPDATE SET enabled=$2, config=$3, updated_at=$4`,
+		setting.Name, setting.Enabled, config, setting.UpdatedAt)
+	return err
 }

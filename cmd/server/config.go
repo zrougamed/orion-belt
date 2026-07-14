@@ -55,7 +55,6 @@ func runConfigShow(cmd *cobra.Command, args []string) {
 	fmt.Printf("  Port:        %d\n", config.Server.Port)
 	fmt.Printf("  API Port:    %d\n", config.Server.APIPort)
 	fmt.Printf("  SSH Host Key: %s\n", config.Server.SSHHostKey)
-	fmt.Printf("  Plugin Dir:  %s\n", config.Server.PluginDir)
 
 	fmt.Printf("\nDatabase:\n")
 	fmt.Printf("  Driver:      %s\n", config.Database.Driver)

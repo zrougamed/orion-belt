@@ -4,7 +4,6 @@ server:
   api_port: 8080
   ssh_host_key: "/etc/orion-belt/ssh_host_key"
   api_endpoint: "http://localhost:8080/api"
-  plugin_dir: "/etc/orion-belt/plugins"
   metrics_enabled: true
 
 database:

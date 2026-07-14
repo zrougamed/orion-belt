@@ -26,6 +26,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/ui/package-lock.json
+
       - name: CVE gate before release
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

@@ -283,6 +283,16 @@ func NewAPIKey(userID, name, keyHash, keyPrefix string, expiresAt *time.Time) *A
 	}
 }
 
+// PluginSetting persists the enabled/config state for a registered plugin,
+// letting the UI toggle and reconfigure plugins without touching server.yaml
+// or restarting the process.
+type PluginSetting struct {
+	Name      string                 `json:"name"`
+	Enabled   bool                   `json:"enabled"`
+	Config    map[string]interface{} `json:"config"`
+	UpdatedAt time.Time              `json:"updated_at"`
+}
+
 // NewHTTPSession creates a new HTTP session
 func NewHTTPSession(userID, token, ipAddress, userAgent string, expiresAt time.Time) *HTTPSession {
 	now := time.Now()

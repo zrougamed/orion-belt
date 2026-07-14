@@ -70,6 +70,8 @@ if [[ ! -f "$IMG/ubuntu.qcow2" ]]; then
 fi
 
 # Build release artifacts into dist/ for the package HTTP server
+echo "==> Building web UI → web/static (embedded in the server binary)"
+(cd "$ROOT" && make build-ui)
 echo "==> Building linux/amd64 binaries + packages into dist/"
 mkdir -p "$ROOT/dist"
 (

@@ -31,7 +31,6 @@ write_files:
         api_port: 8080
         ssh_host_key: "/etc/orion-belt/ssh_host_key"
         api_endpoint: "http://127.0.0.1:8080/api"
-        plugin_dir: "/etc/orion-belt/plugins"
         metrics_enabled: true
       database:
         driver: "postgres"
@@ -42,6 +41,13 @@ write_files:
         jwt_secret: "qemu-lab-secret-change-me"
         jwt_expiry_hours: 24
         mfa_required: false
+        webauthn:
+          enabled: true
+          rp_display_name: "Orion Belt Lab"
+          rp_id: "localhost"
+          origins:
+            - "http://localhost:8080"
+            - "https://localhost:8080"
       recording:
         enabled: true
         storage_path: "/var/lib/orion-belt/recordings"
@@ -62,6 +68,7 @@ runcmd:
     # Prefer raw binary (stable name); fall back to deb if present.
     if curl -fsSL -o /tmp/orion-belt-server "$BASE/orion-belt-server"; then
       install -m 0755 /tmp/orion-belt-server /usr/bin/orion-belt-server
+      rm -f /tmp/orion-belt-server
     else
       curl -fsSL -o /tmp/orion-belt.deb "$BASE/orion-belt_{{VERSION}}_amd64.deb" || true
       curl -fsSL -o /tmp/orion-belt.deb "$BASE/orion-belt_{{VERSION}}_linux_amd64.deb" || true

@@ -1,4 +1,4 @@
-package main
+package auditlogger
 
 import (
 	"context"
@@ -33,6 +33,19 @@ func (p *AuditPlugin) Name() string {
 
 func (p *AuditPlugin) Version() string {
 	return p.version
+}
+
+func (p *AuditPlugin) ConfigSchema() []plugin.ConfigField {
+	return []plugin.ConfigField{
+		{
+			Key:         "log_path",
+			Label:       "Log file path",
+			Type:        "string",
+			Required:    true,
+			Placeholder: "/var/log/orion-belt/audit-plugin.log",
+			Help:        "Local file the plugin appends audit events to.",
+		},
+	}
 }
 
 func (p *AuditPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {

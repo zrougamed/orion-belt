@@ -1,4 +1,4 @@
-package main
+package webhooknotifications
 
 import (
 	"bytes"
@@ -34,6 +34,21 @@ func NewPlugin() plugin.Plugin {
 
 func (p *WebhookPlugin) Name() string    { return p.name }
 func (p *WebhookPlugin) Version() string { return p.version }
+
+func (p *WebhookPlugin) ConfigSchema() []plugin.ConfigField {
+	return []plugin.ConfigField{
+		{
+			Key:         "url",
+			Label:       "Webhook URL",
+			Type:        "string",
+			Secret:      true,
+			Required:    true,
+			Placeholder: "https://hooks.example.com/orion-belt",
+			Help:        "Receives a JSON POST for session/access-request events. Treated as sensitive since these URLs are often bearer credentials in disguise.",
+		},
+		{Key: "enabled", Label: "Enabled", Type: "bool"},
+	}
+}
 
 func (p *WebhookPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {
 	if url, ok := config["url"].(string); ok {

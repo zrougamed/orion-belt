@@ -30,7 +30,7 @@ type APIServer struct {
 	logger         *common.Logger
 	router         *gin.Engine
 	rateLimiter    *rateLimiter
-	agentCommander  AgentCommander
+	agentCommander AgentCommander
 	mfaRequired    bool
 	recordingCrypt *recording.Crypto
 	recorder       *recording.Recorder
@@ -156,6 +156,10 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		public.POST("/login", s.login)
 		public.POST("/login/key", s.loginWithKey)
 		public.POST("/login/token", s.loginJWT)
+
+		// Inbound plugin webhooks (e.g. chat-platform interaction callbacks).
+		// Unauthenticated at this layer; each plugin verifies its own caller.
+		public.Any("/plugins/:name/*proxyPath", s.pluginWebhook)
 	}
 
 	// Protected endpoints
@@ -233,6 +237,12 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Access request management
 		admin.POST("/access-requests/:id/approve", s.approveAccessRequest)
 		admin.POST("/access-requests/:id/reject", s.rejectAccessRequest)
+
+		// Plugin management
+		admin.GET("/plugins", s.listPlugins)
+		admin.PUT("/plugins/:name/config", s.updatePluginConfig)
+		admin.POST("/plugins/:name/enable", s.enablePlugin)
+		admin.POST("/plugins/:name/disable", s.disablePlugin)
 
 		// Agent remote management
 		admin.GET("/agents/connected", s.listConnectedAgents)

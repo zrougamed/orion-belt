@@ -1,4 +1,4 @@
-package main
+package notification
 
 import (
 	"bytes"
@@ -37,6 +37,21 @@ func (p *SlackPlugin) Name() string {
 
 func (p *SlackPlugin) Version() string {
 	return p.version
+}
+
+func (p *SlackPlugin) ConfigSchema() []plugin.ConfigField {
+	return []plugin.ConfigField{
+		{
+			Key:         "webhook_url",
+			Label:       "Incoming webhook URL",
+			Type:        "string",
+			Secret:      true,
+			Required:    true,
+			Placeholder: "https://hooks.slack.com/services/…",
+		},
+		{Key: "channel", Label: "Channel", Type: "string", Placeholder: "#security"},
+		{Key: "enabled", Label: "Enabled", Type: "bool"},
+	}
 }
 
 func (p *SlackPlugin) Initialize(ctx context.Context, config map[string]interface{}) error {
