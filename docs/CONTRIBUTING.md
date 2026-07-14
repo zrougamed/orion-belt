@@ -93,7 +93,7 @@ go tool cover -func=/tmp/ob.cov | tail
 go test ./pkg/recording/ -bench=. -benchtime=200ms
 ```
 
-Target remains ~80% package coverage over time; new packages should ship with unit tests. Integration depth is covered by [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md).
+Target is higher package coverage over time; new packages should bring tests. Lab depth: [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md). Before a release: [RELEASE_SMOKE.md](RELEASE_SMOKE.md) / `make release-smoke` ([V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)).
 
 ### Packages & labs
 

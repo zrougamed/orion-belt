@@ -15,7 +15,7 @@ Agents dial **out** over reverse SSH, so you eliminate inbound firewall holes. Y
 
 > Free to use, modify, and self-host — including for internal commercial use — under [Apache 2.0 + Commons Clause](LICENSE). The Clause withholds only the right to **sell** Orion Belt (or a hosted service whose value derives substantially from it) as a product. See [orion-belt.dev](https://orion-belt.dev).
 
-> Status: **Alpha v0.9.0** — permissions editor, recording compression, live session watch, notification prefs/templates, JIT polish, JSON/Prometheus observability docs, password+TOTP + WebAuthn, SSH Certificate Authority, challenge-response login, plugin platform with live UI config, chatops approvals, OpenSSH clients, role-aware web console, OpenFGA, native packages, OpenAPI, GPG-signed repos
+> Status: **v1.0.0** — stable SSH PAM: CA, MFA, JIT, ReBAC, recording (+ compression / live watch), permissions editor, notification prefs, permissions editor, recording compression, live session watch, notification prefs/templates, JIT polish, JSON/Prometheus observability docs, password+TOTP + WebAuthn, SSH Certificate Authority, challenge-response login, plugin platform with live UI config, chatops approvals, OpenSSH clients, role-aware web console, OpenFGA, native packages, OpenAPI, GPG-signed repos.
 
 ![Orion-Belt](assets/banner-2.png)
 
@@ -87,11 +87,11 @@ flowchart TB
 
 ## Roadmap
 
-**Current Status:** Alpha **v0.9.0** — permissions editor, recording compression, live session watch, notification prefs, JIT polish, and observability/hardening docs (on top of SSH CA, MFA/UI, packaging, and plugins).
+**Current Status:** **v1.0.0** — SSH PAM we’re willing to call stable (`/api/v1` compatibility notes, ops docs, `make release-smoke`).
 
-**Shipped:** SSH proxy, ReBAC, recording (+ compression/encryption/retention + live watch), REST API, JWT/API keys, plugins (compiled-in + live UI config), chatops approvals, remote users, host-key / Host-CA verification, metrics + structured logs, TOTP + WebAuthn/FIDO + password login, OpenSSH agentless clients, role-aware web console (permissions editor, notification prefs), optional OpenFGA, native packages + GPG-signed repos, OpenAPI, SSH Certificate Authority, JIT access requests.
+**Shipped:** SSH proxy, ReBAC, recording (+ compression/encryption/retention + live watch), REST API, JWT/API keys, plugins (compiled-in + live UI config), chatops approvals, remote users, host-key / Host-CA verification, metrics + JSON logs, TOTP + WebAuthn/FIDO + password login, OpenSSH agentless clients, role-aware web console (permissions editor, notification prefs), optional OpenFGA, native packages + GPG-signed repos, OpenAPI, SSH Certificate Authority, JIT access requests.
 
-**Next:** HA clustering, IdP (OIDC/SAML), OpenTelemetry span export, Vault integration.
+**Next:** OIDC, HA, other protocols, SDKs, compliance packs. See [V1_RELEASE_CRITERIA.md](docs/V1_RELEASE_CRITERIA.md) / [ROADMAP.md](docs/ROADMAP.md).
 
 ## Packaging & labs
 

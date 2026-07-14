@@ -7,9 +7,9 @@
 | **Scope** | QEMU lab: clean → start → admin UI → agents → RBAC users → OpenSSH gateway |
 | **Type** | System / integration E2E |
 | **Automation entry** | `make lab-qemu-start` |
-| **Related** | [lab/README.md](../lab/README.md), [openssh-clients.md](openssh-clients.md), [PACKAGING.md](PACKAGING.md) |
+| **Related** | [lab/README.md](../lab/README.md), [openssh-clients.md](openssh-clients.md), [PACKAGING.md](PACKAGING.md), [RELEASE_SMOKE.md](RELEASE_SMOKE.md) |
 | **Status** | Active |
-| **Last updated** | 2026-07-11 |
+| **Last updated** | 2026-07-14 |
 
 ---
 

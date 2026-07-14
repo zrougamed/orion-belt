@@ -1,49 +1,49 @@
-# Deployment hardening guide
+# Deployment hardening
 
-Checklist for production Orion Belt gateways (**v0.9.0+**). Pair with [SETUP.md](SETUP.md) and [OBSERVABILITY.md](OBSERVABILITY.md).
+Things to tighten before you put a gateway on a real network. Useful alongside [SETUP.md](SETUP.md) and [OBSERVABILITY.md](OBSERVABILITY.md). We also expect this list to be walked before tagging [v1.0](V1_RELEASE_CRITERIA.md).
 
 ## Network
 
-- [ ] Bind SSH (`server.ssh_port`, default 2222) and HTTP API only on management / internal interfaces where possible; put a reverse proxy in front of HTTP `:8080` for TLS termination.
-- [ ] Do **not** expose PostgreSQL beyond the gateway hosts; use private network + TLS or a managed DB with IP allowlists.
-- [ ] Restrict who can dial the bastion: VPN, zero-trust, or firewall ACLs from operator networks.
-- [ ] Agents dial **out** to the gateway — keep inbound agent ports closed on targets.
+- [ ] Prefer binding SSH (`server.ssh_port`, usually 2222) and HTTP to interfaces that aren’t the whole internet; put TLS in front of `:8080`.
+- [ ] Don’t expose Postgres to the world — private net, TLS, or a managed DB with IP allows.
+- [ ] Limit who can reach the bastion (VPN, ztna, firewall from your ops nets).
+- [ ] Agents connect **out** to the gateway — no inbound agent ports on targets.
 
 ## TLS and cookies
 
-- [ ] Terminate TLS at the proxy with a trusted certificate; set WebAuthn RP ID / origins to the public hostname.
-- [ ] Serve the console and API over HTTPS only in production so `session_token` cookies and WebAuthn work securely.
-- [ ] Prefer short session TTLs; require MFA when `auth.mfa_required` or when password login is enabled.
+- [ ] Real cert on the reverse proxy; WebAuthn RP ID / origins match the public hostname.
+- [ ] HTTPS for the console and API in real deploys (cookies + WebAuthn).
+- [ ] Short session TTLs; turn on `auth.mfa_required` or use password login only when you know what you’re doing.
 
 ## Secrets and config
 
-- [ ] Keep `config/server.yaml` mode `0600` owned by the service user; never commit real secrets.
-- [ ] Put `recording.encryption_key`, DB passwords, JWT/signing material, and plugin webhooks in a secrets manager or systemd `EnvironmentFile` with restricted permissions.
-- [ ] Rotate plugin webhook URLs and API keys after staff changes; revoke unused API keys from Security → API keys.
-- [ ] If SSH CA is enabled, protect CA private keys (`ssh_ca.master_key` / encrypted rows) as crown jewels — same care as a HashiCorp Vault root.
+- [ ] `server.yaml` mode `0600`, owned by the service user; never commit live secrets.
+- [ ] Put encryption keys, DB passwords, JWT material, webhook URLs in a secret store or a locked-down `EnvironmentFile`.
+- [ ] Rotate webhooks / API keys when people leave; revoke unused keys in Security → API keys.
+- [ ] Treat SSH CA private material like the keys to the kingdom.
 
-## Authn / authz
+## Auth
 
-- [ ] Disable unused login paths; enroll admins with WebAuthn or TOTP before going live.
-- [ ] Prefer challenge-response / key login for CLI; use password+TOTP only when needed for break-glass or browser users.
-- [ ] Keep OpenFGA (or ReBAC grants) aligned with least privilege; review Permissions “All grants” periodically.
-- [ ] Limit `admin` / `operator` roles; auditors should be read-mostly.
+- [ ] Turn off login paths you don’t need; enroll admins with WebAuthn or TOTP before go-live.
+- [ ] Prefer key / challenge login for CLI; password+TOTP for break-glass / browser if you must.
+- [ ] Keep grants tight; glance at Permissions → All grants now and then.
+- [ ] Few `admin` / `operator` accounts; auditors stay read-mostly.
 
-## Recording and retention
+## Recording
 
-- [ ] Enable `recording.enabled` and set `retention_days` to your compliance window.
-- [ ] Use `recording.compression: gzip` (default) to reduce disk; set `encryption_key` for at-rest cast files.
-- [ ] Back up the recording volume separately from the database; test playback after restore.
+- [ ] `recording.enabled` on, `retention_days` set to whatever your policy is.
+- [ ] `compression: gzip` is fine; set `encryption_key` if casts can’t sit plaintext on disk.
+- [ ] Back up the recording volume separately from the DB; test playback after a restore.
 
 ## Runtime
 
-- [ ] Run the gateway and agents as non-root where possible; agents that need privilege drop still start with capability to spawn sessions.
-- [ ] Use systemd `ProtectSystem=`, `PrivateTmp=`, and capability bounding sets from packaged unit files; tighten further if you vendor your own units.
-- [ ] Scrape `/metrics` and ship JSON logs; load the sample alerts in [OBSERVABILITY.md](OBSERVABILITY.md).
-- [ ] Keep images/packages updated; subscribe to release notes for security fixes.
+- [ ] Non-root where you can; agents may still need privilege to drop into session users.
+- [ ] Use the packaged unit hardening (`ProtectSystem=`, etc.) or something equivalent.
+- [ ] Scrape `/metrics`, ship JSON logs; alerts in [OBSERVABILITY.md](OBSERVABILITY.md) are a starting point.
+- [ ] Keep packages updated.
 
-## Operational drills
+## Drills
 
-- [ ] Practice revoke of a compromised user (disable user, revoke keys/API keys, expire grants).
-- [ ] Practice agent disconnect / reinstall via install script.
-- [ ] Confirm audit logs capture login, grant, approve/reject, and session start/stop.
+- [ ] Revoke a compromised user (disable, yank keys/API keys, expire grants).
+- [ ] Disconnect / reinstall an agent with the install script.
+- [ ] Confirm audit shows login, grant, approve/reject, session start/stop.

@@ -107,9 +107,12 @@ OpenSSH: ssh alice+web-01@gateway
 | [PACKAGING.md](PACKAGING.md) | deb/rpm/apk + GPG-signed repos |
 | [CLIENT-CLI.md](CLIENT-CLI.md) | osh / ocp / oadmin flags |
 | [ROADMAP.md](ROADMAP.md) | Current |
-| [OBSERVABILITY.md](OBSERVABILITY.md) | JSON logs, Prometheus, alerts |
-| [DEPLOYMENT_HARDENING.md](DEPLOYMENT_HARDENING.md) | Production checklist |
-| [adr/](adr/) | Architecture decision records |
+| [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md) | Before tagging v1.0 |
+| [API_STABILITY.md](API_STABILITY.md) | `/api/v1` compatibility |
+| [RELEASE_SMOKE.md](RELEASE_SMOKE.md) | Quick pre-release checks |
+| [OBSERVABILITY.md](OBSERVABILITY.md) | Logs and metrics |
+| [DEPLOYMENT_HARDENING.md](DEPLOYMENT_HARDENING.md) | Hardening checklist |
+| [adr/](adr/) | ADRs |
 | [SETUP.md](SETUP.md) | First-run |
 | [openssh-clients.md](openssh-clients.md) | Current |
 | [openfga-model.fga](openfga-model.fga) | Current |
@@ -118,4 +121,4 @@ OpenSSH: ssh alice+web-01@gateway
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Current |
 | [E2E_TEST_PLAN.md](E2E_TEST_PLAN.md) | QEMU lab QA |
 
-**Still open:** broader integration suite and coverage targets (~80%). Hardening and observability guides are in-tree.
+**Still open:** OIDC / HA / other protocols; better unit coverage.

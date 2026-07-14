@@ -36,7 +36,10 @@ Admin routes under `/api/v1/admin/*` require role **admin** or **operator**.
 
 ## Related docs
 
-- [SSH_CA.md](../SSH_CA.md) — SSH Certificate Authority (user/host certs, renewal, revoke)
-- [SRS-UI.md](../SRS-UI.md) — web console requirements (as implemented)
+- [API_STABILITY.md](../API_STABILITY.md) — what we promise for `/api/v1`
+- [V1_RELEASE_CRITERIA.md](../V1_RELEASE_CRITERIA.md) — checklist before tagging v1.0
+- [RELEASE_SMOKE.md](../RELEASE_SMOKE.md) — `make release-smoke`
+- [SSH_CA.md](../SSH_CA.md) — SSH CA
+- [SRS-UI.md](../SRS-UI.md) — web console
 - [ARCHITECTURE.md](../ARCHITECTURE.md)
 - [PACKAGING.md](../PACKAGING.md)

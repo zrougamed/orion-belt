@@ -2,23 +2,33 @@
 
 ## Current Status
 
-**Version:** Alpha v0.9.0 (permissions editor, recording compression, live session watch, notification templates/prefs, JWT/ops observability, JIT polish, password+TOTP)
-**Status:** v0.9.0 ready for release — ops, JIT, and console depth on top of the v0.8 SSH CA / MFA baseline
+**Version:** v1.0.0
+**Status:** **v1.0.0** — stable SSH PAM release. Next up is OIDC / HA / multi-protocol / SDKs / compliance (see below).
 
 ## Pending / Next Up — 2026-07-14
 
-Consolidated view of everything still open, gathered from the checklists below so it doesn't have to be hunted across sections.
+### v1.0.0 (done)
 
-**Notable open items:**
-- [x] **Richer permission editor in UI** — all-grants view, edit remotes/TTL, upsert on grant, `GET/PATCH /admin/permissions`
-- [x] Recording compression (`recording.compression`, OBGZ1+gzip)
-- [x] Structured JSON logs (slog) + Prometheus alerts docs; OpenTelemetry span export still deferred
-- [x] Notification templates / per-user notification preferences
-- [ ] HashiCorp Vault integration
-- [ ] Richer agent remote management (reload config, drain, update — beyond current `ping`/`health`/`status`/`info`)
-- [x] Tech debt (partial): ADRs started, deployment hardening + observability guides, recording unit tests; coverage/integration suites still open
+Shipped as a stability cut of what’s already on `master` (CA, MFA, JIT, ReBAC, recording, live watch, packages) — not a new IdP or protocol. Notes: [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md), [API_STABILITY.md](API_STABILITY.md), [RELEASE_SMOKE.md](RELEASE_SMOKE.md) (`make release-smoke`).
 
-**Phase 2–4 (larger):** HA clustering, RBAC-on-ReBAC, command filtering, LDAP/SAML/OIDC, SIEM/ticketing integrations, compliance reporting (SOC2/HIPAA/PCI), RDP/VNC/Kubernetes/DB proxies, SDKs. JIT access request workflow + live session watch shipped in v0.9.0.
+### Still open
+
+- [ ] HashiCorp Vault
+- [ ] Fancier agent remote management (reload, drain, update)
+- [ ] Better unit coverage / integration suites
+- [ ] OpenTelemetry tracing (logs + metrics are in)
+
+### After v1.0.0
+
+- OIDC (Okta / Entra / Keycloak / Google / friends) + group → role/grant mapping; keep a local break-glass admin
+- SAML / LDAP
+- HA / DB replicas
+- RDP / VNC / Kubernetes / DB proxies
+- Client SDKs
+- Compliance reporting packs
+- SIEM / ticketing, RBAC-on-ReBAC, command filtering
+
+Permissions editor, recording compression, live watch, notification prefs, and JIT polish landed on the way here (historically called v0.9 work).
 
 ## Audit Findings — 2026-07-13
 
@@ -241,33 +251,39 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 ## Roadmap — Later Phases
 
-### Phase 2 — Advanced Features
+### v1.0.0 — call it stable (shipped)
 
-- [ ] HA clustering and DB replication
-- [x] JIT (Just-In-Time) access — request/approve/reject with TTL, optional `access_type`, reject notifications, stale pending expiry
-- [ ] Risk-based access policies
-- [ ] RBAC complementary to ReBAC
-- [x] Live session monitoring tools — `GET /sessions/:id/watch` + Sessions “Watch”
-- [ ] Command filtering and blocking
-- [ ] Identity provider integrations (LDAP/SAML/OIDC)
-- [ ] SIEM integrations
-- [ ] Ticketing system integrations
+Notes: [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md), [API_STABILITY.md](API_STABILITY.md), [RELEASE_SMOKE.md](RELEASE_SMOKE.md) (`make release-smoke`).
 
-### Phase 3 — Security & Compliance
+### After 1.0 — identity and bigger features
 
-- [ ] Compliance reporting (SOC2, HIPAA, PCI)
+- [ ] OIDC (Okta / Entra / Keycloak / Google / …)
+- [ ] Map IdP groups to roles/grants; keep a local break-glass admin
+- [ ] HA / DB replicas
+- [x] JIT access (TTL, `access_type`, reject notify, stale expiry)
+- [ ] Risk-based policies
+- [ ] RBAC next to ReBAC
+- [x] Live session watch
+- [ ] Command filtering
+- [ ] SAML / LDAP
+- [ ] SIEM hooks
+- [ ] Ticketing hooks
+
+### After 1.0 — compliance-ish
+
+- [ ] Compliance reporting packs
 - [ ] Declarative policy engine
-- [ ] Proxy extensions for network segmentation
+- [ ] Extra network segmentation proxies
 - [ ] Usage analytics
-- [ ] Security analytics and anomaly detection
+- [ ] Anomaly / security analytics
 
-### Phase 4 — Advanced Capabilities
+### After 1.0 — other protocols / platform
 
-- [ ] Support for RDP / VNC / Kubernetes API / database proxies
-- [ ] Workflow automation
-- [ ] AI/ML-powered access analytics
-- [ ] CLI improvements
+- [ ] RDP / VNC / Kubernetes / DB proxies
 - [ ] SDKs (Go, Python, TypeScript)
+- [ ] Workflow automation
+- [ ] AI/ML access analytics (maybe)
+- [ ] More CLI work
 
 ---
 
@@ -280,12 +296,12 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 - [x] End-to-end CVE gate (`e2e/cve`, `scripts/cve-check.sh`)
 - [x] Multi-distro e2e lab (compose + QEMU) + [E2E test plan](E2E_TEST_PLAN.md)
 - [ ] Performance benchmarks
-- [ ] Architecture Decision Records (ADRs)
+- [x] Architecture Decision Records (ADRs) — started (`docs/adr/`)
 
 **Refactoring**
 
 - [ ] Error handling standardization
-- [ ] Logging standardization
+- [x] Logging standardization (JSON slog)
 - [ ] Config validation improvements
 - [x] Complete remaining machine CRUD admin stubs
 - [x] Session recording playback + audit trail + user management in `/ui`
@@ -295,7 +311,7 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 
 - [x] OpenAPI/Swagger specification (`docs/openapi/openapi.yaml`, `GET /api/v1/openapi.yaml`)
 - [x] Web console SRS (`docs/SRS-UI.md`)
-- [ ] Deployment hardening guides
+- [x] Deployment hardening guides (`docs/DEPLOYMENT_HARDENING.md`)
 - [x] Plugin development guides
 - [x] Contributing guidelines
 - [x] Architecture documentation
@@ -313,29 +329,25 @@ Orion Belt is a lightweight, self-hosted Privileged Access Management (PAM) syst
 * **v0.6:** Docker Compose quickstart (server/agent), Commons Clause license, security hardening (file-browser command injection fix, remote-user exec impersonation, plugin hook timeouts, session cleanup)
 * **v0.7:** Compiled-in plugin platform (replaced `.so` loading) with DB-backed live config + admin UI, `chatops-access-request` (Slack/Discord/Teams/Rocket.Chat), dark/light console theming, inline SVG nav
 * **v0.8:** SSH Certificate Authority (user/host certs, agent Host-cert identity, renewal, revoke), challenge-response pubkey API login, browser bootstrap codes, in-app notification bell, password+TOTP login — see `docs/SSH_CA.md`
-* **v0.9:** Richer permissions UI (all grants / edit / upsert), recording compression (OBGZ1+gzip), live session watch WS + console, notification templates + per-user prefs, JIT `access_type` + reject notify + stale expiry, JSON slog + Prometheus alert examples, deployment hardening + ADR docs
-* **v1.0 (planned):** Multi-protocol support, SDKs, compliance-ready reporting
+* **v0.9:** Richer permissions UI, recording compression, live session watch, notification prefs, JIT polish, ops docs (folded into the v1.0 cut)
+* **v1.0:** Stable SSH PAM — `/api/v1` compatibility promise, ops docs, release smoke; see [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md)
+* **Later:** OIDC (then SAML/LDAP), HA, other protocols, SDKs, compliance packs, SIEM/ticketing
 
 ---
 
 ## Contribution
 
-Open source — focus areas: IdP integrations, HA, OTel span export, docs, and tests.
+Helpful directions right now:
 
-**High-priority contribution areas (next):**
-- Identity provider integrations (OIDC/SAML)
-- OpenTelemetry tracing (OTLP export)
-- Broader integration coverage / benchmarks
+- OIDC + group mapping
 - Agent remote management (drain, reload, update)
+- HA, RDP/VNC, SDKs, tests / coverage
 
 ---
 
 ## Notes
 
-This is a living roadmap. Git tags plus merged PRs are the source of truth for shipped releases. **v0.9.0** adds permissions/ops/JIT polish and live watch on top of the **v0.8** SSH CA / MFA / notification baseline.
+Tags and merged PRs are the history. **v1.0.0** is the first release we call stable SSH PAM (API notes + ops docs + smoke). OIDC and friends come after.
 
-**Last Updated:** 2026-07-14 (v0.9.0: permissions editor, compression, live watch, notification prefs, observability/hardening docs)  
-Previously — 2026-07-14: v0.8 SSH CA + challenge login + notifications; docs/OpenAPI aligned  
-Previously — 2026-07-14: compiled-in plugin platform, chatops, dark/light theming  
-Previously — 2026-07-13: code/docs/UI audit fixes  
+**Last Updated:** 2026-07-14 (v1.0.0)  
 **Maintainer:** Mohamed Zrouga ([@zrougamed](https://github.com/zrougamed))

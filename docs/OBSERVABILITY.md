@@ -1,18 +1,12 @@
 # Observability
 
-Shipped with **v0.9.0**. Orion Belt emits **structured JSON logs** (stdout via `log/slog`), **Prometheus metrics** at `/metrics`, and request-scoped `request_id` fields for correlation. Full OpenTelemetry span export is staged for a later release; use logs + metrics for Loki/ELK and alerting today.
+JSON logs on stdout, Prometheus text at `/metrics`, and a `request_id` on HTTP requests so you can glue events together. There’s no OTLP tracing exporter yet — ship logs to Loki/ELK (or whatever you use) and scrape metrics for alerts.
 
-## Structured logs (Loki / ELK)
+## Logs → Loki / ELK
 
-Gateway logs are one JSON object per line on stdout. Typical fields:
+One JSON object per line. You’ll usually see `time`, `level`, `msg`, and often `request_id`.
 
-| Field | Meaning |
-|-------|---------|
-| `time`, `level`, `msg` | slog defaults |
-| `request_id` | Per-HTTP request correlation (middleware) |
-| caller attrs | Component-specific keys from logger wrappers |
-
-### Promtail / Alloy → Loki (sketch)
+### Promtail / Alloy sketch
 
 ```yaml
 scrape_configs:
@@ -33,15 +27,15 @@ scrape_configs:
           request_id:
 ```
 
-For journald-backed units, scrape the `orion-belt-server` unit and parse JSON message payload the same way.
+If you run under systemd, scrape the `orion-belt-server` unit and parse the JSON payload the same way.
 
 ### Elasticsearch
 
-Ship the same JSON lines with Filebeat `json.keys_under_root: true` (or Elastic Agent log integration). Index on `request_id`, `level`, and message keywords such as `access.request` / `auth`.
+Filebeat with `json.keys_under_root: true` (or the Elastic Agent equivalent) is enough. Indexing on `request_id` and `level` helps.
 
-## Prometheus metrics
+## Metrics
 
-Enable the metrics listener (see `docs/SETUP.md` / server config). Scrape `/metrics` for gauges and counters including:
+Scrape `/metrics`. Counters/gauges include:
 
 - `orion_belt_up`
 - `orion_belt_uptime_seconds`
@@ -51,47 +45,8 @@ Enable the metrics listener (see `docs/SETUP.md` / server config). Scrape `/metr
 - `orion_belt_access_requests_total`
 - `orion_belt_agents_connected`
 
-## Example alert rules
+## Example alerts
 
-Save as `deploy/prometheus/orion-belt-alerts.yml` or merge into your Prometheus rule groups:
-
-```yaml
-groups:
-  - name: orion-belt
-    rules:
-      - alert: OrionBeltDown
-        expr: absent(orion_belt_up) or orion_belt_up == 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: Orion Belt gateway is down or unscrapeable
-
-      - alert: OrionBeltAuthFailuresHigh
-        expr: increase(orion_belt_auth_failures_total[15m]) > 50
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: Elevated authentication failures
-
-      - alert: OrionBeltNoAgents
-        expr: orion_belt_agents_connected == 0
-        for: 15m
-        labels:
-          severity: warning
-        annotations:
-          summary: No agents connected to the gateway
-
-      - alert: OrionBeltSessionsStuck
-        expr: orion_belt_ssh_sessions_active > 100
-        for: 30m
-        labels:
-          severity: warning
-        annotations:
-          summary: Unusually high active SSH session count
-```
-
-Wire Alertmanager (or Grafana Alerting) to page on `critical` and notify ops chat on `warning`.
+Drop-in file: `deploy/prometheus/orion-belt-alerts.yml` — down instance, auth failure spike, no agents, silly number of active sessions. Point Alertmanager (or Grafana) at whatever you already use.
 
 

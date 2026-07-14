@@ -221,6 +221,10 @@ lab-qemu-restart:
 lab-qemu-test:
 	bash lab/qemu/test-e2e.sh
 
+# HTTP release checks (see docs/RELEASE_SMOKE.md). Optional: ORION_API_KEY=... ORION_API=http://...
+release-smoke:
+	bash scripts/release-smoke.sh
+
 
 # Collect keys → register on server → restart agents (optional: AGENTS="alpine debian")
 lab-qemu-connect-agents:

@@ -19,7 +19,7 @@ info:
     **Admin routes** (`/api/v1/admin/*`) additionally require role `admin` or `operator` (or `is_admin`).
 
     **Rate limit:** protected (non-admin) routes — default 600 req/min per user (`auth.rate_limit_per_minute`).
-  version: "0.9.0"
+  version: "1.0.0"
   contact:
     name: Orion Belt Maintainers
     url: https://github.com/zrougamed/orion-belt

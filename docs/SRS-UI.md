@@ -4,8 +4,8 @@
 **Scope:** React SPA under `web/ui/` (built into `web/static/`, embedded at `/ui/`)  
 **Base URL:** `/ui/` (served by the gateway; redirects from `/` and `/admin`)  
 **API:** `/api/v1/*` — see [openapi/openapi.yaml](openapi/openapi.yaml)  
-**Status:** React console Phase 2 (palette, permissions, dashboard health) — **v0.9.0**  
-**Last updated:** July 2026 (v0.9.0: live watch, permissions all-grants/edit, notification prefs)
+**Status:** React console Phase 2 — **v1.0.0**  
+**Last updated:** July 2026 (live watch, permissions all-grants/edit, notification prefs)
 
 ---
 

@@ -2,8 +2,8 @@
 # Generate a Homebrew formula for Orion Belt CLI tools from a GitHub Release.
 #
 # Usage:
-#   ./scripts/generate-homebrew-formula.sh v0.9.0
-#   ./scripts/generate-homebrew-formula.sh v0.9.0 --repo zrougamed/orion-belt
+#   ./scripts/generate-homebrew-formula.sh v1.0.0
+#   ./scripts/generate-homebrew-formula.sh v1.0.0 --repo zrougamed/orion-belt
 #
 # Writes Formula/orion-belt.rb in the current directory (or $OUT_DIR).
 set -euo pipefail
