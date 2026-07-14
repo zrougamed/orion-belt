@@ -148,7 +148,7 @@ export function FilesPage() {
       <div className="page-head">
         <div>
           <h1>Files</h1>
-          <p>Browse and transfer files on remote machines.</p>
+          <p>Browse and move files on a connected host.</p>
         </div>
       </div>
       <div className="card">

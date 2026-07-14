@@ -84,7 +84,7 @@ export function SessionsPage() {
       <div className="page-head">
         <div>
           <h1>Sessions</h1>
-          <p>Live and recorded privileged sessions — open Playback to view the audit recording.</p>
+          <p>Live sessions and recordings you can replay.</p>
         </div>
         <div className="row">
           {(["all", "active", "completed"] as const).map((f) => (

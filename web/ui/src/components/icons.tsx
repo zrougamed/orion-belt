@@ -170,4 +170,34 @@ export function PluginsIcon(props: IconProps) {
   );
 }
 
+export function PanelCollapseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9.5 4v16" />
+      <path d="M14.5 9.5l-3 2.5 3 2.5" />
+    </Icon>
+  );
+}
+
+export function PanelExpandIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9.5 4v16" />
+      <path d="M12 9.5l3 2.5-3 2.5" />
+    </Icon>
+  );
+}
+
+export function LogoutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M10 4.5H6.5A2 2 0 0 0 4.5 6.5v11A2 2 0 0 0 6.5 19.5H10" />
+      <path d="M14 12H20" />
+      <path d="M17 9l3 3-3 3" />
+    </Icon>
+  );
+}
+
 export type IconComponent = (props: IconProps) => React.JSX.Element;

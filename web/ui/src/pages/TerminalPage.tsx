@@ -168,7 +168,7 @@ export function TerminalPage() {
         <div className="page-head">
           <div>
             <h1>Terminal</h1>
-            <p>Recorded web PTY to a connected agent.</p>
+            <p>Open a shell on a connected host. Sessions are recorded.</p>
           </div>
         </div>
       ) : null}

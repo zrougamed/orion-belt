@@ -6,8 +6,21 @@ import type { AccessRequest, Machine, Session } from "../lib/types";
 import { Badge } from "../components/Badge";
 import { fmtTime, shortId } from "../lib/format";
 
+type SetupStatus = {
+  complete?: boolean;
+  next?: string;
+  counts?: { connected_agents?: number; machines?: number };
+  steps?: {
+    admin_exists?: boolean;
+    has_machines?: boolean;
+    has_connected_agents?: boolean;
+    has_users?: boolean;
+    has_permissions?: boolean;
+  };
+};
+
 export function DashboardPage() {
-  const { user, version } = useAuth();
+  const { user } = useAuth();
   const role = useRole();
   const isOps = role === "admin" || role === "operator";
 
@@ -23,7 +36,7 @@ export function DashboardPage() {
   });
   const setup = useQuery({
     queryKey: ["setup"],
-    queryFn: () => api<{ agents_connected?: number; has_admin?: boolean; ready?: boolean }>("/setup/status"),
+    queryFn: () => api<SetupStatus>("/setup/status"),
     enabled: isOps,
   });
   const agents = useQuery({
@@ -43,15 +56,14 @@ export function DashboardPage() {
     ? machineList.filter((m) => connected.has(m.id) || connected.has(m.name)).length
     : null;
   const activeSessions = sessions.data || [];
+  const setupIncomplete = isOps && setup.data && setup.data.complete === false;
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p>
-            Welcome, {user?.username}. Build {version?.display || version?.version || "…"}.
-          </p>
+          <p>Hi {user?.username} — here’s what’s running.</p>
         </div>
         <div className="row">
           <Link className="btn secondary sm" to="/sessions">
@@ -64,12 +76,12 @@ export function DashboardPage() {
           ) : null}
         </div>
       </div>
-      {isOps && setup.data && !setup.data.ready ? (
+      {setupIncomplete ? (
         <div className="card" style={{ marginBottom: "1rem" }}>
           <h3>Setup incomplete</h3>
-          <p className="muted">Connect agents to finish first-run setup.</p>
+          <p className="muted">{setup.data?.next || "Finish the remaining setup steps."}</p>
           <Link className="btn sm" to="/setup">
-            Open setup guide
+            Setup checklist
           </Link>
         </div>
       ) : null}
@@ -110,7 +122,7 @@ export function DashboardPage() {
           <div className="card">
             <h3>Agent health</h3>
             {machineList.length === 0 ? (
-              <div className="empty">No machines registered.</div>
+              <div className="empty">No machines yet.</div>
             ) : (
               <table>
                 <thead>
@@ -146,7 +158,7 @@ export function DashboardPage() {
           <div className="card">
             <h3>Active sessions</h3>
             {activeSessions.length === 0 ? (
-              <div className="empty">No active sessions.</div>
+              <div className="empty">Nothing active right now.</div>
             ) : (
               <table>
                 <thead>

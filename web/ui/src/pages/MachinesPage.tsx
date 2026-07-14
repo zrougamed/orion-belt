@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Machine } from "../lib/types";
@@ -59,10 +58,7 @@ export function MachinesPage() {
       <div className="page-head">
         <div>
           <h1>Machines</h1>
-          <p>
-            Inventory of access targets. Prefer <Link to="/add-agent">Add agent</Link> to enroll tunnels; use{" "}
-            <Link to="/agents">Agents</Link> for pause/disconnect/revoke. This page is for listing hosts when granting permissions.
-          </p>
+          <p>Hosts you can grant access to. Use Agents to connect or disconnect them.</p>
         </div>
       </div>
       {manage ? (

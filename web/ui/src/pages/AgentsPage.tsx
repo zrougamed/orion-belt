@@ -171,11 +171,7 @@ export function AgentsPage() {
       <div className="page-head">
         <div>
           <h1>Agents</h1>
-          <p>
-            Lifecycle for enrolled hosts (edit, pause, disconnect, restart, revoke).{" "}
-            <Link to="/add-agent">Add agent</Link> enrolls a new tunnel;{" "}
-            <Link to="/machines">Machines</Link> is the inventory/access target list.
-          </p>
+          <p>Connected tunnels back to this gateway.</p>
         </div>
         <div className="row">
           <Link className="btn sm" to="/add-agent">

@@ -59,7 +59,7 @@ export function AuditPage() {
       <div className="page-head">
         <div>
           <h1>Audit</h1>
-          <p>Trail of privileged actions.</p>
+          <p>What happened, when, and who did it.</p>
         </div>
         <button type="button" className="btn secondary sm" onClick={() => void logs.refetch()}>
           Refresh

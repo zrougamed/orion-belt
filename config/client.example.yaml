@@ -1,9 +1,11 @@
 server:
   host: "orion-belt-server.example.com"
   port: 2222
-  api_endpoint: "https://orion-belt-server.example.com/api"
+  # Base URL of the gateway HTTP API (no trailing /api — paths already start with /api/v1)
+  api_endpoint: "https://orion-belt-server.example.com"
 
 auth:
+  user: "alice" # gateway username (required for osh login / API auth)
   key_file: "~/.ssh/id_rsa"
   # known_hosts defaults to ~/.ssh/orion_known_hosts
   # strict_host_key_checking: ask (TOFU) | yes | no

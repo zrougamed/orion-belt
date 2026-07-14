@@ -122,7 +122,7 @@ export function AddAgentPage() {
       <div className="page-head">
         <div>
           <h1>Add agent</h1>
-          <p>Pick the target OS, generate an install script with credentials, then run it as root on the host.</p>
+          <p>Generate a one-shot install script for a new host.</p>
         </div>
       </div>
       <form className="card" onSubmit={onGenerate}>

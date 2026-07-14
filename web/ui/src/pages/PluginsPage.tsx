@@ -349,7 +349,7 @@ export function PluginsPage() {
       <div className="page-head">
         <div>
           <h1>Plugins</h1>
-          <p>Server-side plugins — toggle on/off and edit config live. No restart or YAML editing required.</p>
+          <p>Turn integrations on or off. Changes apply without a restart.</p>
         </div>
       </div>
 

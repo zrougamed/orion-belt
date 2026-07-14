@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/zrougamed/orion-belt/pkg/cliflags"
 	"github.com/zrougamed/orion-belt/pkg/client"
-	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
-	configFile string
-	username   string
+	flags           cliflags.Common
+	caListCertsType string
+	caRevokeReason  string
 )
 
 var rootCmd = &cobra.Command{
@@ -76,14 +77,8 @@ var caRevokeCmd = &cobra.Command{
 	Run:   runCARevoke,
 }
 
-var (
-	caListCertsType string
-	caRevokeReason  string
-)
-
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
-	rootCmd.PersistentFlags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
+	flags.BindPersistent(rootCmd)
 
 	requestsCmd.AddCommand(listRequestsCmd)
 	requestsCmd.AddCommand(approveCmd)
@@ -106,24 +101,16 @@ func main() {
 }
 
 func getAPIClient() (*client.APIClient, error) {
-	logger := common.NewLogger(common.INFO)
-
-	// Load configuration
-	config, err := common.LoadConfig(configFile)
+	logger := flags.Logger()
+	config, err := flags.LoadConfig()
 	if err != nil {
-		// Use default config if file doesn't exist
-		config = &common.Config{
-			Server: common.ServerConfig{
-				Host: "localhost",
-				Port: 2222,
-			},
-			Auth: common.AuthConfig{
-				KeyFile: os.ExpandEnv("$HOME/.ssh/id_rsa"),
-			},
-		}
+		return nil, err
 	}
-
-	return client.LoadAPIClient(config, username, logger)
+	user, err := flags.Username(config)
+	if err != nil {
+		return nil, err
+	}
+	return client.LoadAPIClient(config, user, logger)
 }
 
 func runListRequests(cmd *cobra.Command, args []string) {

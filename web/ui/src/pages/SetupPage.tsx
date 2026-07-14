@@ -106,7 +106,7 @@ export function SetupPage() {
       <div className="page-head">
         <div>
           <h1>Setup guide</h1>
-          <p>First-run path from gateway config → agents → access → hardened auth.</p>
+          <p>Walk through the basics: gateway, agents, access, then harden.</p>
         </div>
         <button type="button" className="btn secondary sm" onClick={() => void setup.refetch()}>
           Refresh status

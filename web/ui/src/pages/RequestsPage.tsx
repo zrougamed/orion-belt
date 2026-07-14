@@ -116,7 +116,7 @@ export function RequestsPage() {
       <div className="page-head">
         <div>
           <h1>Access requests</h1>
-          <p>Request and approve temporary machine access.</p>
+          <p>Pending and past access asks.</p>
         </div>
       </div>
       <form className="card" onSubmit={onCreate} style={{ marginBottom: "1rem" }}>

@@ -212,7 +212,7 @@ export function SecurityPage() {
       <div className="page-head">
         <div>
           <h1>Security</h1>
-          <p>MFA, WebAuthn, and SSH keys for {user?.username}.</p>
+          <p>MFA, passkeys, and keys for your account.</p>
         </div>
       </div>
       <div className="row" style={{ marginBottom: "1rem" }}>

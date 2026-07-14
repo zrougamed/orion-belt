@@ -105,7 +105,7 @@ export function PermissionsPage() {
       <div className="page-head">
         <div>
           <h1>Permissions</h1>
-          <p>Grant or revoke machine access (ReBAC) with optional remote users and TTL.</p>
+          <p>Who can reach which machine, and as whom.</p>
         </div>
       </div>
       <form className="card" onSubmit={onGrant} style={{ marginBottom: "1rem" }}>

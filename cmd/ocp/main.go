@@ -6,30 +6,30 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zrougamed/orion-belt/pkg/cliflags"
 	"github.com/zrougamed/orion-belt/pkg/client"
-	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
-	configFile string
-	username   string
-	recursive  bool
+	flags     cliflags.Common
+	recursive bool
 )
 
 var rootCmd = &cobra.Command{
 	Use:     "ocp source destination",
 	Short:   "Orion-Belt SCP Client",
-	Long:    `ocp is the Orion-Belt SCP client for copying files through the Orion-Belt server.`,
+	Long:    `ocp copies files through the Orion-Belt gateway (SCP over the reverse tunnel).`,
 	Version: version.String(),
 	Args:    cobra.ExactArgs(2),
 	Run:     runSCP,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
-	rootCmd.Flags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
-	rootCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "recursively copy directories")
+	flags.BindPersistent(rootCmd)
+	flags.BindSSHTrust(rootCmd)
+	rootCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "recursively copy directories (not yet supported)")
+	_ = rootCmd.Flags().MarkHidden("recursive") // registered for compatibility; Copy() does not implement it yet
 }
 
 func main() {
@@ -40,46 +40,31 @@ func main() {
 }
 
 func runSCP(cmd *cobra.Command, args []string) {
-	logger := common.NewLogger(common.INFO)
-
-	source := args[0]
-	destination := args[1]
-
-	// Load configuration
-	config, err := common.LoadConfig(configFile)
+	logger := flags.Logger()
+	config, err := flags.LoadConfig()
 	if err != nil {
-		// Use default config if file doesn't exist
-		config = &common.Config{
-			Server: common.ServerConfig{
-				Host: "localhost",
-				Port: 2222,
-			},
-			Auth: common.AuthConfig{
-				KeyFile: os.ExpandEnv("$HOME/.ssh/id_rsa"),
-			},
-		}
+		logger.Fatal("%v", err)
 	}
 
-	// Create client
+	if recursive {
+		logger.Fatal("--recursive is not supported yet")
+	}
+
 	scpClient, err := client.NewSCPClient(config, logger)
 	if err != nil {
 		logger.Fatal("Failed to create SCP client: %v", err)
 	}
 
-	// Determine if upload or download
+	source := args[0]
+	destination := args[1]
 	isUpload := !strings.Contains(source, ":")
 
-	usernameConfig := config.Auth.User
-	if username == "" && usernameConfig == "" {
-		logger.Fatal("Configuration error: Username is missing in your config or use --user")
-	} else if username == "" {
-		username = usernameConfig
+	user, err := flags.Username(config)
+	if err != nil {
+		logger.Fatal("%v", err)
 	}
 
-	// Copy file
-	if err := scpClient.Copy(username, source, destination, isUpload); err != nil {
+	if err := scpClient.Copy(user, source, destination, isUpload); err != nil {
 		logger.Fatal("Copy failed: %v", err)
 	}
-
-	logger.Info("Copy completed successfully")
 }

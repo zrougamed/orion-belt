@@ -123,7 +123,7 @@ export function UsersPage() {
       <div className="page-head">
         <div>
           <h1>Users</h1>
-          <p>Accounts, roles, and MFA posture.{manage ? " Create or edit users below." : ""}</p>
+          <p>People on this gateway{manage ? " — add or edit below." : "."}</p>
         </div>
       </div>
       {manage ? (

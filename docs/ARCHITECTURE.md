@@ -105,6 +105,7 @@ OpenSSH: ssh alice+web-01@gateway
 | [API/README.md](API/README.md) | Swagger/Postman how-to |
 | [SSH_CA.md](SSH_CA.md) | Internal SSH CA (user/host certs, renewal, revoke) |
 | [PACKAGING.md](PACKAGING.md) | deb/rpm/apk + GPG-signed repos |
+| [CLIENT-CLI.md](CLIENT-CLI.md) | osh / ocp / oadmin flags |
 | [ROADMAP.md](ROADMAP.md) | Current |
 | [SETUP.md](SETUP.md) | First-run |
 | [openssh-clients.md](openssh-clients.md) | Current |

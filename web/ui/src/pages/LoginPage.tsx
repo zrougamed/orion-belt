@@ -126,12 +126,12 @@ export function LoginPage() {
         <h1 className="login-brand">
           Orion <em>Belt</em>
         </h1>
-        <p className="login-tag">Privileged access gateway</p>
+        <p className="login-tag">Sign in to your gateway</p>
         <div className="muted mono" style={{ marginBottom: "1rem", fontSize: "0.75rem" }}>
           {ver}
         </div>
 
-        <label className="field">Username (for security key sign-in)</label>
+        <label className="field">Username</label>
         <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
 
         <button className="btn block" type="button" style={{ marginTop: "0.75rem" }} disabled={busy} onClick={() => void onWebAuthn()}>
@@ -139,7 +139,7 @@ export function LoginPage() {
         </button>
 
         <div className="muted" style={{ margin: "1rem 0 0.5rem", fontSize: "0.8rem" }}>
-          No security key enrolled yet? Run <code>osh login</code> on your machine, then paste the code it prints:
+          Or run <code>osh login</code> on your laptop and paste the code:
         </div>
         <label className="field">Sign-in code</label>
         <input

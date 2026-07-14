@@ -6,18 +6,20 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zrougamed/orion-belt/pkg/cliflags"
 	"github.com/zrougamed/orion-belt/pkg/client"
 	"github.com/zrougamed/orion-belt/pkg/common"
 	"github.com/zrougamed/orion-belt/pkg/version"
 )
 
 var (
-	configFile     string
+	flags          cliflags.Common
 	requestAccess  bool
 	accessDuration int
 	accessReason   string
 	listMachines   bool
-	username       string
+	remoteUser     string
+	printCodeOnly  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -32,20 +34,20 @@ var rootCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Sign in to the web console",
-	Long: `Authenticates with the gateway using your real SSH private key, then mints a
-short-lived, single-use code you redeem in the web console to get a session
-— the web console can't prove possession of an arbitrary SSH private key
-itself, so it relies on the CLI to vouch for it instead.`,
+	Long: `Authenticates with your SSH key, then opens the browser to finish
+signing in. Use --code to print the one-time code instead of opening a browser.`,
 	Run: runLogin,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", os.ExpandEnv("$HOME/.orion-belt/client.yaml"), "config file path")
+	flags.BindPersistent(rootCmd)
+	flags.BindSSHTrust(rootCmd)
 	rootCmd.Flags().BoolVarP(&requestAccess, "request-access", "r", false, "request temporary access")
 	rootCmd.Flags().IntVarP(&accessDuration, "duration", "d", 3600, "access duration in seconds")
 	rootCmd.Flags().StringVar(&accessReason, "reason", "", "reason for access request")
 	rootCmd.Flags().BoolVarP(&listMachines, "list", "l", false, "list available machines")
-	rootCmd.Flags().StringVarP(&username, "user", "u", "", "Orion Belt username for authentication")
+	rootCmd.Flags().StringVar(&remoteUser, "remote-user", "", "UNIX user on the target host (optional; can also use user@machine)")
+	loginCmd.Flags().BoolVar(&printCodeOnly, "code", false, "print the sign-in code (and URL) instead of opening a browser")
 
 	rootCmd.AddCommand(loginCmd)
 }
@@ -58,17 +60,18 @@ func main() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
-	logger := common.NewLogger(common.INFO)
-
-	config, err := common.LoadConfig(configFile)
+	logger := flags.Logger()
+	config, err := flags.LoadConfig()
 	if err != nil {
-		config = &common.Config{
-			Server: common.ServerConfig{Host: "localhost", Port: 2222},
-			Auth:   common.AuthConfig{KeyFile: os.ExpandEnv("$HOME/.ssh/id_rsa")},
-		}
+		logger.Fatal("%v", err)
 	}
 
-	apiClient, err := client.LoadAPIClient(config, username, logger)
+	user, err := flags.Username(config)
+	if err != nil {
+		logger.Fatal("%v", err)
+	}
+
+	apiClient, err := client.LoadAPIClient(config, user, logger)
 	if err != nil {
 		logger.Fatal("Login failed: %v", err)
 	}
@@ -79,15 +82,23 @@ func runLogin(cmd *cobra.Command, args []string) {
 	}
 
 	consoleURL := consoleOrigin(config)
-	fmt.Println("Signed in. To finish signing in to the web console:")
-	fmt.Printf("\n  %s/ui/bootstrap?code=%s\n\n", consoleURL, code.Code)
-	fmt.Printf("Or open %s/ui/ and enter this code manually: %s\n", consoleURL, code.Code)
-	fmt.Printf("(expires at %s)\n", code.ExpiresAt.Format("15:04:05 MST"))
+	url := fmt.Sprintf("%s/ui/bootstrap?code=%s", consoleURL, code.Code)
+
+	if printCodeOnly {
+		fmt.Printf("Code: %s\n", code.Code)
+		fmt.Printf("URL:  %s\n", url)
+		fmt.Printf("Expires %s\n", code.ExpiresAt.Format("15:04:05 MST"))
+		return
+	}
+
+	fmt.Printf("Opening browser…\n  %s\n", url)
+	if err := cliflags.OpenBrowser(url); err != nil {
+		fmt.Fprintf(os.Stderr, "Could not open a browser (%v).\nPaste this URL manually:\n  %s\n\nOr re-run with --code\n", err, url)
+		os.Exit(1)
+	}
+	fmt.Printf("If nothing opens, run: osh login --code\n(expires %s)\n", code.ExpiresAt.Format("15:04:05 MST"))
 }
 
-// consoleOrigin derives the web console's base URL from the configured
-// API endpoint (served from the same origin, e.g. "http://host:8080/api"
-// -> "http://host:8080").
 func consoleOrigin(config *common.Config) string {
 	endpoint := config.Server.APIEndpoint
 	if endpoint == "" {
@@ -97,30 +108,17 @@ func consoleOrigin(config *common.Config) string {
 }
 
 func runSSH(cmd *cobra.Command, args []string) {
-	logger := common.NewLogger(common.INFO)
-
-	// Load configuration
-	config, err := common.LoadConfig(configFile)
+	logger := flags.Logger()
+	config, err := flags.LoadConfig()
 	if err != nil {
-		// Use default config if file doesn't exist
-		config = &common.Config{
-			Server: common.ServerConfig{
-				Host: "localhost",
-				Port: 2222,
-			},
-			Auth: common.AuthConfig{
-				KeyFile: os.ExpandEnv("$HOME/.ssh/id_rsa"),
-			},
-		}
+		logger.Fatal("%v", err)
 	}
 
-	// Create client
 	sshClient, err := client.NewSSHClient(config, logger)
 	if err != nil {
 		logger.Fatal("Failed to create SSH client: %v", err)
 	}
 
-	// Handle list machines
 	if listMachines {
 		if err := sshClient.ListMachines(); err != nil {
 			logger.Fatal("Failed to list machines: %v", err)
@@ -128,37 +126,35 @@ func runSSH(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Check for target argument
 	if len(args) == 0 {
 		fmt.Println("Usage: osh [user@]machine")
 		fmt.Println("       osh --list")
+		fmt.Println("       osh login")
 		fmt.Println("       osh --request-access [user@]machine --reason \"reason\" --duration 3600")
 		os.Exit(1)
 	}
 
 	target := args[0]
-
-	// Handle access request
 	if requestAccess {
 		if accessReason == "" {
 			logger.Fatal("Access reason is required (use --reason)")
 		}
-
 		if err := sshClient.RequestAccess(target, accessReason, accessDuration); err != nil {
 			logger.Fatal("Failed to request access: %v", err)
 		}
 		return
 	}
 
-	usernameConfig := config.Auth.User
-	if username == "" && usernameConfig == "" {
-		logger.Fatal("Configuration error: Username is missing in your config or use --user")
-	} else if username == "" {
-		username = usernameConfig
+	user, err := flags.Username(config)
+	if err != nil {
+		logger.Fatal("%v", err)
 	}
 
-	// Connect to machine
-	if err := sshClient.Connect(target, username); err != nil {
+	if remoteUser != "" && !strings.Contains(target, "@") {
+		target = remoteUser + "@" + target
+	}
+
+	if err := sshClient.Connect(target, user); err != nil {
 		logger.Fatal("Connection failed: %v", err)
 	}
 }
