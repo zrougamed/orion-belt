@@ -9,66 +9,910 @@
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
         <item>
-            <title><![CDATA[Orion Belt vs Teleport (and Boundary / bastions)]]></title>
+            <title><![CDATA[Orion Belt vs Teleport — a practical Teleport alternative for SSH PAM]]></title>
             <link>https://orion-belt.dev/blog/orion-belt-vs-teleport</link>
             <guid>https://orion-belt.dev/blog/orion-belt-vs-teleport</guid>
             <pubDate>Thu, 16 Jul 2026 00:00:00 GMT</pubDate>
-            <description><![CDATA[Short version: Orion Belt is a self-hosted SSH access gateway with PAM workflows. Teleport is a broad zero-trust access platform. If you mainly need mediated SSH, recording, JIT, and MFA — without inbound ports on every host or a large ops surface — Orion Belt is the lighter fit.]]></description>
-            <content:encoded><![CDATA[<p><strong>Short version:</strong> Orion Belt is a self-hosted <strong>SSH access gateway with PAM workflows</strong>. Teleport is a <strong>broad zero-trust access platform</strong>. If you mainly need mediated SSH, recording, JIT, and MFA — without inbound ports on every host or a large ops surface — Orion Belt is the lighter fit.</p>
-<div class="theme-admonition theme-admonition-info admonition_xJq3 alert alert--info"><div class="admonitionHeading_Gvgb"><span class="admonitionIcon_Rf37"><svg viewBox="0 0 14 16"><path fill-rule="evenodd" d="M7 2.3c3.14 0 5.7 2.56 5.7 5.7s-2.56 5.7-5.7 5.7A5.71 5.71 0 0 1 1.3 8c0-3.14 2.56-5.7 5.7-5.7zM7 1C3.14 1 0 4.14 0 8s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7zm1 3H6v5h2V4zm0 6H6v2h2v-2z"></path></svg></span>License</div><div class="admonitionContent_BuS1"><p>Orion Belt is Apache 2.0 + Commons Clause (free to self-host/use internally; not for sale as a product/service). Teleport’s licensing is separate — verify current terms for your use case.</p></div></div>
+            <description><![CDATA[Compare Orion Belt and Teleport for self-hosted privileged access. When a lighter SSH bastion/PAM gateway wins, when Teleport’s broader platform is worth it, plus Boundary and classic bastions.]]></description>
+            <content:encoded><![CDATA[<p><strong>Short version:</strong> Orion Belt is a self-hosted <strong>SSH access gateway with PAM workflows</strong>. Teleport is a <strong>broad zero-trust access platform</strong>. If you mainly need mediated SSH, recording, JIT, and MFA — without inbound ports on every host or a large ops surface — Orion Belt is the lighter <strong>Teleport alternative</strong>.</p>
+<p>This comparison is for practitioners evaluating <strong>open source PAM</strong> / <strong>self-hosted privileged access</strong> options for SSH, not a dunk contest. Licensing differs; verify current Teleport terms for your use case. Orion Belt is Apache 2.0 + Commons Clause (<a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">details</a>).</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="who-should-read-this">Who should read this<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#who-should-read-this" class="hash-link" aria-label="Direct link to Who should read this" title="Direct link to Who should read this" translate="no">​</a></h2>
+<ul>
+<li class="">Teams searching for a <strong>Teleport alternative</strong> focused on SSH</li>
+<li class="">Homelab and SMB operators who find Teleport’s surface area large</li>
+<li class="">Security engineers comparing bastion vs platform approaches</li>
+</ul>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="side-by-side">Side-by-side<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#side-by-side" class="hash-link" aria-label="Direct link to Side-by-side" title="Direct link to Side-by-side" translate="no">​</a></h2>
-<table><thead><tr><th>Dimension</th><th>Orion Belt</th><th>Teleport</th><th>Boundary</th><th>Traditional bastion</th></tr></thead><tbody><tr><td>Primary job</td><td>SSH PAM / bastion gateway</td><td>Multi-protocol zero-trust</td><td>Identity-aware brokering</td><td>Network jump point</td></tr><tr><td>Protocols</td><td>SSH / SCP (focused)</td><td>SSH, K8s, DB, web, …</td><td>Many via workers</td><td>Whatever you tunnel</td></tr><tr><td>Target reach</td><td><strong>Agents dial out</strong></td><td>Node agents / tunnels</td><td>Workers / proxies</td><td>Often inbound</td></tr><tr><td>Session recording</td><td>Yes (+ live watch)</td><td>Yes</td><td>Yes (with path)</td><td>DIY</td></tr><tr><td>JIT / approvals</td><td>Built-in (+ ChatOps)</td><td>Access requests</td><td>IdP / workflows</td><td>Rare</td></tr><tr><td>Ops weight</td><td>Smaller SSH slice</td><td>Large platform</td><td>Medium–large</td><td>Small, feature-poor</td></tr><tr><td>Hosting</td><td>Self-hosted</td><td>Self-hosted or cloud</td><td>Self-hosted or HCP</td><td>Self-hosted</td></tr></tbody></table>
+<table><thead><tr><th>Dimension</th><th>Orion Belt</th><th>Teleport</th><th>HashiCorp Boundary</th><th>Traditional bastion</th></tr></thead><tbody><tr><td>Primary job</td><td>SSH PAM / bastion gateway</td><td>Multi-protocol zero-trust access</td><td>Identity-aware session brokering</td><td>Network jump point</td></tr><tr><td>Protocols (typical)</td><td>SSH / SCP (focused)</td><td>SSH, K8s, DB, web, Windows, …</td><td>Many via targets/workers</td><td>Whatever you tunnel</td></tr><tr><td>How targets are reached</td><td><strong>Agents dial out</strong> (reverse SSH)</td><td>Node agents / tunnels / IoT</td><td>Workers / proxies</td><td>Inbound to bastion; often inbound to hosts</td></tr><tr><td>Inbound on targets</td><td>Not required for agent path</td><td>Depends on mode</td><td>Depends on layout</td><td>Common</td></tr><tr><td>Session recording</td><td>Yes (+ live watch)</td><td>Yes</td><td>Yes (with recording path)</td><td>DIY</td></tr><tr><td>JIT / approvals</td><td>Built-in (+ ChatOps)</td><td>Access requests / roles</td><td>Via IdP / workflows</td><td>Rare</td></tr><tr><td>MFA</td><td>TOTP + WebAuthn; FIDO SSH keys</td><td>Strong IdP / MFA story</td><td>Via IdP</td><td>DIY</td></tr><tr><td>Authorization</td><td>ReBAC (+ optional OpenFGA)</td><td>RBAC / roles / traits</td><td>IAM-centric</td><td>OS users / keys</td></tr><tr><td>SSH CA</td><td>Optional built-in</td><td>First-class cert story</td><td>Different model</td><td>Manual / none</td></tr><tr><td>Ops weight</td><td>Smaller SSH-focused deploy</td><td>Larger platform</td><td>Medium–large</td><td>Small but feature-poor</td></tr><tr><td>Hosting</td><td>Self-hosted</td><td>Self-hosted or cloud</td><td>Self-hosted or HCP</td><td>Self-hosted</td></tr></tbody></table>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="architecture-contrast">Architecture contrast<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#architecture-contrast" class="hash-link" aria-label="Direct link to Architecture contrast" title="Direct link to Architecture contrast" translate="no">​</a></h2>
-<p><strong>Orion Belt:</strong> <code>Operator → Gateway ← (reverse SSH) ← Agent on target</code></p>
-<p>The target initiates the tunnel. The gateway brokers policy, recording, and live watch.</p>
-<p><strong>Traditional bastion:</strong> still often means keys, little recording/JIT, and inbound exposure somewhere on the path.</p>
-<p><strong>Teleport-shaped platforms:</strong> powerful and broad — correspondingly more to deploy and operate.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="traditional-bastion">Traditional bastion<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#traditional-bastion" class="hash-link" aria-label="Direct link to Traditional bastion" title="Direct link to Traditional bastion" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">Operator → (SSH) → Bastion → (SSH) → Target</span><br></span></code></pre></div></div>
+<p>You still manage keys, often lack recording/JIT, and frequently still expose SSH somewhere on the path.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="orion-belt">Orion Belt<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#orion-belt" class="hash-link" aria-label="Direct link to Orion Belt" title="Direct link to Orion Belt" translate="no">​</a></h3>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">Operator → Gateway ← (reverse SSH) ← Agent on target</span><br></span></code></pre></div></div>
+<p>The target initiates the tunnel. The gateway brokers sessions, enforces policy, and can record or live-watch. Background: <a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a>.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="teleport-shaped-platforms">Teleport-shaped platforms<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#teleport-shaped-platforms" class="hash-link" aria-label="Direct link to Teleport-shaped platforms" title="Direct link to Teleport-shaped platforms" translate="no">​</a></h3>
+<p>Powerful and broad: many protocols, deep identity integration, large feature surface — and correspondingly more to deploy, learn, and operate.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-to-choose-orion-belt">When to choose Orion Belt<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#when-to-choose-orion-belt" class="hash-link" aria-label="Direct link to When to choose Orion Belt" title="Direct link to When to choose Orion Belt" translate="no">​</a></h2>
+<p>Choose Orion Belt if most of these are true:</p>
 <ul>
 <li class="">Privileged access is <strong>mostly SSH</strong></li>
-<li class="">You want <strong>no inbound SSH</strong> on app hosts</li>
+<li class="">You want <strong>no inbound SSH</strong> on application hosts</li>
 <li class="">You want <strong>recording + live watch + JIT</strong> without a PAM appliance</li>
 <li class="">You prefer <strong>self-hosted</strong>, Linux-first, inspectable code</li>
-<li class="">You’re OK with a <strong>narrower scope</strong> today (OIDC/HA and more protocols are on the roadmap)</li>
+<li class="">You accept a <strong>narrower scope</strong> today (OIDC, HA, other protocols on the roadmap)</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-teleport-or-similar-fits-better">When Teleport (or similar) fits better<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#when-teleport-or-similar-fits-better" class="hash-link" aria-label="Direct link to When Teleport (or similar) fits better" title="Direct link to When Teleport (or similar) fits better" translate="no">​</a></h2>
+<p>Hands-on: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-teleport-or-similar-is-a-better-fit">When Teleport (or similar) is a better fit<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#when-teleport-or-similar-is-a-better-fit" class="hash-link" aria-label="Direct link to When Teleport (or similar) is a better fit" title="Direct link to When Teleport (or similar) is a better fit" translate="no">​</a></h2>
+<p>Choose Teleport if you need:</p>
 <ul>
-<li class="">You need first-class <strong>K8s / DB / Windows / web</strong> access in one product now</li>
-<li class="">You’re already standardized on that platform org-wide</li>
+<li class="">First-class <strong>Kubernetes / DB / Windows / web</strong> access in one product now</li>
+<li class="">A large ecosystem and org-wide zero-trust program already centered on that tool</li>
+<li class="">Features Orion Belt has not shipped yet</li>
 </ul>
-<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="security-tradeoff-reverse-agents">Security tradeoff (reverse agents)<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#security-tradeoff-reverse-agents" class="hash-link" aria-label="Direct link to Security tradeoff (reverse agents)" title="Direct link to Security tradeoff (reverse agents)" translate="no">​</a></h2>
-<p><strong>Gain:</strong> targets need outbound reachability to the gateway, not inbound SSH.<br>
-<strong>Cost:</strong> offline agents aren’t reachable; the gateway is a high-value control plane — harden it.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-boundary-fits-better">When Boundary fits better<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#when-boundary-fits-better" class="hash-link" aria-label="Direct link to When Boundary fits better" title="Direct link to When Boundary fits better" translate="no">​</a></h2>
+<p>Boundary shines when the center of gravity is <strong>identity + credential brokering</strong> in a HashiCorp world — not “SSH bastion with PAM workflows” as the primary UX.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="security-tradeoffs-reverse-agents">Security tradeoffs (reverse agents)<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#security-tradeoffs-reverse-agents" class="hash-link" aria-label="Direct link to Security tradeoffs (reverse agents)" title="Direct link to Security tradeoffs (reverse agents)" translate="no">​</a></h2>
+<p><strong>Gain:</strong> targets need outbound reachability to the gateway, not inbound SSH from attackers’ scan range.<br>
+<strong>Cost:</strong> offline agents are unreachable; the gateway is a high-value control plane — harden it, encrypt recordings, require MFA for admins.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="seo-style-faq">SEO-style FAQ<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#seo-style-faq" class="hash-link" aria-label="Direct link to SEO-style FAQ" title="Direct link to SEO-style FAQ" translate="no">​</a></h2>
+<p><strong>Is Orion Belt a Teleport alternative?</strong><br>
+<!-- -->For SSH-centric self-hosted PAM/bastion needs, yes. For full multi-protocol zero trust, Teleport remains broader.</p>
+<p><strong>Is Orion Belt open source?</strong><br>
+<!-- -->Source-available under Apache 2.0 + Commons Clause — free to self-host; not for sale as a product/SaaS wrapper. Not OSI “Open Source” in the strict sense.</p>
+<p><strong>Can I migrate from a jump host?</strong><br>
+<!-- -->Yes: enroll agents, move humans to <code>user+host@gateway</code>, turn on recording, then tighten inbound SSH. See <a class="" href="https://orion-belt.dev/blog/bastion-vs-pam">bastion vs PAM</a>.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="try-before-you-debate">Try before you debate<a href="https://orion-belt.dev/blog/orion-belt-vs-teleport#try-before-you-debate" class="hash-link" aria-label="Direct link to Try before you debate" title="Direct link to Try before you debate" translate="no">​</a></h2>
-<p><a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a> · <a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a> · <a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a></p>]]></content:encoded>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/orion-belt-dev/orion-belt.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orion-belt</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">./scripts/docker-quickstart.sh</span><br></span></code></pre></div></div>
+<p><a class="" href="https://orion-belt.dev/docs/introduction">Documentation</a> · <a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a> · <a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a></p>]]></content:encoded>
             <category>SSH</category>
             <category>PAM</category>
             <category>Teleport</category>
             <category>Self-hosted</category>
         </item>
         <item>
-            <title><![CDATA[Orion Belt v1.0 is out]]></title>
+            <title><![CDATA[Orion Belt v1.0 — self-hosted SSH PAM gateway is stable]]></title>
             <link>https://orion-belt.dev/blog/welcome-orion-belt-v1</link>
             <guid>https://orion-belt.dev/blog/welcome-orion-belt-v1</guid>
             <pubDate>Thu, 16 Jul 2026 00:00:00 GMT</pubDate>
-            <description><![CDATA[Orion Belt v1.0 is a self-hosted SSH access gateway with PAM workflows: reverse agents, session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, and optional SSH CA.]]></description>
-            <content:encoded><![CDATA[<p><strong>Orion Belt v1.0</strong> is a self-hosted SSH access gateway with PAM workflows: reverse agents, session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, and optional SSH CA.</p>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="positioning">Positioning<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#positioning" class="hash-link" aria-label="Direct link to Positioning" title="Direct link to Positioning" translate="no">​</a></h3>
-<p>Teleport-like SSH access control — without opening inbound ports on every host or adopting a large platform.</p>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="try-it">Try it<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#try-it" class="hash-link" aria-label="Direct link to Try it" title="Direct link to Try it" translate="no">​</a></h3>
-<p>About ten minutes to a recorded session:</p>
-<p><a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a></p>
-<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/orion-belt-dev/orion-belt.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orion-belt</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">./scripts/docker-quickstart.sh</span><br></span></code></pre></div></div>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="license">License<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#license" class="hash-link" aria-label="Direct link to License" title="Direct link to License" translate="no">​</a></h3>
-<p>Apache 2.0 + Commons Clause — free to self-host and use internally; you cannot sell Orion Belt as a product or hosted service.</p>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="community">Community<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#community" class="hash-link" aria-label="Direct link to Community" title="Direct link to Community" translate="no">​</a></h3>
+            <description><![CDATA[Orion Belt v1.0 is released — self-hosted SSH access gateway with reverse agents, session recording, JIT, MFA, and ReBAC. Try the 10-minute path and join early operators.]]></description>
+            <content:encoded><![CDATA[<p><strong>Orion Belt v1.0</strong> is out: a stable, self-hosted <strong>SSH access gateway with PAM workflows</strong>. Reverse agents, session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, optional SSH CA, Linux packages, and a web console — without a SaaS dependency.</p>
+<p>This is the release note for operators who have been waiting for a version line we are willing to call production-shaped for the SSH slice.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-v10-means-here">What “v1.0” means here<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#what-v10-means-here" class="hash-link" aria-label="Direct link to What “v1.0” means here" title="Direct link to What “v1.0” means here" translate="no">​</a></h2>
 <ul>
-<li class=""><a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a></li>
+<li class="">SSH proxy / bastion path we will not casually break</li>
+<li class="">Documented Docker quickstart and package installs</li>
+<li class="">Recording + live watch on the gateway path</li>
+<li class="">JIT + ChatOps approvals</li>
+<li class="">MFA options for the console</li>
+<li class="">ReBAC (optional OpenFGA)</li>
+<li class="">Optional SSH CA</li>
+<li class="">OpenAPI + observability docs in the main repo</li>
+</ul>
+<p>Still on the roadmap (not pretend-done): OIDC, HA, additional protocols. Honesty &gt; checkbox theater — <a class="" href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam">lessons</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="positioning">Positioning<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#positioning" class="hash-link" aria-label="Direct link to Positioning" title="Direct link to Positioning" translate="no">​</a></h2>
+<p>Teleport-like SSH access control — <strong>without</strong> opening inbound ports on every host or adopting a large platform.</p>
+<p>Compare: <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">Orion Belt vs Teleport</a>. Landscape: <a class="" href="https://orion-belt.dev/blog/open-source-pam-landscape">open-source PAM guide</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="try-it-in-about-ten-minutes">Try it in about ten minutes<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#try-it-in-about-ten-minutes" class="hash-link" aria-label="Direct link to Try it in about ten minutes" title="Direct link to Try it in about ten minutes" translate="no">​</a></h2>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/orion-belt-dev/orion-belt.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orion-belt</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">./scripts/docker-quickstart.sh</span><br></span></code></pre></div></div>
+<p>Then: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a> through agent → SSH → Sessions playback.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="license">License<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#license" class="hash-link" aria-label="Direct link to License" title="Direct link to License" translate="no">​</a></h2>
+<p>Apache 2.0 + Commons Clause — free to self-host and use internally; you cannot sell Orion Belt as a product or substantially derived hosted service. <a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">Plain-language FAQ</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="join-early-operators">Join early operators<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#join-early-operators" class="hash-link" aria-label="Direct link to Join early operators" title="Direct link to Join early operators" translate="no">​</a></h2>
+<p>We want deployments and sharp feedback more than vanity metrics. <a class="" href="https://orion-belt.dev/blog/looking-for-early-operators">Early operators call</a> · <a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a> · <a href="https://github.com/orion-belt-dev/orion-belt/discussions" target="_blank" rel="noopener noreferrer" class="">Discussions</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="links">Links<a href="https://orion-belt.dev/blog/welcome-orion-belt-v1#links" class="hash-link" aria-label="Direct link to Links" title="Direct link to Links" translate="no">​</a></h2>
+<ul>
+<li class=""><a href="https://orion-belt.dev/" target="_blank" rel="noopener noreferrer" class="">orion-belt.dev</a></li>
 <li class=""><a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
-<li class="">Looking for early operators — join Discord or open a Discussion</li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/introduction">Documentation</a></li>
 </ul>]]></content:encoded>
             <category>SSH</category>
             <category>PAM</category>
+            <category>Self-hosted</category>
+        </item>
+        <item>
+            <title><![CDATA[Join Orion Belt early operators — first self-hosted SSH PAM deployments]]></title>
+            <link>https://orion-belt.dev/blog/looking-for-early-operators</link>
+            <guid>https://orion-belt.dev/blog/looking-for-early-operators</guid>
+            <pubDate>Wed, 08 Jul 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[We are looking for the first ~20 teams and labs running Orion Belt v1.0. Get install help, influence the roadmap, and help shape a self-hosted Teleport alternative for SSH.]]></description>
+            <content:encoded><![CDATA[<p>GitHub stars are a lagging indicator. The leading indicator we care about is simple: <strong>are serious people deploying Orion Belt and telling us what breaks?</strong></p>
+<p>This is an open call for <strong>early operators</strong> — roughly the first twenty labs or small teams running v1.0 as a real <strong>self-hosted SSH PAM / bastion</strong> path.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="who-we-want">Who we want<a href="https://orion-belt.dev/blog/looking-for-early-operators#who-we-want" class="hash-link" aria-label="Direct link to Who we want" title="Direct link to Who we want" translate="no">​</a></h2>
+<ul>
+<li class="">Homelab / self-hosting users with more than one Linux box</li>
+<li class="">Small company SRE/DevOps teams needing recording + JIT without SaaS</li>
+<li class="">Security engineers evaluating a <strong>Teleport alternative</strong> for SSH-only scope</li>
+<li class="">People willing to file reproducible bugs (Docker quickstart welcome)</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="who-we-are-not-optimizing-for-yet">Who we are not optimizing for (yet)<a href="https://orion-belt.dev/blog/looking-for-early-operators#who-we-are-not-optimizing-for-yet" class="hash-link" aria-label="Direct link to Who we are not optimizing for (yet)" title="Direct link to Who we are not optimizing for (yet)" translate="no">​</a></h2>
+<ul>
+<li class="">Enterprises needing HA + OIDC + multi-protocol on day one</li>
+<li class="">Teams blocked by Commons Clause / non-OSI policy (<a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">license notes</a>)</li>
+<li class="">Drive-by “please add my niche protocol” without deploying SSH first</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-you-get">What you get<a href="https://orion-belt.dev/blog/looking-for-early-operators#what-you-get" class="hash-link" aria-label="Direct link to What you get" title="Direct link to What you get" translate="no">​</a></h2>
+<ul>
+<li class="">Direct help on <a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a> when agents will not dial out</li>
+<li class="">Faster eyes on your issues and PRs</li>
+<li class="">Input on roadmap sequencing (OIDC, HA, etc.)</li>
+<li class="">Optional public credit as an early operator</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-we-ask">What we ask<a href="https://orion-belt.dev/blog/looking-for-early-operators#what-we-ask" class="hash-link" aria-label="Direct link to What we ask" title="Direct link to What we ask" translate="no">​</a></h2>
+<ol>
+<li class="">Complete <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a></li>
+<li class="">Leave it running on something you actually use (even a homelab VM)</li>
+<li class="">Open GitHub issues with versions, logs, and repro steps</li>
+<li class="">Tell us if docs lied</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-to-raise-your-hand">How to raise your hand<a href="https://orion-belt.dev/blog/looking-for-early-operators#how-to-raise-your-hand" class="hash-link" aria-label="Direct link to How to raise your hand" title="Direct link to How to raise your hand" translate="no">​</a></h2>
+<ul>
+<li class="">Message in Discord</li>
+<li class="">Open a <a href="https://github.com/orion-belt-dev/orion-belt/discussions" target="_blank" rel="noopener noreferrer" class="">GitHub Discussion</a></li>
+<li class="">Or comment on an issue that you are running v1.0 in anger</li>
+</ul>
+<p>Metrics we track privately for the first month: install attempts, active deployments, external issues — not vanity follower counts. Background: <a class="" href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam">lessons building PAM</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/looking-for-early-operators#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/welcome-orion-belt-v1">v1.0 announcement</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a></li>
+</ul>]]></content:encoded>
+            <category>Self-hosted</category>
+            <category>Ops</category>
+            <category>PAM</category>
+        </item>
+        <item>
+            <title><![CDATA[Lessons learned building a self-hosted SSH PAM gateway]]></title>
+            <link>https://orion-belt.dev/blog/lessons-building-self-hosted-pam</link>
+            <guid>https://orion-belt.dev/blog/lessons-building-self-hosted-pam</guid>
+            <pubDate>Fri, 26 Jun 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Practical lessons from building Orion Belt — access control vs audit, UX for JIT, reverse tunnel tradeoffs, licensing honesty, and keeping a 10-minute install path sacred.]]></description>
+            <content:encoded><![CDATA[<p>Orion Belt v1.0 is our line in the sand for a stable <strong>self-hosted SSH PAM</strong> slice. These are the lessons that shaped it — useful if you are building similar infrastructure or evaluating whether our tradeoffs match yours.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="1-access-control-is-easy-compared-to-audit">1. Access control is easy compared to audit<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#1-access-control-is-easy-compared-to-audit" class="hash-link" aria-label="Direct link to 1. Access control is easy compared to audit" title="Direct link to 1. Access control is easy compared to audit" translate="no">​</a></h2>
+<p>ReBAC graphs are approachable. Faithful, replayable, retainable <strong>session recordings</strong> are not. Budget engineering time accordingly. Deep dive: <a class="" href="https://orion-belt.dev/blog/session-recording-is-hard">Session recording is hard</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="2-ux-beats-feature-count-for-jit">2. UX beats feature count for JIT<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#2-ux-beats-feature-count-for-jit" class="hash-link" aria-label="Direct link to 2. UX beats feature count for JIT" title="Direct link to 2. UX beats feature count for JIT" translate="no">​</a></h2>
+<p>If temporary access takes longer than sharing a key, standing keys win. ChatOps approvals and a short CLI/UI path matter more than a twelfth policy DSL. See <a class="" href="https://orion-belt.dev/blog/jit-access-approvals">JIT access</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="3-reverse-tunnels-move-risk-they-dont-delete-it">3. Reverse tunnels move risk; they don’t delete it<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#3-reverse-tunnels-move-risk-they-dont-delete-it" class="hash-link" aria-label="Direct link to 3. Reverse tunnels move risk; they don’t delete it" title="Direct link to 3. Reverse tunnels move risk; they don’t delete it" translate="no">​</a></h2>
+<p>Agents dialing out remove inbound SSH on targets and concentrate trust on the gateway. Harden the gateway like a directory service. Explained in <a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="4-optional-complexity-must-stay-optional">4. Optional complexity must stay optional<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#4-optional-complexity-must-stay-optional" class="hash-link" aria-label="Direct link to 4. Optional complexity must stay optional" title="Direct link to 4. Optional complexity must stay optional" translate="no">​</a></h2>
+<p>SSH CA, OpenFGA, and WebAuthn are valuable. None of them should block the first recorded session. Optional flags exist so labs stay fast (<a class="" href="https://orion-belt.dev/blog/optional-ssh-ca">SSH CA</a>, <a class="" href="https://orion-belt.dev/blog/mfa-webauthn-ssh">MFA</a>).</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="5-license-clarity-is-a-security-feature">5. License clarity is a security feature<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#5-license-clarity-is-a-security-feature" class="hash-link" aria-label="Direct link to 5. License clarity is a security feature" title="Direct link to 5. License clarity is a security feature" translate="no">​</a></h2>
+<p>People evaluating PAM software are professionally paranoid. Commons Clause disclosed early builds trust even when it loses some adopters. <a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">License FAQ</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="6-protect-the-10-minute-path-like-an-api">6. Protect the 10-minute path like an API<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#6-protect-the-10-minute-path-like-an-api" class="hash-link" aria-label="Direct link to 6. Protect the 10-minute path like an API" title="Direct link to 6. Protect the 10-minute path like an API" translate="no">​</a></h2>
+<p>Every feature PR should ask: did we break <code>docker-quickstart</code> → agent → Sessions? If yes, fix or document before merge. <a class="" href="https://orion-belt.dev/blog/ten-minute-install-path">Install path design</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="7-say-no-to-protocol-sprawl-in-v1">7. Say no to protocol sprawl in v1<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#7-say-no-to-protocol-sprawl-in-v1" class="hash-link" aria-label="Direct link to 7. Say no to protocol sprawl in v1" title="Direct link to 7. Say no to protocol sprawl in v1" translate="no">​</a></h2>
+<p>Kubernetes and database proxies are real needs. Shipping a mediocre version of each would dilute the SSH promise. Roadmap honesty &gt; checkbox theater. Comparison mindset: <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">vs Teleport</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="8-dual-packaging-is-worth-it">8. Dual packaging is worth it<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#8-dual-packaging-is-worth-it" class="hash-link" aria-label="Direct link to 8. Dual packaging is worth it" title="Direct link to 8. Dual packaging is worth it" translate="no">​</a></h2>
+<p>Docker converts; packages retain. <a class="" href="https://orion-belt.dev/blog/linux-packages-and-labs">Packages and labs</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-we-want-next-from-the-community">What we want next from the community<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#what-we-want-next-from-the-community" class="hash-link" aria-label="Direct link to What we want next from the community" title="Direct link to What we want next from the community" translate="no">​</a></h2>
+<p>Sharp issues from people who <strong>deployed</strong> something — not drive-by feature wishes. If that is you: <a class="" href="https://orion-belt.dev/blog/looking-for-early-operators">early operators</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/announcing-orion-belt">Announcing Orion Belt</a></li>
+<li class=""><a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a> · <a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
+</ul>]]></content:encoded>
+            <category>PAM</category>
+            <category>Architecture</category>
+            <category>Ops</category>
+        </item>
+        <item>
+            <title><![CDATA[Shipping deb/rpm/apk packages and a Docker lab for SSH PAM]]></title>
+            <link>https://orion-belt.dev/blog/linux-packages-and-labs</link>
+            <guid>https://orion-belt.dev/blog/linux-packages-and-labs</guid>
+            <pubDate>Fri, 12 Jun 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Why Orion Belt ships native Linux packages and a Docker quickstart — two audiences for self-hosted SSH bastion installs, signed repos, and reproducible bug reports.]]></description>
+            <content:encoded><![CDATA[<p>Real gateways want <strong>systemd</strong> and signed package repos. First-time evaluators want <code>docker compose</code> and a browser. Orion Belt ships both on purpose. This post explains the split for operators installing a <strong>self-hosted SSH bastion / PAM</strong> stack.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="two-audiences-two-artifacts">Two audiences, two artifacts<a href="https://orion-belt.dev/blog/linux-packages-and-labs#two-audiences-two-artifacts" class="hash-link" aria-label="Direct link to Two audiences, two artifacts" title="Direct link to Two audiences, two artifacts" translate="no">​</a></h2>
+<table><thead><tr><th>Audience</th><th>Success looks like</th><th>Artifact</th></tr></thead><tbody><tr><td>Security / platform eng</td><td>Survives reboot, upgrades, SELinux</td><td>deb / rpm / apk + docs</td></tr><tr><td>Curious SRE on a laptop</td><td>Recorded session in 10 minutes</td><td><code>docker-quickstart.sh</code></td></tr></tbody></table>
+<p>If you only ship packages, blog traffic bounces. If you only ship Docker, production teams bounce. Document them as <strong>siblings</strong>, not one confused path — see <a class="" href="https://orion-belt.dev/blog/ten-minute-install-path">10-minute install path</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-make-packages-is-for">What “make packages” is for<a href="https://orion-belt.dev/blog/linux-packages-and-labs#what-make-packages-is-for" class="hash-link" aria-label="Direct link to What “make packages” is for" title="Direct link to What “make packages” is for" translate="no">​</a></h2>
+<p>From the product repo:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">make</span><span class="token plain"> packages</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic"># optional signed repos with ORION_REQUIRE_SIGN=1</span><br></span></code></pre></div></div>
+<p>You get installable <strong>server</strong>, <strong>agent</strong>, and <strong>tools</strong> packages for common Linux distros. First-run after packages: server YAML, <code>setup</code>, Add agent — covered in <a class="" href="https://orion-belt.dev/docs/quickstart/server">Server setup</a> and the main repo <code>SETUP.md</code> / <code>PACKAGING.md</code>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-docker-is-for">What Docker is for<a href="https://orion-belt.dev/blog/linux-packages-and-labs#what-docker-is-for" class="hash-link" aria-label="Direct link to What Docker is for" title="Direct link to What Docker is for" translate="no">​</a></h2>
+<ul>
+<li class="">Marketing conversion</li>
+<li class="">Reproducing GitHub issues</li>
+<li class="">Homelabs and CI smoke tests</li>
+<li class="">Demoing reverse agents without cloud VMs</li>
+</ul>
+<p>When someone says “agent won’t connect,” asking for a Docker quickstart repro saves days of “what’s in your custom unit file?”</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="signed-repos-and-supply-chain">Signed repos and supply chain<a href="https://orion-belt.dev/blog/linux-packages-and-labs#signed-repos-and-supply-chain" class="hash-link" aria-label="Direct link to Signed repos and supply chain" title="Direct link to Signed repos and supply chain" translate="no">​</a></h2>
+<p>GPG-signed APT/RPM trees matter once you leave the lab. Treat packaging keys like release keys: generate, backup, publish the public key, and document fingerprint verification. The scripts in-tree (<code>gen-packaging-key.sh</code>, <code>publish-repos.sh</code>) exist so you are not inventing that ceremony under pressure.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/linux-packages-and-labs#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Can I run production on Docker Compose?</strong><br>
+<!-- -->You can. Many teams still prefer packages + systemd for host networking and upgrade habits. Compose is not immoral; just own backup/restore for volumes.</p>
+<p><strong>Do agents need the same package format as the server?</strong><br>
+<!-- -->Match the target OS. The UI install script path is built around that.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/linux-packages-and-labs#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/lessons-building-self-hosted-pam">Lessons building PAM</a></li>
+<li class=""><a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
+</ul>]]></content:encoded>
+            <category>Ops</category>
+            <category>Self-hosted</category>
+            <category>linux</category>
+        </item>
+        <item>
+            <title><![CDATA[SSH bastion host vs PAM gateway — which problem are you solving?]]></title>
+            <link>https://orion-belt.dev/blog/bastion-vs-pam</link>
+            <guid>https://orion-belt.dev/blog/bastion-vs-pam</guid>
+            <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Clarify bastion hosts versus privileged access management (PAM) for SSH. When a jump box is enough, when you need recording and JIT, and where Orion Belt fits.]]></description>
+            <content:encoded><![CDATA[<p>Engineers say “bastion” to mean three different products. That ambiguity wastes evaluation time. This article separates <strong>SSH bastion hosts</strong> from <strong>PAM gateways</strong>, and places Orion Belt on that map.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="definitions-that-help">Definitions that help<a href="https://orion-belt.dev/blog/bastion-vs-pam#definitions-that-help" class="hash-link" aria-label="Direct link to Definitions that help" title="Direct link to Definitions that help" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="jump-host--classic-bastion">Jump host / classic bastion<a href="https://orion-belt.dev/blog/bastion-vs-pam#jump-host--classic-bastion" class="hash-link" aria-label="Direct link to Jump host / classic bastion" title="Direct link to Jump host / classic bastion" translate="no">​</a></h3>
+<p>A hardened server you SSH into, then pivot to internal hosts. Network rendezvous. Policy and audit are usually DIY.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="ssh-access-gateway--recording-bastion">SSH access gateway / recording bastion<a href="https://orion-belt.dev/blog/bastion-vs-pam#ssh-access-gateway--recording-bastion" class="hash-link" aria-label="Direct link to SSH access gateway / recording bastion" title="Direct link to SSH access gateway / recording bastion" translate="no">​</a></h3>
+<p>A control plane that brokers SSH, often with session recording and centralized authn. May use reverse tunnels or agents.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="privileged-access-management-pam">Privileged access management (PAM)<a href="https://orion-belt.dev/blog/bastion-vs-pam#privileged-access-management-pam" class="hash-link" aria-label="Direct link to Privileged access management (PAM)" title="Direct link to Privileged access management (PAM)" translate="no">​</a></h3>
+<p>A broader discipline: joiner-mover-leaver, credential vaults, password rotation, multi-protocol privileged sessions, tickets, and compliance reports. SSH is one slice.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="decision-table">Decision table<a href="https://orion-belt.dev/blog/bastion-vs-pam#decision-table" class="hash-link" aria-label="Direct link to Decision table" title="Direct link to Decision table" translate="no">​</a></h2>
+<table><thead><tr><th>Need</th><th>Jump host</th><th>SSH gateway</th><th>Full PAM suite</th></tr></thead><tbody><tr><td>Reach internal SSH</td><td>✓</td><td>✓</td><td>✓</td></tr><tr><td>Per-machine grants</td><td>✗ / DIY</td><td>✓</td><td>✓</td></tr><tr><td>Session recording</td><td>✗ / DIY</td><td>✓</td><td>✓</td></tr><tr><td>JIT approvals</td><td>✗</td><td>✓ / varies</td><td>✓</td></tr><tr><td>K8s/DB/Windows too</td><td>✗</td><td>✗ / limited</td><td>✓</td></tr><tr><td>Lowest ops cost</td><td>✓</td><td>Medium</td><td>High</td></tr></tbody></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="where-orion-belt-fits">Where Orion Belt fits<a href="https://orion-belt.dev/blog/bastion-vs-pam#where-orion-belt-fits" class="hash-link" aria-label="Direct link to Where Orion Belt fits" title="Direct link to Where Orion Belt fits" translate="no">​</a></h2>
+<p>Orion Belt is a <strong>self-hosted SSH PAM gateway</strong> (bastion + PAM workflows for SSH):</p>
+<ul>
+<li class="">Reverse agents (dial out)</li>
+<li class="">Recording + live watch</li>
+<li class="">JIT + MFA + ReBAC</li>
+<li class="">Not a full multi-protocol PAM suite in v1</li>
+</ul>
+<p>If your RFP says “PAM” but the checklist is SSH + audit + approvals, a focused gateway may close the RFP without a platform migration. If the checklist includes password checkout for Windows and database proxying next quarter, shortlist broader tools — see <a class="" href="https://orion-belt.dev/blog/open-source-pam-landscape">open-source PAM landscape</a> and <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">vs Teleport</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="migration-pattern-we-see">Migration pattern we see<a href="https://orion-belt.dev/blog/bastion-vs-pam#migration-pattern-we-see" class="hash-link" aria-label="Direct link to Migration pattern we see" title="Direct link to Migration pattern we see" translate="no">​</a></h2>
+<ol>
+<li class="">Today: jump host + VPN</li>
+<li class="">Pain: audits, shared keys, inbound SSH</li>
+<li class="">Next: SSH gateway with recording (Orion Belt class)</li>
+<li class="">Later: expand protocols or IdP integration as needed (OIDC on our roadmap)</li>
+</ol>
+<p>Do not buy step 4 on day one unless step 4’s problems are already on fire.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/bastion-vs-pam#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/announcing-orion-belt">Announcing Orion Belt</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>PAM</category>
+            <category>Architecture</category>
+        </item>
+        <item>
+            <title><![CDATA[Live SSH session watch for self-hosted PAM gateways]]></title>
+            <link>https://orion-belt.dev/blog/live-session-watch</link>
+            <guid>https://orion-belt.dev/blog/live-session-watch</guid>
+            <pubDate>Thu, 14 May 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[How live session watch works on an SSH bastion, privacy and permission concerns, and how Orion Belt lets admins observe active privileged sessions safely.]]></description>
+            <content:encoded><![CDATA[<p>Sometimes playback tomorrow is too late. <strong>Live session watch</strong> lets an authorized admin observe an active SSH (or web terminal) session as it happens — useful for incident response, mentoring, and verifying break-glass work.</p>
+<p>Used badly, it becomes silent surveillance. Used well, it is a sharp tool in a <strong>self-hosted PAM</strong> gateway. Here is how we think about it in Orion Belt.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="recording-vs-live-watch">Recording vs live watch<a href="https://orion-belt.dev/blog/live-session-watch#recording-vs-live-watch" class="hash-link" aria-label="Direct link to Recording vs live watch" title="Direct link to Recording vs live watch" translate="no">​</a></h2>
+<table><thead><tr><th></th><th>Session recording</th><th>Live watch</th></tr></thead><tbody><tr><td>Timing</td><td>Persisted cast for later</td><td>Streaming view of an active session</td></tr><tr><td>Primary use</td><td>Compliance, forensics</td><td>Real-time oversight</td></tr><tr><td>Failure mode</td><td>Disk secrets / retention</td><td>Privacy / overreach</td></tr></tbody></table>
+<p>Both sit on the <strong>gateway path</strong>. Direct-to-host SSH remains invisible. Cultural rule still applies: <a class="" href="https://orion-belt.dev/blog/session-recording-is-hard">session recording is hard</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="product-requirements-we-care-about">Product requirements we care about<a href="https://orion-belt.dev/blog/live-session-watch#product-requirements-we-care-about" class="hash-link" aria-label="Direct link to Product requirements we care about" title="Direct link to Product requirements we care about" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>Explicit action</strong> — an admin opens watch; it is not ambient for every operator</li>
+<li class=""><strong>Authorization</strong> — not every user role can watch every session</li>
+<li class=""><strong>Honest lifecycle</strong> — when the session ends, watch ends</li>
+<li class=""><strong>Same trust boundary</strong> as recording — if you can watch, you are already in the sensitive-data club</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-to-use-it">When to use it<a href="https://orion-belt.dev/blog/live-session-watch#when-to-use-it" class="hash-link" aria-label="Direct link to When to use it" title="Direct link to When to use it" translate="no">​</a></h2>
+<ul>
+<li class="">On-call verifying a risky production change</li>
+<li class="">Approver stays online during a JIT window (<a class="" href="https://orion-belt.dev/blog/jit-access-approvals">JIT access</a>)</li>
+<li class="">Training: senior watches junior on a staging host</li>
+<li class="">Suspected account misuse (with clear policy)</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-not-to-use-it">When not to use it<a href="https://orion-belt.dev/blog/live-session-watch#when-not-to-use-it" class="hash-link" aria-label="Direct link to When not to use it" title="Direct link to When not to use it" translate="no">​</a></h2>
+<ul>
+<li class="">Routine browsing of everyone’s terminals “because we can”</li>
+<li class="">Legal environments without disclosed monitoring policy</li>
+<li class="">As a substitute for proper pairing tools when the goal is collaboration, not control</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="operator-tips">Operator tips<a href="https://orion-belt.dev/blog/live-session-watch#operator-tips" class="hash-link" aria-label="Direct link to Operator tips" title="Direct link to Operator tips" translate="no">​</a></h2>
+<ul>
+<li class="">Prefer watching <strong>JIT sessions</strong> you already approved</li>
+<li class="">Prefer staging for training watches</li>
+<li class="">Assume anything typed can be seen — same as recording</li>
+<li class="">Combine with ChatOps approvals so the human story is in one timeline</li>
+</ul>
+<p>Try it after a lab SSH in <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a> — open <strong>Sessions</strong> while the session is still active.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/live-session-watch#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/docs/guides/sessions">Sessions guide</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/faq/security">Security FAQ</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>Security</category>
+            <category>Ops</category>
+        </item>
+        <item>
+            <title><![CDATA[Apache 2.0 + Commons Clause — what Orion Belt’s license means]]></title>
+            <link>https://orion-belt.dev/blog/commons-clause-honesty</link>
+            <guid>https://orion-belt.dev/blog/commons-clause-honesty</guid>
+            <pubDate>Thu, 30 Apr 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Clear explanation of Orion Belt’s Apache 2.0 + Commons Clause license for self-hosted PAM — what you can do, what you cannot sell, and why we disclose it on HN and Reddit.]]></description>
+            <content:encoded><![CDATA[<p>Security infrastructure requires trust. Burying a restrictive clause until after launch is how open-source communities learn to ignore you. Orion Belt uses <strong>Apache License 2.0 with the Commons Clause</strong>, and we say so in the README, website, and launch posts.</p>
+<p>This article is the plain-language license FAQ for people evaluating Orion Belt as <strong>self-hosted privileged access</strong> software.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-you-can-do">What you can do<a href="https://orion-belt.dev/blog/commons-clause-honesty#what-you-can-do" class="hash-link" aria-label="Direct link to What you can do" title="Direct link to What you can do" translate="no">​</a></h2>
+<p>Under Apache 2.0 + Commons Clause (as we ship it):</p>
+<ul>
+<li class="">Use Orion Belt internally, including for commercial companies</li>
+<li class="">Modify the code</li>
+<li class="">Self-host for your team / customers’ <em>infrastructure you operate as part of your own business</em> (you are not selling Orion as the product)</li>
+<li class="">Read and audit the source</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-you-cannot-do">What you cannot do<a href="https://orion-belt.dev/blog/commons-clause-honesty#what-you-cannot-do" class="hash-link" aria-label="Direct link to What you cannot do" title="Direct link to What you cannot do" translate="no">​</a></h2>
+<p>The Commons Clause withholds the right to <strong>Sell</strong> the software. In practice for Orion Belt:</p>
+<ul>
+<li class="">You may not sell Orion Belt as a product</li>
+<li class="">You may not offer a hosted service whose value derives substantially from Orion Belt as the product you are selling</li>
+</ul>
+<p>If you want to build a managed Orion SaaS as your business, that is exactly what the clause is designed to stop without permission.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="is-it-open-source">Is it “Open Source”?<a href="https://orion-belt.dev/blog/commons-clause-honesty#is-it-open-source" class="hash-link" aria-label="Direct link to Is it “Open Source”?" title="Direct link to Is it “Open Source”?" translate="no">​</a></h2>
+<p><strong>OSI “Open Source”</strong> has a specific meaning. Commons Clause software is often called <strong>source-available</strong>. We do not pretend otherwise on Hacker News, Lobsters, or Reddit.</p>
+<p>If your organization requires OSI-approved licenses only, Orion Belt may be disallowed — better to know before you invest evaluation time.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-not-agpl-or-a-pure-apache-20">Why not AGPL or a pure Apache 2.0?<a href="https://orion-belt.dev/blog/commons-clause-honesty#why-not-agpl-or-a-pure-apache-20" class="hash-link" aria-label="Direct link to Why not AGPL or a pure Apache 2.0?" title="Direct link to Why not AGPL or a pure Apache 2.0?" translate="no">​</a></h2>
+<p>Different projects pick different weapons. Our goals:</p>
+<ol>
+<li class="">Keep the code auditable for security buyers</li>
+<li class="">Allow free self-hosting for real users</li>
+<li class="">Prevent a cloud vendor from wrapping the repo as their PAM SaaS without a deal</li>
+</ol>
+<p>Whether you agree with that tradeoff is personal. We would rather be declined honestly than adopted under false premises.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-we-talk-about-it-in-public">How we talk about it in public<a href="https://orion-belt.dev/blog/commons-clause-honesty#how-we-talk-about-it-in-public" class="hash-link" aria-label="Direct link to How we talk about it in public" title="Direct link to How we talk about it in public" translate="no">​</a></h2>
+<p>Launch checklist for maintainers:</p>
+<ul>
+<li class="">One sentence in Show HN / Reddit</li>
+<li class="">Link to LICENSE</li>
+<li class="">No “fully open source” claims without qualification</li>
+</ul>
+<p>Full legal text: <a href="https://github.com/orion-belt-dev/orion-belt/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" class="">LICENSE</a> · <a href="https://commonsclause.com/" target="_blank" rel="noopener noreferrer" class="">commonsclause.com</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/commons-clause-honesty#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/announcing-orion-belt">Announcing Orion Belt</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/open-source-pam-landscape">Open-source PAM landscape</a></li>
+</ul>]]></content:encoded>
+            <category>Self-hosted</category>
+            <category>PAM</category>
+        </item>
+        <item>
+            <title><![CDATA[Optional SSH certificate authority for self-hosted bastions]]></title>
+            <link>https://orion-belt.dev/blog/optional-ssh-ca</link>
+            <guid>https://orion-belt.dev/blog/optional-ssh-ca</guid>
+            <pubDate>Wed, 15 Apr 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[When to enable an SSH CA in a PAM gateway, how short-lived certificates reduce key sprawl, and why Orion Belt keeps SSH CA optional for labs.]]></description>
+            <content:encoded><![CDATA[<p>Long-lived <code>authorized_keys</code> entries are how SSH access rots. An <strong>SSH certificate authority (CA)</strong> issues short-lived user and host certificates instead. Powerful — and easy to force on users before they have a working bastion.</p>
+<p>Orion Belt treats SSH CA as <strong>optional</strong>. You can run reverse agents, recording, JIT, and MFA without it. This article explains when to turn CA on for a <strong>self-hosted SSH PAM</strong> deployment.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-an-ssh-ca-changes">What an SSH CA changes<a href="https://orion-belt.dev/blog/optional-ssh-ca#what-an-ssh-ca-changes" class="hash-link" aria-label="Direct link to What an SSH CA changes" title="Direct link to What an SSH CA changes" translate="no">​</a></h2>
+<table><thead><tr><th>Without CA</th><th>With CA</th></tr></thead><tbody><tr><td>Standing user keys on many systems</td><td>Short-lived user certs from the gateway</td></tr><tr><td>TOFU / known_hosts drift</td><td>Host certificates for gateway/agents</td></tr><tr><td>Revocation by hunting files</td><td>Wait for expiry (+ revoke CA-side as designed)</td></tr></tbody></table>
+<p>OpenSSH has supported certificates for years; PAM/bastion products wrap the operational bits humans forget.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-optional">Why optional?<a href="https://orion-belt.dev/blog/optional-ssh-ca#why-optional" class="hash-link" aria-label="Direct link to Why optional?" title="Direct link to Why optional?" translate="no">​</a></h2>
+<p>Because the <strong>10-minute path</strong> should not require understanding certificate principals, <code>AuthorizedPrincipalsFile</code>, and CA key ceremonies. Labs need wow-first. CA is a production maturity step — see <a class="" href="https://orion-belt.dev/blog/ten-minute-install-path">Designing a 10-minute install path</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-you-should-enable-it">When you should enable it<a href="https://orion-belt.dev/blog/optional-ssh-ca#when-you-should-enable-it" class="hash-link" aria-label="Direct link to When you should enable it" title="Direct link to When you should enable it" translate="no">​</a></h2>
+<p>Enable SSH CA when:</p>
+<ul>
+<li class="">Key inventory is already painful</li>
+<li class="">Contractors come and go weekly</li>
+<li class="">You want host identity pinned via Host CA</li>
+<li class="">Someone on the team can own CA key backup / rotation</li>
+</ul>
+<p>Keep it off when:</p>
+<ul>
+<li class="">You are still validating reverse agents and recording</li>
+<li class="">Nobody owns secret management for the CA master key</li>
+</ul>
+<p>Orion encrypts CA material at rest when enabled (<code>ssh_ca.master_key</code> style config in the main repo). Do not use example secrets.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="operational-checklist">Operational checklist<a href="https://orion-belt.dev/blog/optional-ssh-ca#operational-checklist" class="hash-link" aria-label="Direct link to Operational checklist" title="Direct link to Operational checklist" translate="no">​</a></h2>
+<ol>
+<li class="">Backup the CA master key like a root of trust</li>
+<li class="">Set host principals to the DNS/IPs clients actually use</li>
+<li class="">Document how agents receive host certs on enrollment</li>
+<li class="">Monitor expiry and clock skew (certs are time-sensitive)</li>
+<li class="">Pair with recording — certificates are not an audit trail</li>
+</ol>
+<p>Full reference: <a href="https://github.com/orion-belt-dev/orion-belt/blob/master/docs/SSH_CA.md" target="_blank" rel="noopener noreferrer" class="">SSH_CA.md</a> in the product repo.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/optional-ssh-ca#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/mfa-webauthn-ssh">MFA and WebAuthn</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/rebac-for-ssh-machines">ReBAC for SSH machines</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/guides/security">Security best practices</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>Security</category>
+            <category>Architecture</category>
+        </item>
+        <item>
+            <title><![CDATA[MFA and WebAuthn for a self-hosted SSH PAM console]]></title>
+            <link>https://orion-belt.dev/blog/mfa-webauthn-ssh</link>
+            <guid>https://orion-belt.dev/blog/mfa-webauthn-ssh</guid>
+            <pubDate>Sat, 28 Mar 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[How Orion Belt splits console MFA (TOTP, WebAuthn) from SSH public keys and FIDO sk- keys — configuration pitfalls, rp_id origins, and practical hardening.]]></description>
+            <content:encoded><![CDATA[<p>Operators will reject MFA that fights SSH muscle memory. Orion Belt splits the problem: <strong>protect the web console</strong> with TOTP and WebAuthn, and keep <strong>SSH on keys</strong> — including FIDO <code>sk-*</code> keys — that OpenSSH already understands.</p>
+<p>If you are hardening a <strong>self-hosted privileged access</strong> gateway, this is the MFA model to expect and the footguns to avoid.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="two-planes-of-authentication">Two planes of authentication<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#two-planes-of-authentication" class="hash-link" aria-label="Direct link to Two planes of authentication" title="Direct link to Two planes of authentication" translate="no">​</a></h2>
+<table><thead><tr><th>Plane</th><th>Mechanisms</th><th>Goal</th></tr></thead><tbody><tr><td>Web console <code>/ui</code></td><td>SSH pubkey login, password+TOTP, WebAuthn</td><td>Protect admin/approver UX</td></tr><tr><td>SSH to gateway</td><td>Registered user keys, optional FIDO SSH keys</td><td>Day-to-day access</td></tr></tbody></table>
+<p>Confusing these planes creates tickets like “my YubiKey works in the browser but not in SSH” — different protocols, different registration paths.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="console-mfa">Console MFA<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#console-mfa" class="hash-link" aria-label="Direct link to Console MFA" title="Direct link to Console MFA" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="totp">TOTP<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#totp" class="hash-link" aria-label="Direct link to TOTP" title="Direct link to TOTP" translate="no">​</a></h3>
+<p>Familiar authenticator-app second factor. Useful when hardware keys are unavailable.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="webauthn--fido2">WebAuthn / FIDO2<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#webauthn--fido2" class="hash-link" aria-label="Direct link to WebAuthn / FIDO2" title="Direct link to WebAuthn / FIDO2" translate="no">​</a></h3>
+<p>Browser security keys bound to:</p>
+<ul>
+<li class=""><strong><code>rp_id</code></strong> — hostname only (e.g. <code>orion.example.com</code> or <code>localhost</code>)</li>
+<li class=""><strong><code>origins</code></strong> — full origins the UI is served from (<code>https://orion.example.com</code>, maybe a Vite dev origin)</li>
+</ul>
+<p>If <code>rp_id</code> / origins disagree with the URL in the address bar, registration and login fail in opaque ways. Fix config before blaming the YubiKey.</p>
+<p>Docker env knobs include <code>ORION_WEBAUTHN_ENABLED</code>, <code>ORION_PUBLIC_HOST</code>, and <code>ORION_PUBLIC_ORIGIN</code> — see <code>.env.server.example</code> in the repo.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="ssh-keys-and-fido">SSH keys and FIDO<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#ssh-keys-and-fido" class="hash-link" aria-label="Direct link to SSH keys and FIDO" title="Direct link to SSH keys and FIDO" translate="no">​</a></h2>
+<p>Users register SSH <strong>public</strong> keys on their Orion identity. OpenSSH then connects as:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">ssh</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">-i</span><span class="token plain"> ~/.ssh/id_ed25519 </span><span class="token parameter variable" style="color:#36acaa">-p</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">2222</span><span class="token plain"> alice+web-01@gateway</span><br></span></code></pre></div></div>
+<p>For hardware-backed SSH keys (<code>sk-ssh-ed25519@openssh.com</code>, etc.), register the public key the same way and touch the device when OpenSSH prompts. Details: main repo <code>docs/openssh-clients.md</code>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="recommended-hardening-ladder">Recommended hardening ladder<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#recommended-hardening-ladder" class="hash-link" aria-label="Direct link to Recommended hardening ladder" title="Direct link to Recommended hardening ladder" translate="no">​</a></h2>
+<ol>
+<li class="">Lab: pubkey admin via quickstart</li>
+<li class="">Staging: enable TOTP for admins</li>
+<li class="">Production: WebAuthn for admins/approvers + network allowlist on UI</li>
+<li class="">Require MFA for sensitive console actions as your threat model demands</li>
+</ol>
+<p>Also encrypt session recordings — MFA does not help if casts sit plaintext on disk (<a class="" href="https://orion-belt.dev/blog/session-recording-is-hard">session recording</a>).</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Can I force MFA on every SSH connection?</strong><br>
+<!-- -->SSH MFA UX varies; many teams prefer strong keys + gateway policy + recorded sessions. Console MFA is the high-ROI control for approvals and replay.</p>
+<p><strong>Does WebAuthn replace SSH keys?</strong><br>
+<!-- -->No. It protects browser sessions to the control plane.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/mfa-webauthn-ssh#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/docs/guides/security">Security guide</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/optional-ssh-ca">Optional SSH CA</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a></li>
+</ul>]]></content:encoded>
+            <category>Security</category>
+            <category>SSH</category>
+            <category>PAM</category>
+        </item>
+        <item>
+            <title><![CDATA[How we designed a 10-minute SSH PAM install path]]></title>
+            <link>https://orion-belt.dev/blog/ten-minute-install-path</link>
+            <guid>https://orion-belt.dev/blog/ten-minute-install-path</guid>
+            <pubDate>Thu, 12 Mar 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Why Orion Belt optimizes for docker-quickstart → agent dial-out → recorded SSH. Building a conversion-friendly self-hosted bastion onboarding experience.]]></description>
+            <content:encoded><![CDATA[<p>Most infrastructure products document <em>everything</em>. Conversion dies on page one. For Orion Belt, the path we care about is short on purpose:</p>
+<p><strong>gateway up → agent dials out → SSH works → session recorded → wow</strong></p>
+<p>This post explains why that sequence matters for a <strong>self-hosted SSH bastion / PAM</strong> product, what we automated in <code>docker-quickstart.sh</code>, and what we deliberately left for production docs.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="the-funnel-that-actually-matters">The funnel that actually matters<a href="https://orion-belt.dev/blog/ten-minute-install-path#the-funnel-that-actually-matters" class="hash-link" aria-label="Direct link to The funnel that actually matters" title="Direct link to The funnel that actually matters" translate="no">​</a></h2>
+<p>Stars and HN traffic are useless if the README dumps people into YAML archaeology. Security tools especially need a <strong>trusted first success</strong>: if the demo lies, nobody will harden a real deployment.</p>
+<p>We optimize for:</p>
+<ol>
+<li class="">Clone the repo</li>
+<li class="">One script starts Postgres + gateway + admin bootstrap</li>
+<li class="">Browser login with an SSH public key</li>
+<li class=""><strong>Add agent</strong> → outbound connect</li>
+<li class="">Open a session → see it under <strong>Sessions</strong></li>
+</ol>
+<p>Guide: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-the-quickstart-script-does">What the quickstart script does<a href="https://orion-belt.dev/blog/ten-minute-install-path#what-the-quickstart-script-does" class="hash-link" aria-label="Direct link to What the quickstart script does" title="Direct link to What the quickstart script does" translate="no">​</a></h2>
+<p><code>./scripts/docker-quickstart.sh</code>:</p>
+<ul>
+<li class="">Writes <code>.env.server</code> with random Postgres password + JWT secret if missing</li>
+<li class=""><code>docker compose up</code> for the server stack</li>
+<li class="">Waits for <code>/health</code></li>
+<li class="">Generates an admin ed25519 keypair if needed</li>
+<li class="">Runs <code>setup</code> to create the first admin</li>
+</ul>
+<p>There is <strong>no</strong> self-service signup form. That is intentional: the control plane is SSH-key identity, not a random password form on the internet.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-docker-for-labs-and-packages-for-prod">Why Docker for labs and packages for prod<a href="https://orion-belt.dev/blog/ten-minute-install-path#why-docker-for-labs-and-packages-for-prod" class="hash-link" aria-label="Direct link to Why Docker for labs and packages for prod" title="Direct link to Why Docker for labs and packages for prod" translate="no">​</a></h2>
+<table><thead><tr><th>Audience</th><th>Path</th></tr></thead><tbody><tr><td>Evaluator / bug repro</td><td>Docker quickstart + compose agent</td></tr><tr><td>Homelab lasting a weekend</td><td>Docker or packages</td></tr><tr><td>Company gateway</td><td>deb/rpm/apk + hardening docs</td></tr></tbody></table>
+<p>Both are real. Collapsing them into one doc produces a bad lab <em>and</em> a bad production guide. See <a class="" href="https://orion-belt.dev/blog/linux-packages-and-labs">Linux packages and labs</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="friction-we-refuse-to-ship-in-the-first-ten-minutes">Friction we refuse to ship in the first ten minutes<a href="https://orion-belt.dev/blog/ten-minute-install-path#friction-we-refuse-to-ship-in-the-first-ten-minutes" class="hash-link" aria-label="Direct link to Friction we refuse to ship in the first ten minutes" title="Direct link to Friction we refuse to ship in the first ten minutes" translate="no">​</a></h2>
+<ul>
+<li class="">Manual SQL</li>
+<li class="">Hand-editing JWT secrets without a generator</li>
+<li class="">Requiring a public DNS name before hello-world</li>
+<li class="">Forcing SSH CA on</li>
+</ul>
+<p>Those belong <em>after</em> the wow.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="measure-the-path">Measure the path<a href="https://orion-belt.dev/blog/ten-minute-install-path#measure-the-path" class="hash-link" aria-label="Direct link to Measure the path" title="Direct link to Measure the path" translate="no">​</a></h2>
+<p>If you fork or contribute, break the 10-minute path on purpose and see what fails. Every failure mode should either be fixed or documented in the troubleshooting table — not discovered on HN launch day.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/ten-minute-install-path#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/quickstart/server">Server setup</a></li>
+<li class=""><a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
+</ul>]]></content:encoded>
+            <category>Ops</category>
+            <category>Self-hosted</category>
+            <category>SSH</category>
+        </item>
+        <item>
+            <title><![CDATA[Open-source PAM and SSH bastion options compared]]></title>
+            <link>https://orion-belt.dev/blog/open-source-pam-landscape</link>
+            <guid>https://orion-belt.dev/blog/open-source-pam-landscape</guid>
+            <pubDate>Thu, 26 Feb 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[A practical guide to open-source privileged access and SSH bastions — Teleport, Boundary, Warpgate, DIY jump hosts, and Orion Belt as a self-hosted SSH-focused PAM gateway.]]></description>
+            <content:encoded><![CDATA[<p>Search for <strong>open source PAM</strong> or <strong>Teleport alternative</strong> and you will find overlapping tools that solve different jobs. This guide maps the landscape for SSH-first teams: what each category is good at, where it gets heavy, and where <strong>Orion Belt</strong> fits as a <strong>self-hosted SSH bastion / PAM gateway</strong>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="categories-that-get-conflated">Categories that get conflated<a href="https://orion-belt.dev/blog/open-source-pam-landscape#categories-that-get-conflated" class="hash-link" aria-label="Direct link to Categories that get conflated" title="Direct link to Categories that get conflated" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="1-jump-hosts--classic-bastions">1. Jump hosts / classic bastions<a href="https://orion-belt.dev/blog/open-source-pam-landscape#1-jump-hosts--classic-bastions" class="hash-link" aria-label="Direct link to 1. Jump hosts / classic bastions" title="Direct link to 1. Jump hosts / classic bastions" translate="no">​</a></h3>
+<p>A hardened box you SSH into, then hop onward. Cheap to start. Weak on recording, JIT, and per-machine policy unless you invent them.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="2-ssh-gateways--recording-proxies">2. SSH gateways / recording proxies<a href="https://orion-belt.dev/blog/open-source-pam-landscape#2-ssh-gateways--recording-proxies" class="hash-link" aria-label="Direct link to 2. SSH gateways / recording proxies" title="Direct link to 2. SSH gateways / recording proxies" translate="no">​</a></h3>
+<p>Tools that terminate or broker SSH and may record sessions (Warpgate-like products, custom <code>sshd</code> ForceCommand setups, etc.). Stronger audit story; feature depth varies.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="3-identity-centric-brokers">3. Identity-centric brokers<a href="https://orion-belt.dev/blog/open-source-pam-landscape#3-identity-centric-brokers" class="hash-link" aria-label="Direct link to 3. Identity-centric brokers" title="Direct link to 3. Identity-centric brokers" translate="no">​</a></h3>
+<p>HashiCorp <strong>Boundary</strong> emphasizes identity and credential brokering in a Hashi ecosystem. Excellent if that is already your center of gravity; different UX if you mainly wanted an SSH bastion.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="4-broad-zero-trust-platforms">4. Broad zero-trust platforms<a href="https://orion-belt.dev/blog/open-source-pam-landscape#4-broad-zero-trust-platforms" class="hash-link" aria-label="Direct link to 4. Broad zero-trust platforms" title="Direct link to 4. Broad zero-trust platforms" translate="no">​</a></h3>
+<p><strong>Teleport</strong> (and similar) cover SSH plus Kubernetes, databases, web apps, Windows, and a large policy surface. Ideal when you need that breadth; heavy when you only needed SSH PAM.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="5-commercial-pam-appliances">5. Commercial PAM appliances<a href="https://orion-belt.dev/blog/open-source-pam-landscape#5-commercial-pam-appliances" class="hash-link" aria-label="Direct link to 5. Commercial PAM appliances" title="Direct link to 5. Commercial PAM appliances" translate="no">​</a></h3>
+<p>CyberArk / BeyondTrust class: deep enterprise workflows, price and complexity to match.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="comparison-table">Comparison table<a href="https://orion-belt.dev/blog/open-source-pam-landscape#comparison-table" class="hash-link" aria-label="Direct link to Comparison table" title="Direct link to Comparison table" translate="no">​</a></h2>
+<table><thead><tr><th>Option</th><th>Best at</th><th>Watch-outs</th></tr></thead><tbody><tr><td>DIY jump host</td><td>Tiny labs</td><td>No JIT/recording by default</td></tr><tr><td>Warpgate-style gateway</td><td>Simple shared SSH gateway</td><td>PAM workflows may be thinner</td></tr><tr><td>Boundary</td><td>Identity + Hashi stack</td><td>Not “SSH bastion UX” first</td></tr><tr><td>Teleport</td><td>Multi-protocol zero trust</td><td>Ops and learning curve</td></tr><tr><td>Orion Belt</td><td>Self-hosted <strong>SSH PAM</strong> slice, reverse agents</td><td>Narrower protocol scope in v1</td></tr><tr><td>Commercial PAM</td><td>Enterprise process depth</td><td>Cost, lock-in</td></tr></tbody></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="where-orion-belt-sits">Where Orion Belt sits<a href="https://orion-belt.dev/blog/open-source-pam-landscape#where-orion-belt-sits" class="hash-link" aria-label="Direct link to Where Orion Belt sits" title="Direct link to Where Orion Belt sits" translate="no">​</a></h2>
+<p>Orion Belt optimizes for:</p>
+<ul>
+<li class=""><strong>Self-hosted privileged access</strong> focused on SSH/SCP</li>
+<li class=""><strong>Agents dial out</strong> (no inbound SSH required on targets)</li>
+<li class="">Session <strong>recording + live watch</strong></li>
+<li class=""><strong>JIT approvals</strong> (+ ChatOps)</li>
+<li class="">MFA / WebAuthn, ReBAC, optional SSH CA</li>
+<li class="">Linux packages + Docker quickstart</li>
+</ul>
+<p>It is intentionally a <strong>lighter Teleport alternative</strong> for teams whose privileged access problem is mostly SSH — not a claim to replace every Teleport protocol.</p>
+<p>Deep dive: <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">Orion Belt vs Teleport</a>. Architecture: <a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-to-choose-in-one-meeting">How to choose in one meeting<a href="https://orion-belt.dev/blog/open-source-pam-landscape#how-to-choose-in-one-meeting" class="hash-link" aria-label="Direct link to How to choose in one meeting" title="Direct link to How to choose in one meeting" translate="no">​</a></h2>
+<p>Ask:</p>
+<ol>
+<li class="">Do we need <strong>non-SSH protocols</strong> this quarter?</li>
+<li class="">Must targets stay <strong>free of inbound SSH</strong>?</li>
+<li class="">Is <strong>session recording</strong> a hard requirement?</li>
+<li class="">Do we need <strong>JIT approvals</strong> or is standing access OK?</li>
+<li class="">Can we run a gateway (Postgres, backups) ourselves?</li>
+<li class="">Does license policy allow <strong>Apache 2.0 + Commons Clause</strong>?</li>
+</ol>
+<p>If answers skew toward SSH + self-host + recording/JIT, evaluate Orion Belt hands-on:</p>
+<p><a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related-reading">Related reading<a href="https://orion-belt.dev/blog/open-source-pam-landscape#related-reading" class="hash-link" aria-label="Direct link to Related reading" title="Direct link to Related reading" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/announcing-orion-belt">Announcing Orion Belt</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/bastion-vs-pam">Bastion vs PAM</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">Commons Clause honesty</a></li>
+</ul>]]></content:encoded>
+            <category>PAM</category>
+            <category>Teleport</category>
+            <category>Self-hosted</category>
+            <category>SSH</category>
+        </item>
+        <item>
+            <title><![CDATA[Just-in-time (JIT) SSH access with approvals that people will use]]></title>
+            <link>https://orion-belt.dev/blog/jit-access-approvals</link>
+            <guid>https://orion-belt.dev/blog/jit-access-approvals</guid>
+            <pubDate>Thu, 12 Feb 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[How to design JIT privileged access for SSH — request, approve, expire — with ChatOps and session recording. Orion Belt’s approach to temporary access workflows.]]></description>
+            <content:encoded><![CDATA[<p>Standing SSH privileges are convenient until an ex-contractor key still works on Friday night. <strong>Just-in-time (JIT) access</strong> — request, approve, expire — is the standard answer in privileged access management. It only works if the workflow is faster than pasting a key into Slack.</p>
+<p>This article covers how JIT fits a <strong>self-hosted SSH PAM</strong> gateway, what UX details matter, and how Orion Belt implements temporary access without making on-call hate you.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-standing-access-fails">Why standing access fails<a href="https://orion-belt.dev/blog/jit-access-approvals#why-standing-access-fails" class="hash-link" aria-label="Direct link to Why standing access fails" title="Direct link to Why standing access fails" translate="no">​</a></h2>
+<ul>
+<li class="">Keys outlive tickets</li>
+<li class="">“Emergency” grants become permanent</li>
+<li class="">Audit asks “who had root last month?” and the answer is “everyone in <code>#ops</code>”</li>
+<li class="">Compliance frameworks increasingly expect <strong>time-bound</strong> privileged sessions</li>
+</ul>
+<p>Commercial PAM vendors built empires on this pain. Open-source and self-hosted teams still under-serve it.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="anatomy-of-a-usable-jit-flow">Anatomy of a usable JIT flow<a href="https://orion-belt.dev/blog/jit-access-approvals#anatomy-of-a-usable-jit-flow" class="hash-link" aria-label="Direct link to Anatomy of a usable JIT flow" title="Direct link to Anatomy of a usable JIT flow" translate="no">​</a></h2>
+<p>A flow people will follow:</p>
+<ol>
+<li class="">Engineer needs <code>web-01</code> for 90 minutes</li>
+<li class="">They submit a <strong>reason + duration</strong> (CLI or UI)</li>
+<li class="">Approver gets a ping (console bell and/or ChatOps)</li>
+<li class="">Approval creates a grant that <strong>auto-expires</strong></li>
+<li class="">Session is <strong>recorded</strong> while they work</li>
+<li class="">Grant disappears; recording remains for review</li>
+</ol>
+<p>A flow people will bypass:</p>
+<ol>
+<li class="">Open four tabs of wiki</li>
+<li class="">File a ticket in a system nobody watches at 2am</li>
+<li class="">Wait for a manager who is asleep</li>
+<li class="">…so they reuse yesterday’s shared key</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="orion-belts-building-blocks">Orion Belt’s building blocks<a href="https://orion-belt.dev/blog/jit-access-approvals#orion-belts-building-blocks" class="hash-link" aria-label="Direct link to Orion Belt’s building blocks" title="Direct link to Orion Belt’s building blocks" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Access requests</strong> with reason and duration</li>
+<li class=""><strong>Approvals</strong> in the web console</li>
+<li class=""><strong>ChatOps plugins</strong> for Slack, Discord, Teams, Rocket.Chat — approvals where the team already lives</li>
+<li class=""><strong>Recording + live watch</strong> on the gateway path</li>
+<li class="">ReBAC grants underneath (see <a class="" href="https://orion-belt.dev/blog/rebac-for-ssh-machines">ReBAC for SSH machines</a>)</li>
+</ul>
+<p>Example CLI shape:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">osh web-01 --request-access </span><span class="token parameter variable" style="color:#36acaa">--duration</span><span class="token plain"> 1h </span><span class="token parameter variable" style="color:#36acaa">--reason</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">"Incident 4821 rollback"</span><br></span></code></pre></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="chatops-without-turning-chat-into-your-idp">ChatOps without turning chat into your IdP<a href="https://orion-belt.dev/blog/jit-access-approvals#chatops-without-turning-chat-into-your-idp" class="hash-link" aria-label="Direct link to ChatOps without turning chat into your IdP" title="Direct link to ChatOps without turning chat into your IdP" translate="no">​</a></h2>
+<p>Chat approvals are great for speed. They are not a substitute for:</p>
+<ul>
+<li class="">Authenticating the approver properly</li>
+<li class="">Logging who approved what</li>
+<li class="">Ensuring the bot cannot be spoofed casually</li>
+</ul>
+<p>Keep ChatOps as a <strong>notification + action surface</strong> bound back to the gateway’s authz, not a free-for-all emoji vote.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="pair-jit-with-recording">Pair JIT with recording<a href="https://orion-belt.dev/blog/jit-access-approvals#pair-jit-with-recording" class="hash-link" aria-label="Direct link to Pair JIT with recording" title="Direct link to Pair JIT with recording" translate="no">​</a></h2>
+<p>Temporary access without audit just <strong>delays</strong> standing privilege. The conversion story we optimize for in docs is:</p>
+<p>request → approve → SSH → <strong>Sessions playback</strong></p>
+<p>Lab walkthrough: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="policy-ideas-you-can-copy">Policy ideas you can copy<a href="https://orion-belt.dev/blog/jit-access-approvals#policy-ideas-you-can-copy" class="hash-link" aria-label="Direct link to Policy ideas you can copy" title="Direct link to Policy ideas you can copy" translate="no">​</a></h2>
+<table><thead><tr><th>Scenario</th><th>Duration</th><th>Approver</th><th>Remote user</th></tr></thead><tbody><tr><td>On-call break-glass</td><td>1–2h</td><td>Another on-call / lead</td><td>root</td></tr><tr><td>Deploy to one app host</td><td>30–60m</td><td>Service owner</td><td>deploy</td></tr><tr><td>Vendor debug</td><td>2–4h</td><td>Security + owner</td><td>restricted user</td></tr><tr><td>Homelab tinkering</td><td>24h</td><td>You</td><td>whatever you use</td></tr></tbody></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/jit-access-approvals#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Does JIT replace MFA?</strong><br>
+<!-- -->No. MFA protects the console / identity; JIT limits <em>when</em> privileged relationships exist.</p>
+<p><strong>What if the approver is offline?</strong><br>
+<!-- -->Define a backup approver rotation. A JIT system with one human bottleneck will be routed around.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/jit-access-approvals#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/session-recording-is-hard">Session recording is hard</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/looking-for-early-operators">Looking for early operators</a></li>
+<li class=""><a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a></li>
+</ul>]]></content:encoded>
+            <category>PAM</category>
+            <category>Ops</category>
+            <category>Security</category>
+        </item>
+        <item>
+            <title><![CDATA[Relationship-based access control (ReBAC) for SSH machines]]></title>
+            <link>https://orion-belt.dev/blog/rebac-for-ssh-machines</link>
+            <guid>https://orion-belt.dev/blog/rebac-for-ssh-machines</guid>
+            <pubDate>Wed, 28 Jan 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[How ReBAC maps users to SSH machines and remote users in a self-hosted PAM gateway, when to use OpenFGA, and how Orion Belt keeps grants practical.]]></description>
+            <content:encoded><![CDATA[<p>Most SSH fleets still authorize with a pile of <code>authorized_keys</code> files and a spreadsheet nobody updates. <strong>Relationship-based access control (ReBAC)</strong> is a clearer model for a <strong>self-hosted PAM</strong> gateway: users have relationships to machines (and to remote OS users), not a single “ops can root everywhere” bit.</p>
+<p>This guide explains how ReBAC shows up in Orion Belt, how it differs from coarse RBAC, and when optional <strong>OpenFGA</strong> is worth introducing.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="rbac-vs-rebac-in-one-paragraph">RBAC vs ReBAC in one paragraph<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#rbac-vs-rebac-in-one-paragraph" class="hash-link" aria-label="Direct link to RBAC vs ReBAC in one paragraph" title="Direct link to RBAC vs ReBAC in one paragraph" translate="no">​</a></h2>
+<p><strong>RBAC</strong> says: Alice has role <code>sre</code>, and role <code>sre</code> may access production.<br>
+<strong>ReBAC</strong> says: Alice is <code>can_access</code> on machine <code>web-01</code> as remote user <code>deploy</code> — a direct relationship in a graph.</p>
+<p>RBAC scales via roles; ReBAC scales via relationships. SSH privileged access is naturally relational: <em>person ↔ machine ↔ unix account ↔ time window</em>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-orion-belt-models-it">How Orion Belt models it<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#how-orion-belt-models-it" class="hash-link" aria-label="Direct link to How Orion Belt models it" title="Direct link to How Orion Belt models it" translate="no">​</a></h2>
+<p>At a practical level:</p>
+<ol>
+<li class=""><strong>Users</strong> authenticate with SSH public keys (plus optional MFA on the console).</li>
+<li class=""><strong>Agents / machines</strong> enroll with the gateway.</li>
+<li class=""><strong>Grants</strong> attach a user to a machine with allowed <strong>remote users</strong> (<code>root</code>, <code>ubuntu</code>, <code>deploy</code>, …).</li>
+<li class="">JIT requests create <strong>time-bounded</strong> relationships instead of standing grants.</li>
+</ol>
+<p>UI surfaces: <strong>Users</strong>, <strong>Permissions</strong>, <strong>Agents</strong>. CLI examples live in <a class="" href="https://orion-belt.dev/docs/guides/user-management">User management</a> and the server setup docs.</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">orion-belt-server permission grant </span><span class="token punctuation" style="color:#393A34">\</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token parameter variable" style="color:#36acaa">--user</span><span class="token plain"> alice </span><span class="token parameter variable" style="color:#36acaa">--machine</span><span class="token plain"> web-01 </span><span class="token parameter variable" style="color:#36acaa">--type</span><span class="token plain"> both --remote-users deploy</span><br></span></code></pre></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="remote-users-are-still-linux-users">Remote users are still Linux users<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#remote-users-are-still-linux-users" class="hash-link" aria-label="Direct link to Remote users are still Linux users" title="Direct link to Remote users are still Linux users" translate="no">​</a></h2>
+<p>ReBAC does not invent OS accounts. If you grant <code>alice → web-01 as root</code>, the <code>root</code> account must exist on the agent host. Orion brokers the session; the agent host still enforces local account reality.</p>
+<p>This is intentional. A PAM gateway should not pretend to replace <code>/etc/passwd</code>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="optional-openfga">Optional OpenFGA<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#optional-openfga" class="hash-link" aria-label="Direct link to Optional OpenFGA" title="Direct link to Optional OpenFGA" translate="no">​</a></h2>
+<p>Some organizations already run <a href="https://openfga.dev/" target="_blank" rel="noopener noreferrer" class="">OpenFGA</a> (or similar) as a central authorization service. Orion Belt can optionally delegate authorization checks there instead of only using built-in tables.</p>
+<p><strong>Use built-in ReBAC when:</strong></p>
+<ul>
+<li class="">You want the smallest self-hosted footprint</li>
+<li class="">Your grant graph is “users ↔ machines”</li>
+</ul>
+<p><strong>Consider OpenFGA when:</strong></p>
+<ul>
+<li class="">Authorization is already centralized for other apps</li>
+<li class="">You need richer tuple models shared outside SSH</li>
+</ul>
+<p>Misconfiguring external authz is a footgun — fail closed, and test grants in a lab first.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="least-privilege-patterns-that-work">Least privilege patterns that work<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#least-privilege-patterns-that-work" class="hash-link" aria-label="Direct link to Least privilege patterns that work" title="Direct link to Least privilege patterns that work" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>Default deny</strong> — no grant, no SSH through the gateway.</li>
+<li class=""><strong>Per-machine grants</strong> instead of “production” mega-roles when possible.</li>
+<li class=""><strong>Non-root remote users</strong> for day-to-day work; root via JIT.</li>
+<li class=""><strong>Separate auditor identities</strong> for session playback.</li>
+<li class=""><strong>Revoke on offboarding</strong> as a checklist item next to GitHub org removal.</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Is this Zanzibar?</strong><br>
+<!-- -->ReBAC as a family includes Zanzibar-style systems. Orion’s built-in path is the pragmatic SSH subset; OpenFGA is the escape hatch for fuller models.</p>
+<p><strong>Can groups map to many machines?</strong><br>
+<!-- -->Use tags/metadata for organization, but remember: <strong>tags are not grants</strong>. Access still needs an explicit permission edge (or a higher-level automation that creates those edges).</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/rebac-for-ssh-machines#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/jit-access-approvals">JIT SSH access</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/guides/machine-management">Machine management</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">Orion Belt vs Teleport</a></li>
+</ul>]]></content:encoded>
+            <category>PAM</category>
+            <category>Architecture</category>
+            <category>Security</category>
+        </item>
+        <item>
+            <title><![CDATA[Why SSH session recording is harder than access control]]></title>
+            <link>https://orion-belt.dev/blog/session-recording-is-hard</link>
+            <guid>https://orion-belt.dev/blog/session-recording-is-hard</guid>
+            <pubDate>Fri, 09 Jan 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Building reliable SSH session recording for a self-hosted PAM gateway — PTY quirks, secret leakage, retention, encryption, and live watch. How Orion Belt approaches auditability.]]></description>
+            <content:encoded><![CDATA[<p>Granting “alice may SSH to <code>web-01</code>” is the easy half of privileged access. The hard half is answering, months later: <strong>what exactly happened in that shell?</strong> Access control is a graph. <strong>SSH session recording</strong> is a stream of messy terminal I/O, storage policy, and human behavior.</p>
+<p>This article is for operators evaluating <strong>self-hosted PAM</strong> or an <strong>SSH bastion</strong> with audit requirements — SOC-minded startups, regulated teams, and homelabs that still want a paper trail.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="access-control-vs-auditability">Access control vs auditability<a href="https://orion-belt.dev/blog/session-recording-is-hard#access-control-vs-auditability" class="hash-link" aria-label="Direct link to Access control vs auditability" title="Direct link to Access control vs auditability" translate="no">​</a></h2>
+<table><thead><tr><th>Concern</th><th>Typical difficulty</th><th>Failure mode</th></tr></thead><tbody><tr><td>Authn (keys, MFA)</td><td>Medium</td><td>Stolen key, weak MFA</td></tr><tr><td>Authz (who → which host)</td><td>Medium</td><td>Over-broad roles</td></tr><tr><td><strong>Recording</strong></td><td>High</td><td>Gaps, unreadable casts, secret sprawl on disk</td></tr><tr><td>Live watch</td><td>High</td><td>Latency, privacy, “who can watch whom”</td></tr></tbody></table>
+<p>Many DIY bastions stop after authz. Then an incident arrives and nobody can replay the session that mattered.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="why-terminal-recording-is-messy">Why terminal recording is messy<a href="https://orion-belt.dev/blog/session-recording-is-hard#why-terminal-recording-is-messy" class="hash-link" aria-label="Direct link to Why terminal recording is messy" title="Direct link to Why terminal recording is messy" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="ptys-are-not-logs">PTYs are not logs<a href="https://orion-belt.dev/blog/session-recording-is-hard#ptys-are-not-logs" class="hash-link" aria-label="Direct link to PTYs are not logs" title="Direct link to PTYs are not logs" translate="no">​</a></h3>
+<p>Interactive SSH is a pseudo-terminal: resize events, ANSI color, cursor motion, binary-ish output from <code>top</code> or <code>vim</code>. A naive “log stdout” approach produces files humans cannot replay. Orion Belt uses cast-style recordings suitable for console playback — the same family of ideas behind asciinema-like players.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="secrets-show-up-in-cleartext">Secrets show up in cleartext<a href="https://orion-belt.dev/blog/session-recording-is-hard#secrets-show-up-in-cleartext" class="hash-link" aria-label="Direct link to Secrets show up in cleartext" title="Direct link to Secrets show up in cleartext" translate="no">​</a></h3>
+<p>People paste API tokens into shells. Recordings then become <strong>secret stores</strong>. Treat recording storage like a vault:</p>
+<ul>
+<li class="">Encrypt at rest when possible (<code>recording.encryption_key</code> in Orion)</li>
+<li class="">Restrict who can open <strong>Sessions</strong> in the UI</li>
+<li class="">Set <strong>retention</strong> deliberately</li>
+<li class="">Train operators not to paste production secrets into recorded sessions (or use short-lived creds)</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="completeness-depends-on-the-path">Completeness depends on the path<a href="https://orion-belt.dev/blog/session-recording-is-hard#completeness-depends-on-the-path" class="hash-link" aria-label="Direct link to Completeness depends on the path" title="Direct link to Completeness depends on the path" translate="no">​</a></h3>
+<p>If a user SSHs <strong>directly</strong> to the agent host, the gateway never sees the session. Recording is not magic — it only covers traffic that traverses the gateway. The operational rule has to be cultural and technical: <strong>gateway or it didn’t happen.</strong></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-good-looks-like-in-a-pam-gateway">What “good” looks like in a PAM gateway<a href="https://orion-belt.dev/blog/session-recording-is-hard#what-good-looks-like-in-a-pam-gateway" class="hash-link" aria-label="Direct link to What “good” looks like in a PAM gateway" title="Direct link to What “good” looks like in a PAM gateway" translate="no">​</a></h2>
+<p>For Orion Belt’s v1 SSH slice we care about:</p>
+<ol>
+<li class=""><strong>Record by default</strong> on the Docker / recommended path</li>
+<li class=""><strong>Playback</strong> in the web console (seek / pause)</li>
+<li class=""><strong>Live watch</strong> for active sessions when an admin needs eyes-on</li>
+<li class=""><strong>Compression + retention</strong> knobs for disk reality</li>
+<li class="">Optional <strong>encryption at rest</strong></li>
+</ol>
+<p>Web terminal sessions are first-class too (<code>source=web</code>) — not only CLI SSH.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="live-watch-vs-recording">Live watch vs recording<a href="https://orion-belt.dev/blog/session-recording-is-hard#live-watch-vs-recording" class="hash-link" aria-label="Direct link to Live watch vs recording" title="Direct link to Live watch vs recording" translate="no">​</a></h2>
+<table><thead><tr><th></th><th>Recording</th><th>Live watch</th></tr></thead><tbody><tr><td>When</td><td>After / during flush</td><td>During active session</td></tr><tr><td>Use</td><td>Incident review, compliance</td><td>Pairing, suspicious activity</td></tr><tr><td>Risk</td><td>Secrets on disk</td><td>Privacy / over-surveillance</td></tr></tbody></table>
+<p>Both should be <strong>permissioned</strong>. Silent always-on screen sharing for every admin is how you lose trust inside the company.</p>
+<p>Deep dive: <a class="" href="https://orion-belt.dev/blog/live-session-watch">Live session watch</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="implementation-checklist-for-self-hosted-teams">Implementation checklist for self-hosted teams<a href="https://orion-belt.dev/blog/session-recording-is-hard#implementation-checklist-for-self-hosted-teams" class="hash-link" aria-label="Direct link to Implementation checklist for self-hosted teams" title="Direct link to Implementation checklist for self-hosted teams" translate="no">​</a></h2>
+<p>Before you call your <strong>SSH bastion</strong> “auditable”:</p>
+<ol>
+<li class="">Force human SSH through the gateway (OpenSSH <code>user+host@gw</code> or <code>osh</code>)</li>
+<li class="">Enable recording; set retention days you can defend</li>
+<li class="">Turn on encryption at rest for anything beyond a lab</li>
+<li class="">Limit replay roles (auditor vs operator)</li>
+<li class="">Test a full loop: connect → type → disconnect → playback</li>
+</ol>
+<p>Lab path: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try in 10 minutes</a> ends on the Sessions page for a reason — that is the conversion moment.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/session-recording-is-hard#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Are recordings a substitute for shell history?</strong><br>
+<!-- -->No. Histories are per-user, incomplete, and editable. Gateway recordings are a different control.</p>
+<p><strong>Can I disable recording?</strong><br>
+<!-- -->Yes in config — not recommended if you claimed PAM-style audit to leadership.</p>
+<p><strong>Where are files stored?</strong><br>
+<!-- -->Default <code>/var/lib/orion-belt/recordings</code> (or the Docker volume). Plan disk like you plan log volume.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="related">Related<a href="https://orion-belt.dev/blog/session-recording-is-hard#related" class="hash-link" aria-label="Direct link to Related" title="Direct link to Related" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/jit-access-approvals">JIT access approvals</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/guides/sessions">Sessions guide</a></li>
+<li class=""><a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>PAM</category>
+            <category>Security</category>
+        </item>
+        <item>
+            <title><![CDATA[Announcing Orion Belt — open-source self-hosted SSH PAM / bastion]]></title>
+            <link>https://orion-belt.dev/blog/announcing-orion-belt</link>
+            <guid>https://orion-belt.dev/blog/announcing-orion-belt</guid>
+            <pubDate>Thu, 18 Dec 2025 00:00:00 GMT</pubDate>
+            <description><![CDATA[Orion Belt is a self-hosted SSH access gateway with PAM workflows — reverse agents, session recording, JIT approvals, MFA, and ReBAC. A lighter Teleport alternative for SSH-first teams.]]></description>
+            <content:encoded><![CDATA[<p><strong>Orion Belt</strong> is an open-source, <strong>self-hosted SSH access gateway</strong> with PAM-style workflows. It sits in the gap between a raw jump host and a full zero-trust platform: reverse agents, session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, and an optional SSH CA — without SaaS dependency.</p>
+<p>This post is the product introduction for operators evaluating an <strong>open source PAM</strong> option focused on SSH, or a practical <strong>Teleport alternative</strong> when you do not need every protocol on day one.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="who-this-is-for">Who this is for<a href="https://orion-belt.dev/blog/announcing-orion-belt#who-this-is-for" class="hash-link" aria-label="Direct link to Who this is for" title="Direct link to Who this is for" translate="no">​</a></h2>
+<ul>
+<li class="">DevOps / SRE / Linux admins managing fleets over SSH</li>
+<li class="">Homelab and <strong>self-hosted</strong> users who want audit trails without a vendor cloud</li>
+<li class="">Small companies that need <strong>privileged access</strong> controls but not a CyberArk deployment</li>
+<li class="">Teams tired of inbound <code>:22</code> on every box “just for the bastion”</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="the-problem-we-kept-hitting">The problem we kept hitting<a href="https://orion-belt.dev/blog/announcing-orion-belt#the-problem-we-kept-hitting" class="hash-link" aria-label="Direct link to The problem we kept hitting" title="Direct link to The problem we kept hitting" translate="no">​</a></h2>
+<p>Traditional SSH access fails in predictable ways:</p>
+<ul>
+<li class="">Long-lived keys copied into chat</li>
+<li class="">No native approval workflow for break-glass</li>
+<li class="">Spotty or nonexistent session recording</li>
+<li class="">Broad VPN access instead of per-machine grants</li>
+<li class="">“Enterprise PAM” locked behind proprietary licensing and SaaS</li>
+</ul>
+<p>Commercial products and large open platforms solve real problems — and often arrive with an ops surface larger than the SSH problem you actually have.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-orion-belt-is-and-is-not">What Orion Belt is (and is not)<a href="https://orion-belt.dev/blog/announcing-orion-belt#what-orion-belt-is-and-is-not" class="hash-link" aria-label="Direct link to What Orion Belt is (and is not)" title="Direct link to What Orion Belt is (and is not)" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="it-is">It is<a href="https://orion-belt.dev/blog/announcing-orion-belt#it-is" class="hash-link" aria-label="Direct link to It is" title="Direct link to It is" translate="no">​</a></h3>
+<p>A <strong>Linux-first SSH/SCP bastion gateway</strong> you run yourself:</p>
+<table><thead><tr><th>Capability</th><th>Role</th></tr></thead><tbody><tr><td>Reverse agents</td><td>Targets dial <strong>out</strong> — no inbound hole required on the host for Orion</td></tr><tr><td>Gateway</td><td>Brokers sessions, enforces ReBAC, records traffic</td></tr><tr><td>JIT access</td><td>Request → approve → expire (UI / API / ChatOps)</td></tr><tr><td>MFA</td><td>TOTP + WebAuthn for the console; FIDO SSH keys supported</td></tr><tr><td>Clients</td><td><code>osh</code> / <code>ocp</code> / <code>oadmin</code>, vanilla OpenSSH, or web terminal</td></tr><tr><td>Packaging</td><td>Docker quickstart, deb/rpm/apk</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="it-is-not">It is not<a href="https://orion-belt.dev/blog/announcing-orion-belt#it-is-not" class="hash-link" aria-label="Direct link to It is not" title="Direct link to It is not" translate="no">​</a></h3>
+<ul>
+<li class="">A multi-protocol mesh for Kubernetes, Windows RDP, and databases on day one (roadmap items exist; SSH is the v1 promise)</li>
+<li class="">A hosted SaaS (by design)</li>
+<li class="">A drop-in replacement for every Teleport feature</li>
+</ul>
+<p>Positioning we use deliberately: <em>Teleport-like SSH access control without opening inbound ports or adopting a large platform.</em></p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="architecture-in-one-diagram">Architecture in one diagram<a href="https://orion-belt.dev/blog/announcing-orion-belt#architecture-in-one-diagram" class="hash-link" aria-label="Direct link to Architecture in one diagram" title="Direct link to Architecture in one diagram" translate="no">​</a></h2>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">CLI / OpenSSH / Web UI  →  Gateway (:2222 SSH, :8080 UI)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">                              ↑ reverse SSH</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">                           Agent on target</span><br></span></code></pre></div></div>
+<p>Details: <a class="" href="https://orion-belt.dev/docs/architecture/overview">Architecture overview</a> and <a class="" href="https://orion-belt.dev/blog/why-reverse-ssh-agents">Why reverse SSH agents</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="license--said-up-front">License — said up front<a href="https://orion-belt.dev/blog/announcing-orion-belt#license--said-up-front" class="hash-link" aria-label="Direct link to License — said up front" title="Direct link to License — said up front" translate="no">​</a></h2>
+<p>Orion Belt ships under <strong>Apache 2.0 + Commons Clause</strong>:</p>
+<ul>
+<li class="">Free to use, modify, and <strong>self-host</strong>, including internal commercial use</li>
+<li class="">You <strong>cannot sell</strong> Orion Belt (or a hosted service whose value derives substantially from it) as a product</li>
+</ul>
+<p>We disclose this on community posts (HN, Lobsters, Reddit) because security software requires trust. Full text: <a href="https://github.com/orion-belt-dev/orion-belt/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" class="">LICENSE</a>. More context: <a class="" href="https://orion-belt.dev/blog/commons-clause-honesty">Commons Clause honesty</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="try-it">Try it<a href="https://orion-belt.dev/blog/announcing-orion-belt#try-it" class="hash-link" aria-label="Direct link to Try it" title="Direct link to Try it" translate="no">​</a></h2>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/orion-belt-dev/orion-belt.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orion-belt</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">./scripts/docker-quickstart.sh</span><br></span></code></pre></div></div>
+<p>Walkthrough: <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="links">Links<a href="https://orion-belt.dev/blog/announcing-orion-belt#links" class="hash-link" aria-label="Direct link to Links" title="Direct link to Links" translate="no">​</a></h2>
+<ul>
+<li class="">Website: <a href="https://orion-belt.dev/" target="_blank" rel="noopener noreferrer" class="">orion-belt.dev</a></li>
+<li class="">Source: <a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">github.com/orion-belt-dev/orion-belt</a></li>
+<li class="">Chat: <a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a></li>
+<li class="">Compare: <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">Orion Belt vs Teleport</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>PAM</category>
+            <category>Self-hosted</category>
+        </item>
+        <item>
+            <title><![CDATA[Why reverse SSH agents beat opening inbound ports on every server]]></title>
+            <link>https://orion-belt.dev/blog/why-reverse-ssh-agents</link>
+            <guid>https://orion-belt.dev/blog/why-reverse-ssh-agents</guid>
+            <pubDate>Fri, 05 Dec 2025 00:00:00 GMT</pubDate>
+            <description><![CDATA[Learn how reverse SSH tunnels work for bastion and PAM gateways, the security tradeoffs versus inbound SSH, and why Orion Belt agents dial out instead of exposing port 22.]]></description>
+            <content:encoded><![CDATA[<p>If you run Linux servers at any scale, you already know the uncomfortable default: <strong>someone opens SSH from somewhere</strong>. A bastion host, a VPN, a “temporary” security-group rule that outlives the outage. Traditional <strong>SSH bastion</strong> designs still often assume the gateway (or the operator) can reach port 22 on the target.</p>
+<p>Orion Belt takes a different default for its <strong>self-hosted PAM / SSH access gateway</strong>: agents on target machines <strong>dial out</strong> to the gateway over reverse SSH. Operators never need inbound SSH on the application hosts. This article explains why that model exists, how it compares to classic bastions, and which tradeoffs you should accept with eyes open.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="the-problem-with-inbound-ssh-even-just-from-the-bastion">The problem with inbound SSH (even “just from the bastion”)<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#the-problem-with-inbound-ssh-even-just-from-the-bastion" class="hash-link" aria-label="Direct link to The problem with inbound SSH (even “just from the bastion”)" title="Direct link to The problem with inbound SSH (even “just from the bastion”)" translate="no">​</a></h2>
+<p>A classic pattern looks like this:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">Operator → Bastion → (SSH :22) → Target</span><br></span></code></pre></div></div>
+<p>That path creates recurring pain:</p>
+<ol>
+<li class=""><strong>Firewall inventory grows forever</strong> — every VPC, VLAN, and cloud account needs rules so the bastion can reach targets.</li>
+<li class=""><strong>Targets stay in the attack surface</strong> — anything that accepts inbound SSH can be scanned, credential-stuffed, or hit by a compromised jump box.</li>
+<li class=""><strong>NAT and ephemeral environments fight you</strong> — laptops, CI runners, and locked-down cloud subnets often cannot be “reached”; they can only dial out.</li>
+<li class=""><strong>Audit is incomplete</strong> — if anyone still SSHs direct to the host, your bastion’s session recording never sees it.</li>
+</ol>
+<p>A <strong>Teleport alternative</strong> or commercial PAM product will solve pieces of this with agents, workers, or IoT tunnels. The underlying idea is the same: <strong>move reachability so the target initiates connectivity</strong>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="what-agents-dial-out-means">What “agents dial out” means<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#what-agents-dial-out-means" class="hash-link" aria-label="Direct link to What “agents dial out” means" title="Direct link to What “agents dial out” means" translate="no">​</a></h2>
+<p>In Orion Belt:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">Operator → Gateway (SSH :2222 / HTTPS UI)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">                ↑</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">         reverse SSH</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">                ↑</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              Agent on target</span><br></span></code></pre></div></div>
+<ol>
+<li class="">You install a small <strong>agent</strong> on the machine you want to manage.</li>
+<li class="">The agent authenticates to the <strong>gateway</strong> and keeps a reverse tunnel open (outbound from the target’s perspective).</li>
+<li class="">When an operator connects to the gateway (CLI, OpenSSH <code>user+machine@gateway</code>, or web terminal), the gateway <strong>brokers</strong> the session through that tunnel.</li>
+<li class="">Policy (ReBAC), MFA on the console, JIT approvals, and <strong>session recording / live watch</strong> all sit on the gateway path.</li>
+</ol>
+<p>The target still runs Linux users and SSH semantics for the remote account you land on (<code>root</code>, <code>ubuntu</code>, …). What changes is <strong>who is allowed to open a connection toward that host from the network</strong>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="security-tradeoffs-honest">Security tradeoffs (honest)<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#security-tradeoffs-honest" class="hash-link" aria-label="Direct link to Security tradeoffs (honest)" title="Direct link to Security tradeoffs (honest)" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="gains">Gains<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#gains" class="hash-link" aria-label="Direct link to Gains" title="Direct link to Gains" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>No inbound SSH required on targets</strong> for the Orion path — useful for hardened subnets and “deny all ingress” baselines.</li>
+<li class=""><strong>One control plane</strong> for authentication, authorization, and recording.</li>
+<li class=""><strong>Works behind NAT</strong> as long as the agent can reach the gateway on the SSH port (typically <strong>2222</strong>).</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="costs">Costs<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#costs" class="hash-link" aria-label="Direct link to Costs" title="Direct link to Costs" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Offline agent = unreachable host</strong> until it reconnects. There is no magic wake-up if the process is dead.</li>
+<li class=""><strong>The gateway becomes high-value infrastructure.</strong> Treat it like a domain controller for SSH: patch it, restrict who can reach <code>:2222</code> / the UI, encrypt recordings, require MFA for admins.</li>
+<li class=""><strong>You must trust and update the agent binary</strong> on every enrolled machine — same class of risk as any other node agent (Teleport, monitoring, backup).</li>
+</ul>
+<p>If your environment cannot allow <strong>outbound</strong> connections from targets to a central gateway, reverse agents are the wrong tool. Pick a model that matches your network policy.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="reverse-tunnels-vs-vpn-vs-classic-bastion">Reverse tunnels vs VPN vs classic bastion<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#reverse-tunnels-vs-vpn-vs-classic-bastion" class="hash-link" aria-label="Direct link to Reverse tunnels vs VPN vs classic bastion" title="Direct link to Reverse tunnels vs VPN vs classic bastion" translate="no">​</a></h2>
+<table><thead><tr><th>Approach</th><th>Typical exposure</th><th>Recording / JIT</th><th>Ops weight</th></tr></thead><tbody><tr><td>Direct SSH to hosts</td><td>Inbound :22 everywhere</td><td>DIY</td><td>Low features</td></tr><tr><td>Classic bastion</td><td>Inbound to bastion + often bastion→host :22</td><td>Rare / custom</td><td>Low–medium</td></tr><tr><td>Full-mesh VPN</td><td>Broad L3 reachability</td><td>Separate tools</td><td>Medium</td></tr><tr><td>Reverse-agent gateway (Orion Belt)</td><td>Inbound mainly to gateway; agents outbound</td><td>Built-in path</td><td>Medium, SSH-focused</td></tr></tbody></table>
+<p>VPNs solve “how do packets route.” They do not automatically give you <strong>privileged access management</strong>: approvals, per-machine grants, or session playback. A <strong>self-hosted privileged access</strong> gateway sits <em>above</em> connectivity.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="when-reverse-agents-are-the-right-default">When reverse agents are the right default<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#when-reverse-agents-are-the-right-default" class="hash-link" aria-label="Direct link to When reverse agents are the right default" title="Direct link to When reverse agents are the right default" translate="no">​</a></h2>
+<p>Choose this model if most of these are true:</p>
+<ul>
+<li class="">Your privileged access problem is <strong>mostly SSH</strong></li>
+<li class="">You want a <strong>self-hosted SSH bastion</strong> without SaaS lock-in</li>
+<li class="">Security wants <strong>no inbound SSH</strong> on app tiers</li>
+<li class="">You need <strong>recording + JIT</strong> without buying a CyberArk-class appliance</li>
+<li class="">You are okay operating a gateway (Postgres, backups, hardening)</li>
+</ul>
+<p>Prefer a broader platform (for example Teleport) if you need first-class Kubernetes, database, Windows, and web app access in one product on day one. See our comparison: <a class="" href="https://orion-belt.dev/blog/orion-belt-vs-teleport">Orion Belt vs Teleport</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="try-the-model-in-about-ten-minutes">Try the model in about ten minutes<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#try-the-model-in-about-ten-minutes" class="hash-link" aria-label="Direct link to Try the model in about ten minutes" title="Direct link to Try the model in about ten minutes" translate="no">​</a></h2>
+<p>The fastest way to feel the tradeoff is not a whitepaper:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/orion-belt-dev/orion-belt.git</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orion-belt</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">./scripts/docker-quickstart.sh</span><br></span></code></pre></div></div>
+<p>Then follow <a class="" href="https://orion-belt.dev/docs/quickstart/try-in-10-minutes">Try Orion Belt in 10 minutes</a>: register an agent, dial out, SSH through the gateway, open <strong>Sessions</strong> for playback.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="faq">FAQ<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#faq" class="hash-link" aria-label="Direct link to FAQ" title="Direct link to FAQ" translate="no">​</a></h2>
+<p><strong>Is reverse SSH the same as <code>ssh -R</code>?</strong><br>
+<!-- -->Conceptually related: the remote side opens a channel back toward you. Orion Belt productizes that idea with enrollment, policy, and recording — not a one-off shell tunnel.</p>
+<p><strong>Do I still expose port 22 on the target?</strong><br>
+<!-- -->Not for the Orion path. You may leave local SSH for break-glass; just know those sessions bypass gateway recording.</p>
+<p><strong>What about lateral movement from a compromised gateway?</strong><br>
+<!-- -->A compromised gateway is bad in <em>any</em> bastion design. Mitigate with MFA, least privilege, network allowlists, recording encryption, and host hardening — see the main repo’s deployment hardening docs.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="next-reading">Next reading<a href="https://orion-belt.dev/blog/why-reverse-ssh-agents#next-reading" class="hash-link" aria-label="Direct link to Next reading" title="Direct link to Next reading" translate="no">​</a></h2>
+<ul>
+<li class=""><a class="" href="https://orion-belt.dev/blog/announcing-orion-belt">Announcing Orion Belt</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/blog/session-recording-is-hard">Session recording is hard</a></li>
+<li class=""><a class="" href="https://orion-belt.dev/docs/architecture/overview">Architecture overview</a></li>
+<li class=""><a href="https://discord.gg/w62S8jxTHJ" target="_blank" rel="noopener noreferrer" class="">Discord</a> · <a href="https://github.com/orion-belt-dev/orion-belt" target="_blank" rel="noopener noreferrer" class="">GitHub</a></li>
+</ul>]]></content:encoded>
+            <category>SSH</category>
+            <category>Architecture</category>
+            <category>Security</category>
             <category>Self-hosted</category>
         </item>
     </channel>
