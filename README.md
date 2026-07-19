@@ -9,7 +9,7 @@
 
 **Self-hosted SSH access gateway with PAM workflows.**
 
-Teleport-like SSH access control — without opening inbound ports or adopting a large platform. Agents dial **out** over reverse SSH; you get session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, and optional SSH CA.
+Self-hosted SSH/RDP access gateway with PAM workflows, without opening inbound ports or adopting a large platform. Agents dial **out** over reverse SSH; you get session recording, live watch, JIT approvals, MFA/WebAuthn, ReBAC, and optional SSH CA.
 
 > **v1.0.0** — stable and public. Free to self-host and use internally under [Apache 2.0 + Commons Clause](LICENSE). You cannot sell Orion Belt as a product or hosted service. Details: [orion-belt.dev](https://orion-belt.dev).
 
