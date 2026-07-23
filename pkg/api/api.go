@@ -25,22 +25,22 @@ import (
 
 // APIServer provides REST API endpoints
 type APIServer struct {
-	store          database.Store
-	authService    *auth.AuthService
-	jwt            *auth.JWTManager
-	pluginManager  *plugin.Manager
-	logger         *common.Logger
-	router         *gin.Engine
-	rateLimiter    *rateLimiter
-	agentCommander AgentCommander
-	mfaRequired    bool
-	recordingCrypt *recording.Crypto
-	recorder       *recording.Recorder
-	webAuthn       *webauthn.WebAuthn
-	terminalBridge TerminalBridge
-	ca             *ca.Authority
-	challenges     *challengeStore
-	bootstrap      *bootstrapStore
+	store           database.Store
+	authService     *auth.AuthService
+	jwt             *auth.JWTManager
+	pluginManager   *plugin.Manager
+	logger          *common.Logger
+	router          *gin.Engine
+	rateLimiter     *rateLimiter
+	agentCommander  AgentCommander
+	mfaRequired     bool
+	recordingCrypt  *recording.Crypto
+	recorder        *recording.Recorder
+	webAuthn        *webauthn.WebAuthn
+	terminalBridge  TerminalBridge
+	ca              *ca.Authority
+	challenges      *challengeStore
+	bootstrap       *bootstrapStore
 	passwordTickets *passwordTicketStore
 }
 
@@ -87,19 +87,19 @@ func NewAPIServer(store database.Store, authService *auth.AuthService, logger *c
 	}
 
 	api := &APIServer{
-		store:          store,
-		authService:    authService,
-		jwt:            auth.NewJWTManager(opt.JWTSecret, ttl),
-		pluginManager:  opt.PluginManager,
-		agentCommander: opt.AgentCommander,
-		logger:         logger,
-		router:         gin.New(),
-		rateLimiter:    newRateLimiter(rateLimit, time.Minute),
-		mfaRequired:    opt.MFARequired,
-		recordingCrypt: opt.RecordingCrypt,
-		recorder:       opt.Recorder,
-		webAuthn:       opt.WebAuthn,
-		terminalBridge: opt.TerminalBridge,
+		store:           store,
+		authService:     authService,
+		jwt:             auth.NewJWTManager(opt.JWTSecret, ttl),
+		pluginManager:   opt.PluginManager,
+		agentCommander:  opt.AgentCommander,
+		logger:          logger,
+		router:          gin.New(),
+		rateLimiter:     newRateLimiter(rateLimit, time.Minute),
+		mfaRequired:     opt.MFARequired,
+		recordingCrypt:  opt.RecordingCrypt,
+		recorder:        opt.Recorder,
+		webAuthn:        opt.WebAuthn,
+		terminalBridge:  opt.TerminalBridge,
 		ca:              opt.CA,
 		challenges:      newChallengeStore(),
 		bootstrap:       newBootstrapStore(),
@@ -215,6 +215,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
+		protected.GET("/reports/:name/export", s.exportReport)
 
 		// Notifications (in-app, scoped to the authenticated user)
 		protected.GET("/notifications", s.listNotifications)
@@ -294,11 +295,11 @@ type RegisterAgentRequest struct {
 
 // RegisterAgentResponse represents an agent registration response
 type RegisterAgentResponse struct {
-	UserID           string `json:"user_id,omitempty"`
-	MachineID        string `json:"machine_id"`
-	Message          string `json:"message"`
-	HostCertificate  string `json:"host_certificate,omitempty"`
-	HostCAPublicKey  string `json:"host_ca_public_key,omitempty"`
+	UserID          string `json:"user_id,omitempty"`
+	MachineID       string `json:"machine_id"`
+	Message         string `json:"message"`
+	HostCertificate string `json:"host_certificate,omitempty"`
+	HostCAPublicKey string `json:"host_ca_public_key,omitempty"`
 }
 
 // LoginWithKeyRequest represents an API key login request
