@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { api, apiDownload } from "../lib/api";
 import type { AuditLog, User } from "../lib/types";
 import { fmtTime, shortId } from "../lib/format";
 import { Pagination, SortTh, useTableState } from "../components/DataTable";
@@ -9,6 +9,7 @@ export function AuditPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
   const [limit, setLimit] = useState(200);
+  const [exportErr, setExportErr] = useState("");
   const logs = useQuery({
     queryKey: ["audit", limit],
     queryFn: () => api<AuditLog[]>(`/audit-logs?limit=${limit}`),
@@ -54,6 +55,20 @@ export function AuditPage() {
     );
   }, [filtered, table.query, table.sortKey, table.sortDir, table.page, table.pageSize, users.data]);
 
+  async function exportAudit(format: "pdf" | "csv" | "json") {
+    setExportErr("");
+    const params = new URLSearchParams({ format, limit: String(limit) });
+    if (actionFilter) params.set("action", actionFilter);
+    if (actorFilter.trim()) params.set("actor", actorFilter.trim());
+    if (table.query.trim()) params.set("q", table.query.trim());
+
+    try {
+      await apiDownload(`/reports/audit/export?${params.toString()}`, `audit.${format}`);
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -61,11 +76,23 @@ export function AuditPage() {
           <h1>Audit</h1>
           <p>What happened, when, and who did it.</p>
         </div>
-        <button type="button" className="btn secondary sm" onClick={() => void logs.refetch()}>
-          Refresh
-        </button>
+        <div className="row">
+          <button type="button" className="btn secondary sm" onClick={() => void exportAudit("csv")}>
+            Export CSV
+          </button>
+          <button type="button" className="btn secondary sm" onClick={() => void exportAudit("pdf")}>
+            Export PDF
+          </button>
+          <button type="button" className="btn secondary sm" onClick={() => void exportAudit("json")}>
+            Export JSON
+          </button>
+          <button type="button" className="btn secondary sm" onClick={() => void logs.refetch()}>
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="card">
+        {exportErr ? <div className="err">{exportErr}</div> : null}
         <div className="table-toolbar">
           <input
             className="table-search"

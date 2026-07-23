@@ -76,3 +76,41 @@ export async function apiRaw(path: string, opts: RequestInit = {}): Promise<Resp
   if (jwt && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${jwt}`);
   return fetch(`/api/v1${path}`, { ...opts, headers });
 }
+
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(header);
+  const raw = match?.[1] || match?.[2];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
+  const res = await apiRaw(path);
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text || "download failed";
+    try {
+      const payload = JSON.parse(text) as { error?: string; message?: string };
+      message = payload.error || payload.message || message;
+    } catch {
+      // Ignore parse errors and use raw response text.
+    }
+    throw new ApiError(message, res.status, text);
+  }
+
+  const blob = await res.blob();
+  const fileName = parseContentDispositionFilename(res.headers.get("Content-Disposition")) || fallbackFilename;
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(href);
+}

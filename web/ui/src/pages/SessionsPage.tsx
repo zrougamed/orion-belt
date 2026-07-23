@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../components/Badge";
-import { api, apiRaw } from "../lib/api";
+import { api, apiDownload, apiRaw } from "../lib/api";
 import { fmtTime, shortId } from "../lib/format";
 import type { Machine, Session, User } from "../lib/types";
 import { CastPlayer } from "../components/CastPlayer";
@@ -14,6 +14,7 @@ export function SessionsPage() {
   const [playId, setPlayId] = useState<string | null>(null);
   const [watchId, setWatchId] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  const [exportErr, setExportErr] = useState("");
   const table = useTableState<Session>({ pageSize: 25 });
 
   const sessionsQ = useQuery({
@@ -82,6 +83,19 @@ export function SessionsPage() {
     }
   }
 
+  async function exportSessions(format: "pdf" | "csv" | "json") {
+    setExportErr("");
+    const params = new URLSearchParams({ format });
+    if (filter !== "all") params.set("status", filter);
+    if (table.query.trim()) params.set("q", table.query.trim());
+
+    try {
+      await apiDownload(`/reports/sessions/export?${params.toString()}`, `sessions.${format}`);
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -98,9 +112,19 @@ export function SessionsPage() {
           <button type="button" className="btn secondary sm" onClick={() => void sessionsQ.refetch()}>
             Refresh
           </button>
+          <button type="button" className="btn secondary sm" onClick={() => void exportSessions("csv")}>
+            Export CSV
+          </button>
+          <button type="button" className="btn secondary sm" onClick={() => void exportSessions("pdf")}>
+            Export PDF
+          </button>
+          <button type="button" className="btn secondary sm" onClick={() => void exportSessions("json")}>
+            Export JSON
+          </button>
         </div>
       </div>
       <div className="card">
+        {exportErr ? <div className="err">{exportErr}</div> : null}
         <TableToolbar query={table.query} onQuery={table.setQuery} placeholder="Filter by user, machine, status, ID…" />
         {processed.total ? (
           <table>
