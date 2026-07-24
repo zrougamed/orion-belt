@@ -45,6 +45,14 @@ Scrape `/metrics`. Counters/gauges include:
 - `orion_belt_access_requests_total`
 - `orion_belt_agents_connected`
 
+## Operational dashboard snapshot API
+
+For day-to-day operational visibility in the console, Orion Belt exposes a rolling analytics snapshot at:
+
+- `GET /api/v1/dashboard/usage?window_hours=24&top=5`
+
+It returns access volume, approval latency (avg/p50/p95), and most-accessed targets for the requested window. The web dashboard polls this endpoint periodically, so operators do not need to generate a report manually.
+
 ## Example alerts
 
 Drop-in file: `deploy/prometheus/orion-belt-alerts.yml` — down instance, auth failure spike, no agents, silly number of active sessions. Point Alertmanager (or Grafana) at whatever you already use.

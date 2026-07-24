@@ -139,4 +139,6 @@ Direct SSH to an agent host **bypasses** Orion (no recording). Point users at th
 
 Admins/operators see **Setup guide** and **Add agent** in the nav, plus a dashboard banner until agents are connected.
 
+Admins/operators/auditors also get a live **Access analytics** card on the dashboard (rolling window selector) showing access volume, approval latency, and top targets without generating manual reports.
+
 Web **Terminal** sessions are recorded (`source=web`, `.cast`) and show under **Sessions** with xterm playback (play/pause/seek). Full UI requirements: [SRS-UI.md](SRS-UI.md).

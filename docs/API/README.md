@@ -34,6 +34,23 @@ npx swagger-ui-watcher docs/openapi/openapi.yaml
 
 Admin routes under `/api/v1/admin/*` require role **admin** or **operator**.
 
+## Usage analytics endpoint
+
+The console dashboard uses `GET /api/v1/dashboard/usage` for a live operational snapshot.
+
+Example:
+
+```bash
+curl -sS -H "X-Session-Token: $TOKEN" \
+  "http://localhost:8080/api/v1/dashboard/usage?window_hours=24&top=5"
+```
+
+Response fields include:
+
+- `access_volume` (sessions and request counts)
+- `approval_latency` (sample size, avg, p50, p95 in seconds)
+- `top_targets` (most-accessed machines in the selected window)
+
 ## Related docs
 
 - [API_STABILITY.md](../API_STABILITY.md) — what we promise for `/api/v1`

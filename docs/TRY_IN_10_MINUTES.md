@@ -98,6 +98,8 @@ Run a few commands in the session so there is something to replay.
 2. Find the session you just ran
 3. **Playback** — or **live watch** if still active
 
+Optional dashboard check (admin/operator/auditor): open **Dashboard → Access analytics** and verify rolling access volume, approval latency, and top targets update without generating a manual report.
+
 That is the conversion moment: outbound agent, mediated SSH, audit trail — without exposing the target’s SSH port.
 
 ## Tear down
