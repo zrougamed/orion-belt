@@ -5,7 +5,7 @@
 **Base URL:** `/ui/` (served by the gateway; redirects from `/` and `/admin`)  
 **API:** `/api/v1/*` — see [openapi/openapi.yaml](openapi/openapi.yaml)  
 **Status:** React console Phase 2 — **v1.0.0**  
-**Last updated:** July 2026 (live watch, permissions all-grants/edit, notification prefs)
+**Last updated:** July 2026 (live watch, permissions all-grants/edit, notification prefs, usage analytics dashboard)
 
 ---
 
@@ -27,6 +27,7 @@ This SRS is the acceptance baseline for UI regressions and for matching OpenAPI 
 - Live PTY terminal over WebSocket with session recording (`source=web`)
 - Timed cast session playback (xterm), audit log browser, user/machine admin CRUD
 - **Add agent** install-script generator (OS-specific)
+- Dashboard usage analytics with selectable window and auto-refresh
 - Visible **build version** so operators can confirm shipped features
 - In-app **notification bell** (access-request approvals and similar)
 - Production assets embedded via `go:embed` (`make build-ui` → `web/static`)
@@ -110,6 +111,7 @@ Parity with the original console FRs remains the Phase 1 bar:
 - Login (pubkey, TOTP, WebAuthn)
 - Role-filtered shell + version chip
 - Dashboard / setup / requests / machines / terminal / files
+- Dashboard usage analytics: access volume, approval latency (avg/p50/p95), and top targets over a selected window
 - Sessions list + timed cast playback + download
 - Users / agents / **Add agent** install script
 - Audit / security (MFA enroll/confirm, SSH keys list)
@@ -141,4 +143,5 @@ Parity with the original console FRs remains the Phase 1 bar:
 - **Shipped assets:** `web/static/` (built; embedded by `web/embed.go`)
 - **RBAC in UI** is navigation gating only; the API remains authoritative.
 - Phase 2 delivered: permission editor (`/permissions`), command palette (⌘/Ctrl+K), dashboard agent health, session search.
+- Phase 2 delivered: permission editor (`/permissions`), command palette (⌘/Ctrl+K), dashboard agent health, usage analytics (`GET /dashboard/usage`), session search.
 - Phase 3 candidates: live session join, richer audit filters, MFA enrollment polish.

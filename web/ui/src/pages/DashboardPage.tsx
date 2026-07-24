@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth, useRole } from "../auth/AuthContext";
 import { api } from "../lib/api";
-import type { AccessRequest, Machine, Session } from "../lib/types";
+import type { AccessRequest, Machine, Session, UsageDashboard } from "../lib/types";
 import { Badge } from "../components/Badge";
 import { fmtTime, shortId } from "../lib/format";
 
@@ -23,6 +24,7 @@ export function DashboardPage() {
   const { user } = useAuth();
   const role = useRole();
   const isOps = role === "admin" || role === "operator";
+  const [windowHours, setWindowHours] = useState(24);
 
   const machines = useQuery({ queryKey: ["machines"], queryFn: () => api<Machine[]>("/machines") });
   const sessions = useQuery({
@@ -38,6 +40,12 @@ export function DashboardPage() {
     queryKey: ["setup"],
     queryFn: () => api<SetupStatus>("/setup/status"),
     enabled: isOps,
+  });
+  const usage = useQuery({
+    queryKey: ["dashboard", "usage", windowHours],
+    queryFn: () => api<UsageDashboard>(`/dashboard/usage?window_hours=${windowHours}&top=5`),
+    enabled: isOps,
+    refetchInterval: 30_000,
   });
   const agents = useQuery({
     queryKey: ["agents", "connected"],
@@ -57,6 +65,21 @@ export function DashboardPage() {
     : null;
   const activeSessions = sessions.data || [];
   const setupIncomplete = isOps && setup.data && setup.data.complete === false;
+  const usageVolume = usage.data?.access_volume;
+  const usageLatency = usage.data?.approval_latency;
+  const usageTopTargets = usage.data?.top_targets || [];
+  const selectedWindowLabel = useMemo(() => {
+    if (windowHours < 24) return `${windowHours}h`;
+    if (windowHours % 24 === 0) return `${windowHours / 24}d`;
+    return `${windowHours}h`;
+  }, [windowHours]);
+
+  function fmtSeconds(seconds: number | undefined) {
+    if (!seconds || seconds <= 0) return "—";
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    return `${(seconds / 3600).toFixed(1)}h`;
+  }
 
   return (
     <>
@@ -116,6 +139,98 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+
+      {isOps ? (
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <div className="page-head" style={{ marginBottom: "0.75rem" }}>
+            <div>
+              <h3 style={{ marginBottom: "0.3rem" }}>Access analytics</h3>
+              <p className="muted" style={{ margin: 0 }}>
+                Rolling {selectedWindowLabel} operational view, auto-refreshed every 30 seconds.
+              </p>
+            </div>
+            <div className="row" style={{ minWidth: 200 }}>
+              <select
+                value={windowHours}
+                onChange={(e) => setWindowHours(Number(e.target.value) || 24)}
+                aria-label="Analytics window"
+              >
+                <option value={6}>Last 6h</option>
+                <option value={24}>Last 24h</option>
+                <option value={72}>Last 3d</option>
+                <option value={168}>Last 7d</option>
+                <option value={336}>Last 14d</option>
+              </select>
+            </div>
+          </div>
+          {usage.isError ? <div className="err">Failed to load usage analytics.</div> : null}
+          <div className="grid" style={{ marginBottom: "0.8rem" }}>
+            <div>
+              <div className="stat-label">Session starts</div>
+              <div className="stat">{usageVolume?.sessions_total ?? "—"}</div>
+            </div>
+            <div>
+              <div className="stat-label">Access requests</div>
+              <div className="stat">{usageVolume?.requests_total ?? "—"}</div>
+            </div>
+            <div>
+              <div className="stat-label">Approval latency avg</div>
+              <div className="stat">{fmtSeconds(usageLatency?.average_seconds)}</div>
+            </div>
+            <div>
+              <div className="stat-label">Latency p95</div>
+              <div className="stat">{fmtSeconds(usageLatency?.p95_seconds)}</div>
+            </div>
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: "0.75rem" }}>
+            <div>
+              <div className="muted" style={{ fontSize: "0.82rem", marginBottom: "0.35rem" }}>
+                Request status mix
+              </div>
+              <div className="row" style={{ gap: "0.35rem" }}>
+                <Badge status="ok">approved {usageVolume?.requests_approved ?? 0}</Badge>
+                <Badge status="warn">pending {usageVolume?.requests_pending ?? 0}</Badge>
+                <Badge status="danger">rejected {usageVolume?.requests_rejected ?? 0}</Badge>
+              </div>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: "0.82rem", marginBottom: "0.35rem" }}>
+                Active sessions right now
+              </div>
+              <div className="row" style={{ gap: "0.35rem" }}>
+                <Badge status="ok">{usageVolume?.sessions_active ?? 0} active</Badge>
+                <span className="muted" style={{ fontSize: "0.84rem" }}>
+                  based on sessions started in this window
+                </span>
+              </div>
+            </div>
+          </div>
+          <h3 style={{ marginTop: "0.2rem" }}>Most-accessed targets</h3>
+          {usageTopTargets.length === 0 ? (
+            <div className="empty">No target access activity in this window.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Target</th>
+                  <th>Session starts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usageTopTargets.map((target) => (
+                  <tr key={target.machine_id}>
+                    <td>{target.machine_name}</td>
+                    <td className="mono">{target.session_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="muted" style={{ marginTop: "0.65rem", marginBottom: 0 }}>
+            Updated {fmtTime(usage.data?.generated_at)}
+          </p>
+        </div>
+      ) : null}
 
       {isOps ? (
         <div className="grid" style={{ marginTop: "1rem", gridTemplateColumns: "1fr 1fr" }}>

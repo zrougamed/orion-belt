@@ -77,6 +77,7 @@ Pick Orion Belt when you want **SSH access management you run yourself**, withou
 - **Clients** — `osh` / `ocp` / `oadmin`, or vanilla OpenSSH (`user+machine@gateway`)
 - **JIT access** — request → approve → time-boxed grant (UI, API, Slack/Discord/Teams/Rocket.Chat)
 - **Web console** — live terminal, file browser, session playback/watch, users, machines, permissions
+- **Usage analytics dashboard** — rolling access volume, approval latency, and top targets (auto-refreshing)
 - **Plugins** — audit, email/webhook/Slack, ChatOps approvals — configure live from the UI
 - **Ops** — Prometheus metrics, JSON logs, OpenAPI, deb/rpm/apk + GPG-signed repos
 

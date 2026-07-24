@@ -10,7 +10,7 @@ OIDC, HA, RDP/VNC, SDKs, and compliance packs wait until after 1.0.
 
 - [x] Compatibility notes: [API_STABILITY.md](API_STABILITY.md)
 - [x] OpenAPI `info.version` is `1.0.0`
-- [x] Release notes cover what landed since `v0.8.1` (permissions, compression, watch, prefs, JIT, docs)
+- [x] Release notes cover what landed since `v0.8.1` (permissions, compression, watch, prefs, JIT, usage analytics, docs)
 
 ### Ops docs
 

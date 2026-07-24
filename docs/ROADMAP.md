@@ -274,7 +274,7 @@ Notes: [V1_RELEASE_CRITERIA.md](V1_RELEASE_CRITERIA.md), [API_STABILITY.md](API_
 - [ ] Compliance reporting packs
 - [ ] Declarative policy engine
 - [ ] Extra network segmentation proxies
-- [ ] Usage analytics
+- [x] Usage analytics (dashboard: access volume, approval latency, top targets)
 - [ ] Anomaly / security analytics
 
 ### After 1.0 — other protocols / platform

@@ -216,6 +216,7 @@ func (s *APIServer) setupRoutes(metricsEnabled bool) {
 		// Audit logs
 		protected.GET("/audit-logs", s.listAuditLogs)
 		protected.GET("/reports/:name/export", s.exportReport)
+		protected.GET("/dashboard/usage", s.usageDashboard)
 
 		// Notifications (in-app, scoped to the authenticated user)
 		protected.GET("/notifications", s.listNotifications)

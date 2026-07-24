@@ -1259,6 +1259,46 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v1/dashboard/usage:
+    get:
+      tags: [Reports]
+      summary: Usage analytics dashboard snapshot
+      description: |
+        Returns an operational analytics snapshot for a rolling window,
+        including access volume, approval latency, and top targets.
+
+        Designed for dashboard polling; no manual report generation is needed.
+      parameters:
+        - name: window_hours
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 720
+            default: 24
+          description: Rolling analysis window in hours.
+        - name: top
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+          description: Number of top accessed targets to return.
+      responses:
+        "200":
+          description: Analytics snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageDashboard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/setup/status:
     get:
       tags: [Setup]
@@ -1927,6 +1967,58 @@ components:
             type: object
             additionalProperties: true
       required: [report_type, format, generated_at, record_count, records]
+
+    UsageDashboard:
+      type: object
+      properties:
+        window_hours:
+          type: integer
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        generated_at:
+          type: string
+          format: date-time
+        access_volume:
+          $ref: "#/components/schemas/UsageVolume"
+        approval_latency:
+          $ref: "#/components/schemas/UsageApprovalLatency"
+        top_targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageTopTarget"
+      required: [window_hours, from, to, generated_at, access_volume, approval_latency, top_targets]
+
+    UsageVolume:
+      type: object
+      properties:
+        sessions_total: { type: integer }
+        sessions_active: { type: integer }
+        requests_total: { type: integer }
+        requests_pending: { type: integer }
+        requests_approved: { type: integer }
+        requests_rejected: { type: integer }
+      required: [sessions_total, sessions_active, requests_total, requests_pending, requests_approved, requests_rejected]
+
+    UsageApprovalLatency:
+      type: object
+      properties:
+        sample_size: { type: integer }
+        average_seconds: { type: number, format: double }
+        p50_seconds: { type: number, format: double }
+        p95_seconds: { type: number, format: double }
+      required: [sample_size, average_seconds, p50_seconds, p95_seconds]
+
+    UsageTopTarget:
+      type: object
+      properties:
+        machine_id: { type: string }
+        machine_name: { type: string }
+        session_count: { type: integer }
+      required: [machine_id, machine_name, session_count]
 
     Error:
       type: object

@@ -46,8 +46,35 @@ export type AccessRequest = {
   status?: string;
   duration?: number;
   requested_at?: string;
+  reviewed_at?: string | null;
   created_at?: string;
   expires_at?: string | null;
+};
+
+export type UsageDashboard = {
+  window_hours: number;
+  from: string;
+  to: string;
+  generated_at: string;
+  access_volume: {
+    sessions_total: number;
+    sessions_active: number;
+    requests_total: number;
+    requests_pending: number;
+    requests_approved: number;
+    requests_rejected: number;
+  };
+  approval_latency: {
+    sample_size: number;
+    average_seconds: number;
+    p50_seconds: number;
+    p95_seconds: number;
+  };
+  top_targets: Array<{
+    machine_id: string;
+    machine_name: string;
+    session_count: number;
+  }>;
 };
 
 export type AuditLog = {
